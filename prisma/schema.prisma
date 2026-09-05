@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Gender {
+  men
+  women
+  unisex
+  kids
+}
+
+model Brand {
+  id          String    @id
+  name        String
+  slug        String    @unique
+  logo        String?
+  description String?
+  products    Product[]
+}
+
+model Category {
+  id        String             @id
+  name      String
+  styleTags CategoryStyleTag[]
+  products  Product[]
+}
+
+model CategoryStyleTag {
+  id         String   @id
+  name       String
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  products   Product[]
+
+  @@unique([categoryId, name])
+}
+
+model Product {
+  id          String             @id
+  name        String
+  gender      Gender
+  categoryId  String
+  subcategory String
+  description String
+  basePrice   Float
+  isNew       Boolean            @default(false)
+  brandId     String
+  brand       Brand             @relation(fields: [brandId], references: [id])
+  category    Category           @relation(fields: [categoryId], references: [id])
+  styleTags   CategoryStyleTag[]
+  variants    Variant[]
+
+  @@index([gender])
+  @@index([categoryId])
+  @@index([subcategory])
+  @@index([brandId])
+}
+
+model Variant {
+  id        String  @id
+  color     String
+  size      String
+  sku       String  @unique
+  images    String[]
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}

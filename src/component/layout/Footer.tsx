@@ -1,23 +1,43 @@
-import React from "react";
+import React, { useState } from "react";
 
 const Footer = () => {
+  const [email, setEmail] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!email.trim()) return;
+    setSubmitted(true);
+  };
+
   return (
-    <section className="relative w-full bg-[#161616] text-white  px-4 pt-12 md:px-12">
+    <section className="relative w-full bg-[#161616] px-4 pt-12 text-white md:px-12">
       <div className="w-full flex flex-col md:flex-row justify-between items-start md:my-0 mt-16">
         <div className="flex flex-col">
           <h3 className="text-sm font-semibold mb-4 uppercase tracking-[1px]">
-            Subscribe to our newsletter
+            {submitted ? "You're on the list" : "A note from GRV"}
           </h3>
-
-          <form className="flex items-center border-b border-neutral-600 pb-2">
+          <p className="mb-5 max-w-xs text-sm leading-relaxed text-neutral-400">
+            {submitted
+              ? "Thanks. We will be in touch when something worth seeing arrives."
+              : "New collections, quiet discoveries, and the occasional reason to look twice."}
+          </p>
+          <form
+            onSubmit={handleSubmit}
+            className="flex items-center border-b border-neutral-600 pb-2"
+          >
             <input
               type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
               placeholder="Your email"
+              aria-label="Email address"
+              required
               className="flex-1 bg-transparent text-neutral-300 placeholder-neutral-500 focus:outline-none"
             />
             <button
               type="submit"
-              className="ml-3 bg-neutral-800 hover:bg-neutral-700 text-white font-semibold text-sm px-4 py-2 rounded"
+              className="ml-3 text-sm font-semibold text-white transition-colors hover:text-(--color-accent-orange)"
             >
               JOIN
             </button>
@@ -95,8 +115,8 @@ const Footer = () => {
         </div>
       </div>
       <span className="flex mt-5 md:mt-28">
-        <h1 className="text-7xl md:text-9xl">ATOM.</h1>
-        <p className="uppercase text-[9px] md:text-sm">Made by Atomic @</p>
+        <h1 className="text-7xl md:text-9xl">GRV.</h1>
+        <p className="uppercase text-[9px] md:text-sm">Made by GRVic @</p>
       </span>
     </section>
   );

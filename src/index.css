@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+:root {
+  --color-accent-orange: #c45a18;
+}
+
 @font-face {
   font-family: "zorgeous";
   src: url("/fonts/ZORGEOUS.otf") format("opentype");
@@ -23,12 +27,32 @@ html {
 
 body {
   background-color: #fff;
-  font-family: "clashdisplay", serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 
   margin: 0;
   padding: 0;
   min-height: 100vh;
   color: black;
+}
+
+.product-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 8px;
+  row-gap: 32px;
+}
+
+@media (min-width: 768px) {
+  .product-grid {
+    column-gap: 12px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .product-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
 }
 
 button {
@@ -42,7 +66,7 @@ h3,
 h4,
 h5,
 h6 {
-  font-family: "zorgeous", sans-serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 /* 7. Remove default list styles */

@@ -1,109 +1,204 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { motion as Motion } from "framer-motion";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
 import RevealImage from "../component/ui/RevealImage";
+import CtaButton from "../component/ui/CtaButton";
+
+const pillars = [
+  {
+    title: "Considered Curation",
+    copy: "Every brand on GRV is chosen, not just listed — we look for craftsmanship and a point of view before we look at trend.",
+  },
+  {
+    title: "Global Access",
+    copy: "Catalogues from across the world, brought together in one place so discovery doesn't depend on which city you're in.",
+  },
+  {
+    title: "Rooted in Lagos",
+    copy: "Built from Nigeria, for a global audience — proof that great taste isn't limited by geography.",
+  },
+];
+
+const spotlightBrands = [
+  ["Northline", "/brands/northline", "/img/maleheromodel.jpg"],
+  ["Atelier Zero", "/brands/atelier-zero", "/img/femaletop.jpg"],
+  ["Common Form", "/brands/common-form", "/img/goth-girl2.jpg"],
+];
 
 const Brand = () => {
   return (
-    <section className="w-full px-4 md:px-32 bg-white">
-      <div className="w-full">
-        <section className="w-full text-black py-16">
-          {/* Section Title */}
-          <div className="max-w-xl">
-            <AnimatedPageTitle title="Our Brand" />
-          </div>
-
-          <div className="w-full flex flex-col md:flex-row md:justify-between md:items-end gap-8">
-            <RevealImage
-              src="/img/goth-boy.jpg"
-              alt=""
-              className="w-full md:w-[65%] h-[420px] md:h-[750px]"
+    <main className="w-full bg-white text-black">
+      {/* Full-bleed hero */}
+      <section className="relative h-screen w-full overflow-hidden">
+        <RevealImage
+          src="/img/goth-boy.jpg"
+          alt="GRV founder"
+          className="absolute inset-0 h-full w-full"
+          revealDuration={2.4}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/70" />
+        <div className="relative z-10 flex h-full flex-col justify-end px-6 pb-16 text-white md:px-14 md:pb-24 lg:px-16">
+          <Motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+            className="mb-5 text-xs font-semibold uppercase tracking-[0.18em] text-white/80"
+          >
+            Meet The Founder
+          </Motion.p>
+          <Motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.65 }}
+          >
+            <AnimatedPageTitle title="Who We Are" className="text-white" />
+          </Motion.div>
+          <Motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.85 }}
+            className="mt-6 max-w-md text-lg leading-relaxed tracking-wide text-white/90"
+          >
+            What began as a small edit of hand-picked pieces shared with friends
+            has grown into a destination for the brands that deserve a wider
+            audience.
+          </Motion.p>
+          <Motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 1 }}
+          >
+            <CtaButton
+              to="/brands"
+              title="EXPLORE BRANDS"
+              variant="light"
+              className="mt-10"
             />
+          </Motion.div>
+        </div>
+      </section>
 
-            {/* Right - Content */}
-            <div className="flex flex-col justify-between w-full md:w-[35%]">
-              <div className="space-y-6">
-                <div className="overflow-hidden">
-                  <Motion.p
-                    className="text-md text-neutral-600 font-semibold"
-                    initial={{ y: "100%" }}
-                    animate={{ y: 0 }}
-                    transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    (Meet The Founder)
-                  </Motion.p>
-                </div>
-
-                <div className="overflow-hidden">
-                  <Motion.p
-                    className="text-lg md:text-xl leading-snug font-semibold text-neutral-900"
-                    initial={{ y: "100%" }}
-                    animate={{ y: 0 }}
-                    transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    From the streets of New York City to the world stage, a
-                    passion for fashion sparked a movement. What began as a
-                    hobby - crafting unique garments for fun - evolved into a
-                    global brand, iconic for its retro flair and timeless style.
-                    Today, our watches and accessories are worn by style
-                    enthusiasts everywhere.
-                  </Motion.p>
-                </div>
-              </div>
+      <div className="px-1.5">
+        {/* Founding story */}
+        <section className="py-16 md:py-24">
+          <div className="grid gap-10 md:grid-cols-2 md:items-center md:gap-16">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+                The story
+              </p>
+              <h2 className="mt-4 text-3xl font-semibold md:text-5xl">
+                Taste as a starting point
+              </h2>
+              <p className="mt-6 max-w-md text-sm leading-relaxed text-gray-600">
+                GRV didn't start with a factory or a pattern room — it started
+                with a founder tired of watching great labels stay invisible
+                outside their home markets. We began sourcing pieces we believed
+                in and putting them in front of people who would never have
+                found them otherwise.
+              </p>
+              <p className="mt-4 max-w-md text-sm leading-relaxed text-gray-600">
+                That instinct hasn't changed. GRV is still, at its core, a
+                filter — one that separates the brands worth your attention from
+                the noise.
+              </p>
             </div>
+            <RevealImage
+              src="/img/heromodel3.jpg"
+              alt="GRV curated catalogue"
+              className="aspect-4/3 w-full"
+            />
           </div>
         </section>
 
-        {/* Middle Title */}
-        <h1 className="text-4xl md:text-7xl max-w-xl font-bold text-black mx-auto text-center my-20 md:my-40 leading-none">
-          (Based) SCANDANAVIA
-        </h1>
-      </div>
+        {/* Based in Nigeria statement */}
+        <section className="py-20 text-center md:py-32">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+            Based in
+          </p>
+          <h2 className="mx-auto mt-4 max-w-2xl text-5xl font-bold leading-none md:text-7xl">
+            Lagos, Nigeria
+          </h2>
+          <p className="mx-auto mt-6 max-w-md text-sm leading-relaxed text-gray-600">
+            A global outlook, built from home — curating the world's catalogues
+            for a market that deserves the same access as anywhere else.
+          </p>
+        </section>
 
-      {/* Bottom Section */}
-      <section className="w-full bg-white py-16 text-black">
-        <div className="flex flex-col md:flex-row gap-8 items-start">
-          {/* Left Content */}
-          <div className="space-y-8 w-full md:w-[35%]">
-            <span className="text-3xl font-semibold leading-tight">
-              Sustainable Style: We Source Only the Finest Organic Cotton and
-              Wool.
-            </span>
+        {/* Pillars */}
+        <section className="py-16 md:py-24">
+          <div className="grid gap-10 md:grid-cols-3 md:gap-8">
+            {pillars.map((pillar) => (
+              <div key={pillar.title}>
+                <span className="text-(--color-accent-orange) text-xs font-semibold uppercase tracking-[0.16em]">
+                  —
+                </span>
+                <h3 className="mt-3 text-xl font-semibold">{pillar.title}</h3>
+                <p className="mt-3 text-sm leading-relaxed text-gray-600">
+                  {pillar.copy}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
 
-            <div className="flex flex-col md:flex-row gap-6 text-md leading-relaxed">
-              <p>
-                At Atom, we believe fashion and nature go hand-in-hand. That's
-                why we source only organic cotton and materials, reducing our
-                environmental footprint.
+        {/* Brands we carry */}
+        <section className="py-16 md:py-24">
+          <div className="mb-8 flex items-end justify-between gap-6 md:mb-10">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+                On GRV
               </p>
-              <p>
-                Atom is committed to sustainable practices. From seed to
-                stitch, we're minimizing our ecological footprint with 100%
-                organic materials.
+              <h2 className="mt-2 text-3xl font-semibold md:text-4xl">
+                Brands we carry
+              </h2>
+            </div>
+            <CtaButton to="/brands" title="VIEW ALL" />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {spotlightBrands.map(([name, path, image]) => (
+              <Link key={name} to={path} className="group relative block">
+                <RevealImage
+                  src={image}
+                  alt={name}
+                  className="aspect-3/4 w-full transition-opacity group-hover:opacity-75"
+                  revealDuration={0.8}
+                />
+                <span className="absolute inset-x-3 bottom-3 text-xs font-semibold uppercase tracking-wide text-white">
+                  {name}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Closing CTA */}
+        <section className="pb-24 md:pb-32">
+          <div className="relative flex min-h-[380px] items-center justify-center overflow-hidden text-center md:min-h-[440px]">
+            <RevealImage
+              src="/img/goth-flowers.jpg"
+              alt="Explore the GRV catalogue"
+              className="absolute inset-0 h-full w-full"
+            />
+            <div className="pointer-events-none absolute inset-0 bg-black/55" />
+            <div className="relative z-10 px-6 text-white">
+              <h2 className="text-3xl font-semibold md:text-5xl">
+                Ready to explore?
+              </h2>
+              <p className="mx-auto mt-4 max-w-sm text-sm leading-relaxed text-white/85">
+                Every catalogue we carry, in one place.
               </p>
+              <CtaButton
+                to="/catalogues"
+                title="SHOP NOW"
+                variant="light"
+                className="pointer-events-auto mt-8 w-fit"
+              />
             </div>
           </div>
-
-          {/* Center Image */}
-          <div className="relative w-full md:w-[45%] aspect-[4/3] overflow-hidden">
-            <img
-              src="/img/goth-towers.jpg"
-              alt="Moss-covered cave landscape showcasing natural organic materials"
-              className="w-full h-full object-cover"
-            />
-          </div>
-
-          <div className="relative flex flex-col w-full md:w-[20%] aspect-[3/4] overflow-hidden">
-            <img
-              src="/img/goth-flowers.jpg"
-              alt="Pima Cotton"
-              className="w-full h-full object-cover"
-            />
-            <p className="mt-3 text-sm text-neutral-800">(Pima Cotton)</p>
-          </div>
-        </div>
-      </section>
-    </section>
+        </section>
+      </div>
+    </main>
   );
 };
 

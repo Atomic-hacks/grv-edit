@@ -2,6 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion as Motion } from "framer-motion";
 import { Link, useLocation } from "react-router-dom";
 import { useCart } from "../../context/CartContext";
+import {
+  getNavigationPath,
+  getNavigationRootPath,
+  getNavigationSectionsForDepartment,
+  navigationDepartments,
+} from "../../data/navigation";
 
 const focusableSelector =
   "a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex='-1'])";
@@ -11,29 +17,42 @@ const getFocusableElements = (container) => {
   return Array.from(container.querySelectorAll(focusableSelector));
 };
 
+const Chevron = ({ open }) => (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={`shrink-0 transition-transform duration-300 ${
+      open ? "rotate-180" : ""
+    }`}
+  >
+    <path d="M2.5 4.5L6 8l3.5-3.5" />
+  </svg>
+);
+
 const Navbar = () => {
-  const [isShopOpen, setIsShopOpen] = useState(false);
+  const [openMegaMenu, setOpenMegaMenu] = useState(null);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [openMobileDept, setOpenMobileDept] = useState(null);
+  const [openMobileSection, setOpenMobileSection] = useState(null);
   const { itemCount, openCart } = useCart();
   const location = useLocation();
   const panelRef = useRef(null);
 
   const navLinks = [
-    {
-      name: "Shop",
-      href: "/shop",
-      hasDropdown: true,
-      dropdownItems: [
-        { name: "All Products", href: "/shop/all" },
-        { name: "New Arrivals", href: "/shop/new" },
-        { name: "Tops", href: "/shop/tops" },
-        { name: "Bottoms", href: "/shop/bottoms" },
-        { name: "Summer Collection", href: "/shop/summer" },
-      ],
-    },
-    { name: "Brand", href: "/brand" },
-    { name: "Journal", href: "/journal" },
-    { name: "Contact", href: "/contact" },
+    ...navigationDepartments.map((department) => ({
+      name: department.name,
+      href: getNavigationRootPath(department.name),
+      sections: getNavigationSectionsForDepartment(department.name),
+      megaMenu: true,
+    })),
+    { name: "Brands", href: "/brands" },
+    { name: "Who We Are", href: "/brand" },
   ];
 
   useEffect(() => {
@@ -41,7 +60,11 @@ const Navbar = () => {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!isMobileOpen) return;
+    if (!isMobileOpen) {
+      setOpenMobileDept(null);
+      setOpenMobileSection(null);
+      return;
+    }
 
     const previousFocus = document.activeElement;
     const focusables = getFocusableElements(panelRef.current);
@@ -83,6 +106,15 @@ const Navbar = () => {
     };
   }, [isMobileOpen]);
 
+  const toggleMobileDept = (name) => {
+    setOpenMobileDept((current) => (current === name ? null : name));
+    setOpenMobileSection(null);
+  };
+
+  const toggleMobileSection = (name) => {
+    setOpenMobileSection((current) => (current === name ? null : name));
+  };
+
   return (
     <nav className="relative w-full border-b border-gray-200 bg-white">
       <div className="mx-auto flex items-center justify-between px-4 md:px-16 py-2">
@@ -92,62 +124,77 @@ const Navbar = () => {
             <div
               key={link.name}
               className="relative"
-              onMouseEnter={() => link.hasDropdown && setIsShopOpen(true)}
-              onMouseLeave={() => link.hasDropdown && setIsShopOpen(false)}
+              onMouseEnter={() => link.megaMenu && setOpenMegaMenu(link.name)}
+              onMouseLeave={() => link.megaMenu && setOpenMegaMenu(null)}
             >
               <Link
                 to={link.href}
-                className="group relative font-medium text-black transition-colors hover:text-gray-600"
+                className="group relative z-9999 font-medium text-black transition-colors hover:text-gray-600"
               >
                 {link.name}
                 <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
               </Link>
 
-              {link.hasDropdown && (
-                <div
-                  className={`absolute left-0 top-full pt-4 transition-all duration-300 ease-out ${
-                    isShopOpen
-                      ? "pointer-events-auto translate-y-0 opacity-100"
-                      : "pointer-events-none -translate-y-2 opacity-0"
-                  }`}
-                >
-                  <div className="min-w-[200px] rounded-sm border border-gray-200 bg-white shadow-lg overflow-hidden">
-                    {link.dropdownItems?.map((item, index) => (
-                      <Link
-                        key={item.name}
-                        to={item.href}
-                        className="group/item relative block px-5 py-3 text-sm font-medium text-black transition-colors hover:bg-gray-50"
-                        style={{
-                          animationDelay: `${index * 50}ms`,
-                          animation: isShopOpen
-                            ? "slideIn 0.3s ease-out forwards"
-                            : "none",
-                        }}
-                      >
-                        {item.name}
-                        <span className="absolute left-5 bottom-2 h-px w-0 bg-black transition-all duration-300 ease-out group-hover/item:w-[calc(100%-2.5rem)]" />
-                      </Link>
-                    ))}
-                  </div>
-                </div>
+              {link.megaMenu && (
+                <AnimatePresence>
+                  {openMegaMenu === link.name && (
+                    <Motion.div
+                      initial={{ opacity: 0, x: -300 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -30 }}
+                      transition={{ duration: 0.5, ease: "easeOut" }}
+                      className="absolute left-0 top-full z-20 w-2xl pt-2 overflow-hidden"
+                    >
+                      <div className="grid grid-cols-3 gap-8 rounded-sm border border-gray-200 bg-white p-6 shadow-lg">
+                        {link.sections.map((section) => (
+                          <div key={section.name}>
+                            <Link
+                              to={getNavigationPath(link.name, section.name)}
+                              className="text-sm font-semibold uppercase tracking-wide text-black"
+                            >
+                              {section.name}
+                            </Link>
+                            <div className="mt-3 space-y-2">
+                              {section.styles.map((style) => (
+                                <Link
+                                  key={style}
+                                  to={getNavigationPath(
+                                    link.name,
+                                    section.name,
+                                    style,
+                                  )}
+                                  className="block text-sm text-gray-600 transition-colors hover:text-black"
+                                >
+                                  {style}
+                                </Link>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Motion.div>
+                  )}
+                </AnimatePresence>
               )}
             </div>
           ))}
         </div>
 
-        {/* Center Logo - Desktop */}
+        {/* Center log - Desktop */}
         <Link
           to="/"
           className="hidden md:block absolute left-1/2 -translate-x-1/2"
         >
-          <span className="text-2xl font-bold tracking-tight">Atom</span>
-          <sup className="text-xs">®</sup>
+          <span>
+            <img className="h-12 w-26" src="/img/log.png" alt="GRV" />
+          </span>
         </Link>
 
-        {/* Mobile Logo */}
+        {/* Mobile log */}
         <Link to="/" className="md:hidden">
-          <span className="text-2xl font-bold tracking-tight">Atom</span>
-          <sup className="text-xs">®</sup>
+          <span className="text-2xl font-bold tracking-tight">
+            <img src="/img/log.png" alt="GRV" className="h-12 w-26" />
+          </span>
         </Link>
 
         {/* Right Side Icons - Desktop */}
@@ -166,7 +213,20 @@ const Navbar = () => {
               <path d="M12.5 12.5l4 4" strokeLinecap="round" />
             </svg>
           </button>
-
+          <Link
+            to="/contact"
+            className="group relative text-sm font-medium text-black transition-colors hover:text-gray-600"
+          >
+            contact
+            <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
+          </Link>{" "}
+          <Link
+            to="/journal"
+            className="group relative text-sm font-medium text-black transition-colors hover:text-gray-600"
+          >
+            Journal
+            <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
+          </Link>
           <Link
             to="/account"
             className="group relative text-sm font-medium text-black transition-colors hover:text-gray-600"
@@ -174,7 +234,6 @@ const Navbar = () => {
             Account
             <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
           </Link>
-
           <button className="transition-transform hover:scale-110">
             <img
               src="/img/flag.png"
@@ -184,7 +243,6 @@ const Navbar = () => {
               className="object-contain"
             />
           </button>
-
           <button
             type="button"
             onClick={openCart}
@@ -244,15 +302,17 @@ const Navbar = () => {
               role="dialog"
               aria-modal="true"
               ref={panelRef}
-              className="fixed right-0 top-0 z-50 h-full w-[82%] max-w-[360px] bg-white shadow-xl"
+              className="fixed right-0 top-0 z-50 h-full w-[82%] max-w-90 overflow-y-auto bg-white shadow-xl"
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5">
-                <span className="text-xl font-bold tracking-tight">Atom</span>
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-6 py-5">
+                <span className="text-xl font-bold tracking-tight">
+                  <img src="/img/log.png" alt="GRV" className="h-12 w-26" />
+                </span>
                 <button
                   type="button"
                   onClick={() => setIsMobileOpen(false)}
@@ -273,35 +333,136 @@ const Navbar = () => {
                 </button>
               </div>
 
-              <nav className="px-6 py-6 space-y-6">
-                {navLinks.map((link) => (
-                  <div key={link.name} className="space-y-3">
-                    <Link
-                      to={link.href}
-                      onClick={() => setIsMobileOpen(false)}
-                      className="text-lg font-semibold text-black"
-                    >
-                      {link.name}
-                    </Link>
+              <nav className="px-6 py-4">
+                {navLinks.map((link) => {
+                  if (!link.megaMenu) {
+                    return (
+                      <Link
+                        key={link.name}
+                        to={link.href}
+                        onClick={() => setIsMobileOpen(false)}
+                        className="block border-b border-gray-100 py-4 text-base font-semibold text-black"
+                      >
+                        {link.name}
+                      </Link>
+                    );
+                  }
 
-                    {link.dropdownItems && (
-                      <div className="space-y-2">
-                        {link.dropdownItems.map((item) => (
-                          <Link
-                            key={item.name}
-                            to={item.href}
-                            onClick={() => setIsMobileOpen(false)}
-                            className="block text-sm font-medium text-gray-600"
-                          >
-                            {item.name}
-                          </Link>
-                        ))}
+                  const isDeptOpen = openMobileDept === link.name;
+
+                  return (
+                    <div key={link.name} className="border-b border-gray-100">
+                      <div className="flex items-center justify-between py-4">
+                        <Link
+                          to={link.href}
+                          onClick={() => setIsMobileOpen(false)}
+                          className="text-base font-semibold text-black"
+                        >
+                          {link.name}
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => toggleMobileDept(link.name)}
+                          aria-expanded={isDeptOpen}
+                          aria-label={`Toggle ${link.name} categories`}
+                          className="flex h-8 w-8 items-center justify-center text-black"
+                        >
+                          <Chevron open={isDeptOpen} />
+                        </button>
                       </div>
-                    )}
-                  </div>
-                ))}
 
-                <div className="pt-4 border-t border-gray-200">
+                      <AnimatePresence initial={false}>
+                        {isDeptOpen && (
+                          <Motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{
+                              duration: 0.3,
+                              ease: [0.22, 1, 0.36, 1],
+                            }}
+                            className="overflow-hidden"
+                          >
+                            <div className="pb-3 pl-3">
+                              {link.sections.map((section) => {
+                                const sectionKey = `${link.name}-${section.name}`;
+                                const isSectionOpen =
+                                  openMobileSection === sectionKey;
+
+                                return (
+                                  <div key={section.name} className="py-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <Link
+                                        to={getNavigationPath(
+                                          link.name,
+                                          section.name,
+                                        )}
+                                        onClick={() => setIsMobileOpen(false)}
+                                        className="py-1.5 text-sm font-semibold text-black"
+                                      >
+                                        {section.name}
+                                      </Link>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          toggleMobileSection(sectionKey)
+                                        }
+                                        aria-expanded={isSectionOpen}
+                                        aria-label={`Toggle ${section.name} styles`}
+                                        className="flex h-7 w-7 items-center justify-center text-gray-500"
+                                      >
+                                        <Chevron open={isSectionOpen} />
+                                      </button>
+                                    </div>
+
+                                    <AnimatePresence initial={false}>
+                                      {isSectionOpen && (
+                                        <Motion.div
+                                          initial={{ height: 0, opacity: 0 }}
+                                          animate={{
+                                            height: "auto",
+                                            opacity: 1,
+                                          }}
+                                          exit={{ height: 0, opacity: 0 }}
+                                          transition={{
+                                            duration: 0.25,
+                                            ease: [0.22, 1, 0.36, 1],
+                                          }}
+                                          className="overflow-hidden"
+                                        >
+                                          <div className="flex flex-col gap-2 py-2 pl-3">
+                                            {section.styles.map((style) => (
+                                              <Link
+                                                key={style}
+                                                to={getNavigationPath(
+                                                  link.name,
+                                                  section.name,
+                                                  style,
+                                                )}
+                                                onClick={() =>
+                                                  setIsMobileOpen(false)
+                                                }
+                                                className="text-sm text-gray-600 transition-colors hover:text-black"
+                                              >
+                                                {style}
+                                              </Link>
+                                            ))}
+                                          </div>
+                                        </Motion.div>
+                                      )}
+                                    </AnimatePresence>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </Motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+
+                <div className="py-4">
                   <Link
                     to="/account"
                     onClick={() => setIsMobileOpen(false)}

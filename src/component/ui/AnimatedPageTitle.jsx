@@ -3,7 +3,7 @@ import { motion as Motion } from "framer-motion";
 
 const AnimatedPageTitle = ({ title, subtitle, className = "" }) => {
   return (
-    <div className="overflow-hidden">
+    <div className="z-10 overflow-hidden">
       <Motion.h2
         className={`text-6xl md:text-7xl font-semibold ${className}`}
         initial={{ y: 80, opacity: 0 }}
