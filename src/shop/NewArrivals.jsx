@@ -1,11 +1,14 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Card from "../component/ui/Card";
+import { ProductGridSkeleton } from "../component/ui/LoadingSkeletons";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
 import FilterDrawer from "../component/ui/FilterDrawer";
 import ListingToolbar from "../component/ui/ListingToolbar";
 import { emptyFilters, filterProducts } from "../data/listing";
-import { formatPrice, getProducts } from "../data/products";
+import { formatPrice, getProductImages } from "../lib/productHelpers";
+import { fetchProducts } from "../lib/apiClient";
+import { useAsync } from "../lib/useAsync";
 import { useCart } from "../context/CartContext";
 
 const NewArrivals = () => {
@@ -13,7 +16,12 @@ const NewArrivals = () => {
   const [appliedFilters, setAppliedFilters] = useState(emptyFilters);
   const navigate = useNavigate();
   const { addToCart } = useCart();
-  const baseProducts = getProducts().filter((product) => product.isNew);
+  const {
+    data: products,
+    loading,
+    error,
+  } = useAsync(() => fetchProducts({}), []);
+  const baseProducts = (products || []).filter((product) => product.isNew);
   const arrivals = filterProducts(baseProducts, appliedFilters);
 
   return (
@@ -32,36 +40,49 @@ const NewArrivals = () => {
         onFilter={() => setIsFilterOpen(true)}
         activeFilterCount={Object.values(appliedFilters).flat().length}
       />
-      <div className="product-grid">
-        {arrivals.map((item) => {
-          const images = item.variants[0]?.images || [];
-          return (
-            <div key={item.id} onClick={() => navigate(`/product/${item.id}`)}>
-              <Card
-                img={images[0]}
-                hoverImg={images[1] || images[0]}
-                alt={item.name}
-                title={item.name}
-                category={item.subcategory}
-                details={item.gender}
-                badge="NEW"
-                price={formatPrice(item.basePrice)}
-                onQuickAdd={() =>
-                  addToCart(
-                    {
-                      ...item,
-                      price: item.basePrice,
-                      image: images[0],
-                      hoverImage: images[1] || images[0],
-                    },
-                    1,
-                  )
-                }
-              />
-            </div>
-          );
-        })}
-      </div>
+      {error && (
+        <p className="px-4 text-sm text-red-600 md:px-12">
+          Couldn't load new arrivals.
+        </p>
+      )}
+      {loading ? (
+        <ProductGridSkeleton />
+      ) : (
+        <div className="product-grid">
+          {arrivals.map((item) => {
+            const images = getProductImages(item);
+            return (
+              <div
+                key={item.id}
+                onClick={() => navigate(`/product/${item.id}`)}
+              >
+                <Card
+                  img={images[0]}
+                  hoverImg={images[1] || images[0]}
+                  alt={item.name}
+                  title={item.name}
+                  product={item}
+                  category={item.subcategory}
+                  details={item.gender}
+                  badge="NEW"
+                  price={formatPrice(item.basePrice)}
+                  onQuickAdd={() =>
+                    addToCart(
+                      {
+                        ...item,
+                        price: item.basePrice,
+                        image: images[0],
+                        hoverImage: images[1] || images[0],
+                      },
+                      1,
+                    )
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
       <FilterDrawer
         isOpen={isFilterOpen}
         onClose={() => setIsFilterOpen(false)}

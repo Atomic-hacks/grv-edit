@@ -19,6 +19,7 @@ const FilterDrawer = ({
   appliedFilters,
   onApply,
   activeCategoryId,
+  categories = [],
   facetOptions = [],
   onFacetSelect,
 }) => {
@@ -117,6 +118,7 @@ const FilterDrawer = ({
                   products,
                   group.key,
                   activeCategoryId,
+                  categories,
                 );
                 const isExpanded = openGroup === group.key;
                 return (

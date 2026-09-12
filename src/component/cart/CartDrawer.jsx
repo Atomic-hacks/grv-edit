@@ -1,7 +1,10 @@
 import React, { useEffect } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion as Motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import { useCart } from "../../context/CartContext";
-import { formatPrice } from "../../data/products";
+import { formatPrice } from "../../lib/productHelpers";
+import LoadingImage from "../ui/LoadingImage";
+import NewsletterBanner from "../ui/NewsletterBanner";
 
 const overlayVariants = {
   hidden: { opacity: 0 },
@@ -47,13 +50,13 @@ const CartDrawer = () => {
   return (
     <AnimatePresence>
       {isCartOpen && (
-        <motion.div
+        <Motion.div
           className="fixed inset-0 z-50"
           initial="hidden"
           animate="visible"
           exit="hidden"
         >
-          <motion.button
+          <Motion.button
             type="button"
             aria-label="Close cart"
             className="absolute inset-0 bg-black/40"
@@ -61,7 +64,7 @@ const CartDrawer = () => {
             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
             onClick={closeCart}
           />
-          <motion.div
+          <Motion.div
             className="absolute right-0 top-0 h-full w-full sm:max-w-md md:max-w-lg bg-white text-black shadow-2xl flex flex-col"
             variants={drawerVariants}
             transition={{ type: "spring", stiffness: 320, damping: 32 }}
@@ -94,10 +97,12 @@ const CartDrawer = () => {
               {cartItems.map((item) => (
                 <div key={item.id} className="flex gap-4">
                   <div className="w-20 h-24 bg-gray-100 flex items-center justify-center overflow-hidden">
-                    <img
+                    <LoadingImage
                       src={item.product.image}
                       alt={item.product.name}
+                      width={240}
                       className="w-full h-full object-cover"
+                      wrapperClassName="w-full h-full"
                     />
                   </div>
                   <div className="flex-1">
@@ -147,20 +152,23 @@ const CartDrawer = () => {
               ))}
             </div>
 
+            <NewsletterBanner compact />
             <div className="border-t border-gray-200 px-6 py-5">
               <div className="flex items-center justify-between text-sm font-semibold">
                 <span>Subtotal</span>
                 <span>{formatPrice(subtotal)}</span>
               </div>
-              <button
-                type="button"
-                className="mt-4 w-full bg-black text-white py-3 text-sm font-medium hover:bg-gray-800 transition-colors"
+              <Link
+                to="/checkout"
+                onClick={closeCart}
+                className={`mt-4 block w-full bg-black py-3 text-center text-sm font-medium text-white transition-colors hover:bg-gray-800 ${cartItems.length === 0 ? "pointer-events-none opacity-50" : ""}`}
+                aria-disabled={cartItems.length === 0}
               >
-                Checkout
-              </button>
+                Proceed to Checkout
+              </Link>
             </div>
-          </motion.div>
-        </motion.div>
+          </Motion.div>
+        </Motion.div>
       )}
     </AnimatePresence>
   );

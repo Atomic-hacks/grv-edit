@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion as Motion } from "framer-motion";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useCart } from "../../context/CartContext";
+import { useAuth } from "../../context/AuthContext";
+import { searchProducts } from "../../lib/apiClient";
+import { getProductImages } from "../../lib/productHelpers";
+import LoadingImage from "../ui/LoadingImage";
 import {
   getNavigationPath,
   getNavigationRootPath,
@@ -16,6 +20,40 @@ const getFocusableElements = (container) => {
   if (!container) return [];
   return Array.from(container.querySelectorAll(focusableSelector));
 };
+
+const BagIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 7h12l-1 10H5L4 7Z" />
+    <path d="M7 7a3 3 0 0 1 6 0" />
+  </svg>
+);
+
+const ProfileIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="10" cy="6.5" r="3" />
+    <path d="M4.5 17a5.5 5.5 0 0 1 11 0" />
+  </svg>
+);
 
 const Chevron = ({ open }) => (
   <svg
@@ -35,29 +73,182 @@ const Chevron = ({ open }) => (
   </svg>
 );
 
+const SearchPanel = ({
+  searchQuery,
+  setSearchQuery,
+  searchLoading,
+  searchResults,
+  navigate,
+  onClose,
+  mobile = false,
+}) => (
+  <div
+    className={
+      mobile
+        ? "border-t border-gray-200 bg-white p-4"
+        : "absolute right-0 top-full z-50 mt-3 w-80 border border-gray-200 bg-white p-3 shadow-lg"
+    }
+  >
+    <div className="flex items-center gap-3">
+      <input
+        autoFocus
+        type="search"
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.target.value)}
+        placeholder="Search products, brands, SKU"
+        className="w-full border-b border-gray-300 px-1 py-2 text-sm outline-none focus:border-black"
+      />
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close search"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:text-black"
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          aria-hidden="true"
+        >
+          <path d="M10.5 3.5L3.5 10.5M3.5 3.5l7 7" />
+        </svg>
+      </button>
+    </div>
+    {searchQuery && (
+      <div className="mt-2 max-h-80 overflow-y-auto">
+        {searchLoading ? (
+          <div className="space-y-2 py-3" aria-hidden="true">
+            <div className="flex items-center gap-3">
+              <div className="h-14 w-11 animate-pulse bg-gray-200" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-2/3 animate-pulse bg-gray-200" />
+                <div className="h-3 w-1/3 animate-pulse bg-gray-200" />
+              </div>
+            </div>
+          </div>
+        ) : searchResults.length ? (
+          searchResults.map((product) => (
+            <button
+              key={product.id}
+              type="button"
+              onClick={() => {
+                navigate(`/product/${product.id}`);
+                onClose();
+              }}
+              className="flex w-full gap-3 border-b border-gray-100 py-2 text-left last:border-0"
+            >
+              <LoadingImage
+                src={getProductImages(product)[0]}
+                alt=""
+                width={300}
+                className="h-full w-full object-cover"
+                wrapperClassName="h-14 w-11 shrink-0"
+              />
+              <span className="min-w-0 text-xs">
+                <strong className="block truncate">{product.name}</strong>
+                <span className="text-gray-500">{product.brandName}</span>
+              </span>
+            </button>
+          ))
+        ) : (
+          <p className="py-3 text-xs text-gray-500">No matching products.</p>
+        )}
+      </div>
+    )}
+  </div>
+);
+
 const Navbar = () => {
   const [openMegaMenu, setOpenMegaMenu] = useState(null);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [openMobileDept, setOpenMobileDept] = useState(null);
   const [openMobileSection, setOpenMobileSection] = useState(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
   const { itemCount, openCart } = useCart();
+  const { session, appUser } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const panelRef = useRef(null);
+  const hasAccountOnThisBrowser =
+    typeof window !== "undefined" &&
+    window.localStorage.getItem("grv_has_account") === "true";
+  const accountPath = session
+    ? "/account"
+    : hasAccountOnThisBrowser
+      ? "/login"
+      : "/signup";
+  const accountName =
+    appUser?.name ||
+    session?.user_metadata?.name ||
+    session?.user?.email ||
+    "Account";
+  const accountLinks = [
+    ["Orders and returns", "/account?section=orders"],
+    ["Address book", "/account?section=addresses"],
+    ["Details and security", "/account?section=details"],
+  ];
 
   const navLinks = [
     ...navigationDepartments.map((department) => ({
-      name: department.name,
+      name: department.label || department.name,
+      departmentName: department.name,
       href: getNavigationRootPath(department.name),
       sections: getNavigationSectionsForDepartment(department.name),
       megaMenu: true,
     })),
+    { name: "Shop By", href: "/shop-by" },
     { name: "Brands", href: "/brands" },
-    { name: "Who We Are", href: "/brand" },
   ];
 
   useEffect(() => {
     setIsMobileOpen(false);
+    setIsSearchOpen(false);
+    setIsAccountOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!isAccountOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setIsAccountOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isAccountOpen]);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setSearchLoading(true);
+    const timeoutId = setTimeout(() => {
+      searchProducts(query)
+        .then((results) => {
+          if (!cancelled) setSearchResults(results);
+        })
+        .catch(() => {
+          if (!cancelled) setSearchResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearchLoading(false);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     if (!isMobileOpen) {
@@ -117,9 +308,9 @@ const Navbar = () => {
 
   return (
     <nav className="relative w-full border-b border-gray-200 bg-white">
-      <div className="mx-auto flex items-center justify-between px-4 md:px-16 py-2">
+      <div className="mx-auto flex items-center justify-between px-4 lg:px-6 xl:px-16 py-2">
         {/* Left Navigation Links - Desktop */}
-        <div className="hidden md:flex items-center gap-8">
+        <div className="hidden lg:flex items-center gap-3 xl:gap-8">
           {navLinks.map((link) => (
             <div
               key={link.name}
@@ -129,7 +320,7 @@ const Navbar = () => {
             >
               <Link
                 to={link.href}
-                className="group relative z-9999 font-medium text-black transition-colors hover:text-gray-600"
+                className="group relative z-50 whitespace-nowrap text-sm xl:text-base font-medium text-black transition-colors hover:text-gray-600"
               >
                 {link.name}
                 <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
@@ -149,7 +340,10 @@ const Navbar = () => {
                         {link.sections.map((section) => (
                           <div key={section.name}>
                             <Link
-                              to={getNavigationPath(link.name, section.name)}
+                              to={getNavigationPath(
+                                link.departmentName || link.name,
+                                section.name,
+                              )}
                               className="text-sm font-semibold uppercase tracking-wide text-black"
                             >
                               {section.name}
@@ -159,7 +353,7 @@ const Navbar = () => {
                                 <Link
                                   key={style}
                                   to={getNavigationPath(
-                                    link.name,
+                                    link.departmentName || link.name,
                                     section.name,
                                     style,
                                   )}
@@ -180,61 +374,140 @@ const Navbar = () => {
           ))}
         </div>
 
-        {/* Center log - Desktop */}
+        {/* Center logo - Desktop */}
         <Link
           to="/"
-          className="hidden md:block absolute left-1/2 -translate-x-1/2"
+          className="hidden lg:block absolute left-1/2 -translate-x-1/2"
         >
           <span>
-            <img className="h-12 w-26" src="/img/log.png" alt="GRV" />
+            <img className="h-10 w-auto xl:h-12" src="/img/log.png" alt="GRV" />
           </span>
         </Link>
 
-        {/* Mobile log */}
-        <Link to="/" className="md:hidden">
+        {/* Mobile logo */}
+        <Link to="/" className="lg:hidden">
           <span className="text-2xl font-bold tracking-tight">
             <img src="/img/log.png" alt="GRV" className="h-12 w-26" />
           </span>
         </Link>
 
         {/* Right Side Icons - Desktop */}
-        <div className="hidden md:flex items-center gap-6">
-          <button className="group relative p-1 transition-transform hover:scale-110">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              className="transition-colors"
+        <div className="hidden lg:flex items-center gap-3 xl:gap-6">
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="Search products"
+              aria-expanded={isSearchOpen}
+              onClick={() => setIsSearchOpen((open) => !open)}
+              className="group relative p-1 transition-transform hover:scale-110"
             >
-              <circle cx="8.5" cy="8.5" r="5.5" />
-              <path d="M12.5 12.5l4 4" strokeLinecap="round" />
-            </svg>
-          </button>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                className="transition-colors"
+              >
+                <circle cx="8.5" cy="8.5" r="5.5" />
+                <path d="M12.5 12.5l4 4" strokeLinecap="round" />
+              </svg>
+            </button>
+            {isSearchOpen && (
+              <SearchPanel
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                searchLoading={searchLoading}
+                searchResults={searchResults}
+                navigate={navigate}
+                onClose={() => {
+                  setIsSearchOpen(false);
+                  setSearchQuery("");
+                }}
+              />
+            )}
+          </div>
           <Link
             to="/contact"
-            className="group relative text-sm font-medium text-black transition-colors hover:text-gray-600"
+            className="group relative whitespace-nowrap text-sm font-medium text-black transition-colors hover:text-gray-600"
           >
             contact
             <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
-          </Link>{" "}
+          </Link>
           <Link
             to="/journal"
-            className="group relative text-sm font-medium text-black transition-colors hover:text-gray-600"
+            className="group relative hidden whitespace-nowrap text-sm font-medium text-black transition-colors hover:text-gray-600 xl:inline"
           >
             Journal
             <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
           </Link>
+          {session ? (
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Open account menu"
+                aria-expanded={isAccountOpen}
+                onClick={() => setIsAccountOpen((open) => !open)}
+                className="p-1 text-black transition-colors hover:text-gray-600"
+              >
+                <ProfileIcon />
+              </button>
+              {isAccountOpen && (
+                <div className="absolute right-0 top-full z-50 mt-3 w-80 border border-gray-200 bg-white p-6">
+                  <div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
+                    <h2 className="max-w-[14rem] text-2xl font-semibold leading-tight">
+                      {accountName}
+                    </h2>
+                    <button
+                      type="button"
+                      aria-label="Close account menu"
+                      onClick={() => setIsAccountOpen(false)}
+                      className="text-2xl leading-none text-gray-500 hover:text-black"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <nav className="divide-y divide-gray-200">
+                    {accountLinks.map(([label, href]) => (
+                      <Link
+                        key={href}
+                        to={href}
+                        onClick={() => setIsAccountOpen(false)}
+                        className="block py-4 text-sm font-medium hover:underline"
+                      >
+                        {label}
+                      </Link>
+                    ))}
+                  </nav>
+                  <Link
+                    to="/account?section=orders"
+                    onClick={() => setIsAccountOpen(false)}
+                    className="mt-5 block border border-black px-4 py-3 text-center text-sm font-semibold transition-colors hover:bg-black hover:text-white"
+                  >
+                    My Account
+                  </Link>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              to={accountPath}
+              aria-label={accountPath === "/login" ? "Log in" : "Sign up"}
+              className="group relative whitespace-nowrap text-sm font-medium text-black transition-colors hover:text-gray-600"
+            >
+              {accountPath === "/login" ? "Login" : "Sign Up"}
+              <span className="absolute bottom-0 left-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
+            </Link>
+          )}
           <Link
-            to="/account"
-            className="group relative text-sm font-medium text-black transition-colors hover:text-gray-600"
+            to="/wishlist"
+            className="group relative hidden whitespace-nowrap text-sm font-medium text-black transition-colors hover:text-gray-600 xl:inline"
           >
-            Account
-            <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
+            Wishlist
+            <span className="absolute bottom-0 left-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
           </Link>
-          <button className="transition-transform hover:scale-110">
+          <button className="shrink-0 transition-transform hover:scale-110">
             <img
               src="/img/flag.png"
               alt="US"
@@ -246,21 +519,47 @@ const Navbar = () => {
           <button
             type="button"
             onClick={openCart}
-            className="group relative text-sm font-medium text-black transition-colors hover:text-gray-600"
+            aria-label={`Open cart (${itemCount} items)`}
+            className="flex shrink-0 items-center gap-1 text-sm font-medium text-black transition-colors hover:text-gray-600"
           >
-            CART ({itemCount})
-            <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
+            <BagIcon />
+            <span className="text-xs">{itemCount}</span>
           </button>
         </div>
 
-        {/* Mobile Controls */}
-        <div className="flex items-center gap-4 md:hidden">
+        {/* Mobile/Tablet Controls */}
+        <div className="flex items-center gap-4 lg:hidden">
+          <button
+            type="button"
+            onClick={() => {
+              setIsMobileOpen(false);
+              setIsSearchOpen((open) => !open);
+            }}
+            aria-label="Search products"
+            aria-expanded={isSearchOpen}
+            className="flex h-10 w-10 items-center justify-center text-black"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden="true"
+            >
+              <circle cx="8.5" cy="8.5" r="5.5" />
+              <path d="M12.5 12.5l4 4" strokeLinecap="round" />
+            </svg>
+          </button>
           <button
             type="button"
             onClick={openCart}
-            className="text-xs font-semibold tracking-wide text-black"
+            aria-label={`Open cart (${itemCount} items)`}
+            className="flex items-center gap-1 text-xs font-semibold tracking-wide text-black"
           >
-            CART ({itemCount})
+            <BagIcon />
+            <span>{itemCount}</span>
           </button>
           <button
             type="button"
@@ -284,6 +583,23 @@ const Navbar = () => {
           </button>
         </div>
       </div>
+
+      {isSearchOpen && (
+        <div className="lg:hidden">
+          <SearchPanel
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            searchLoading={searchLoading}
+            searchResults={searchResults}
+            navigate={navigate}
+            mobile
+            onClose={() => {
+              setIsSearchOpen(false);
+              setSearchQuery("");
+            }}
+          />
+        </div>
+      )}
 
       <AnimatePresence>
         {isMobileOpen && (
@@ -394,7 +710,7 @@ const Navbar = () => {
                                     <div className="flex items-center justify-between">
                                       <Link
                                         to={getNavigationPath(
-                                          link.name,
+                                          link.departmentName || link.name,
                                           section.name,
                                         )}
                                         onClick={() => setIsMobileOpen(false)}
@@ -435,7 +751,8 @@ const Navbar = () => {
                                               <Link
                                                 key={style}
                                                 to={getNavigationPath(
-                                                  link.name,
+                                                  link.departmentName ||
+                                                    link.name,
                                                   section.name,
                                                   style,
                                                 )}
@@ -464,11 +781,31 @@ const Navbar = () => {
 
                 <div className="py-4">
                   <Link
-                    to="/account"
+                    to={accountPath}
+                    aria-label={
+                      session
+                        ? "Account"
+                        : accountPath === "/login"
+                          ? "Log in"
+                          : "Sign up"
+                    }
                     onClick={() => setIsMobileOpen(false)}
-                    className="text-sm font-semibold text-black"
+                    className="flex items-center text-sm font-semibold text-black"
                   >
-                    Account
+                    {session ? (
+                      <ProfileIcon />
+                    ) : accountPath === "/login" ? (
+                      "Login"
+                    ) : (
+                      "Sign Up"
+                    )}
+                  </Link>
+                  <Link
+                    to="/wishlist"
+                    onClick={() => setIsMobileOpen(false)}
+                    className="ml-6 text-sm font-semibold text-black"
+                  >
+                    Wishlist
                   </Link>
                 </div>
               </nav>

@@ -3,25 +3,27 @@
 import React, { useEffect, useState } from "react";
 import Button from "./ui/special-button";
 import SpotifyPlayer from "./ui/spotify-player";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import AnimatedPageTitle from "./ui/AnimatedPageTitle";
 
 const Hero = () => {
-  const [time, setTime] = useState(null);
+  const [time, setTime] = useState("");
+  const navigate = useNavigate();
 
   useEffect(() => {
-    // Mock API data (for demo)
-    const mockData = {
-      dateTime: "2025-11-07T12:45:32",
-      timeZone: "London",
+    const updateTime = () => {
+      setTime(
+        new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Africa/Lagos",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).format(new Date()),
+      );
     };
-
-    const timer = setTimeout(() => {
-      console.log("✅ Using mock time data:", mockData);
-      setTime(mockData);
-    }, 500);
-
-    return () => clearTimeout(timer); // Clean up timeout
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
   }, []);
 
   return (
@@ -47,15 +49,16 @@ const Hero = () => {
         />
 
         <ul className="space-y-2">
-          {["Shop", "Accessories", "Brand", "Journal", "Contact"].map(
+          {["Shop", "Departments", "Brands", "About Us", "Contact"].map(
             (title) => (
-              <Link
-                to={`/${title}`}
+              <Button
                 key={title}
-                className=" flex flex-col items-center justify-center gap-2"
-              >
-                <Button title={title} />
-              </Link>
+                title={title}
+                onPress={() =>
+                  navigate(title === "About Us" ? "/about" : `/${title}`)
+                }
+                containerClass="flex flex-col items-center justify-center gap-2"
+              />
             ),
           )}
         </ul>
@@ -64,12 +67,7 @@ const Hero = () => {
       {/* Time Display */}
       {time && (
         <div className="absolute bottom-0 z-30 flex items-center justify-center w-full py-4 text-xs md:text-sm">
-          <h2 className="font-heading mr-2">{time.timeZone}:</h2>
-          <p>
-            {new Date(time.dateTime).toLocaleTimeString("en-GB", {
-              hour12: false,
-            })}
-          </p>
+          <p>Lagos {time}</p>
         </div>
       )}
 

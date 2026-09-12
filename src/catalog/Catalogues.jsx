@@ -2,10 +2,12 @@ import React from "react";
 import { Link } from "react-router-dom";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
 import RevealImage from "../component/ui/RevealImage";
+import { ProductGridSkeleton } from "../component/ui/LoadingSkeletons";
 import CtaButton from "../component/ui/CtaButton";
 import HorizontalCarousel from "../component/ui/HorizontalCarousel";
-import { brands } from "../data/brands";
-import { getProducts, formatPrice } from "../data/products";
+import { fetchBrands, fetchProducts } from "../lib/apiClient";
+import { useAsync } from "../lib/useAsync";
+import { formatPrice } from "../lib/productHelpers";
 
 const SECTION = "py-16 md:py-24";
 const SECTION_HEAD = "mb-6 md:mb-10";
@@ -65,7 +67,13 @@ const CatalogueTile = ({ name, image, logo, path }) => (
 );
 
 const Catalogues = () => {
-  const newArrivals = getProducts({}).filter((product) => product.isNew);
+  const {
+    data: products,
+    loading,
+    error,
+  } = useAsync(() => fetchProducts({}), []);
+  const { data: brands } = useAsync(() => fetchBrands(), []);
+  const newArrivals = (products || []).filter((product) => product.isNew);
 
   return (
     <main className="min-h-screen bg-white text-black">
@@ -91,29 +99,36 @@ const Catalogues = () => {
             </div>
             <CtaButton to="/shop/new-arrivals" title="VIEW ALL" />
           </div>
-          <HorizontalCarousel>
-            {newArrivals.map((product) => {
-              const images = product.variants?.[0]?.images || [];
-              return (
-                <Link
-                  key={product.id}
-                  to={`/product/${product.id}`}
-                  className="group relative block"
-                >
-                  <RevealImage
-                    src={images[0]}
-                    alt={product.name}
-                    className="aspect-3/4 w-full transition-opacity group-hover:opacity-80"
-                    revealDuration={0.8}
-                  />
-                  <div className="absolute inset-x-4 bottom-4 flex items-end justify-between text-sm font-semibold text-white">
-                    <span>{product.name}</span>
-                    <span>{formatPrice(product.basePrice)}</span>
-                  </div>
-                </Link>
-              );
-            })}
-          </HorizontalCarousel>
+          {error && (
+            <p className="text-sm text-red-600">Couldn't load new arrivals.</p>
+          )}
+          {loading ? (
+            <ProductGridSkeleton count={4} />
+          ) : (
+            <HorizontalCarousel>
+              {newArrivals.map((product) => {
+                const images = product.variants?.[0]?.images || [];
+                return (
+                  <Link
+                    key={product.id}
+                    to={`/product/${product.id}`}
+                    className="group relative block"
+                  >
+                    <RevealImage
+                      src={images[0]}
+                      alt={product.name}
+                      className="aspect-3/4 w-full transition-opacity group-hover:opacity-80"
+                      revealDuration={0.8}
+                    />
+                    <div className="absolute inset-x-4 bottom-4 flex items-end justify-between text-sm font-semibold text-white">
+                      <span>{product.name}</span>
+                      <span>{formatPrice(product.basePrice)}</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </HorizontalCarousel>
+          )}
         </section>
 
         <section className={SECTION}>
@@ -126,7 +141,7 @@ const Catalogues = () => {
             <CtaButton to="/brands" title="VIEW ALL BRANDS" />
           </div>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-4">
-            {brands.map((brand) => (
+            {(brands || []).map((brand) => (
               <CatalogueTile
                 key={brand.id}
                 name={brand.name}

@@ -34,6 +34,7 @@ const Brand = () => {
         <RevealImage
           src="/img/goth-boy.jpg"
           alt="GRV founder"
+          loading="eager"
           className="absolute inset-0 h-full w-full"
           revealDuration={2.4}
         />

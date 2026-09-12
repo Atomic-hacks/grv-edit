@@ -66,6 +66,9 @@ export const brands = [
   },
 ];
 
+const brandName = (brandId) =>
+  brands.find((brand) => brand.id === brandId)?.name || brandId;
+
 const variant = (id, color, size, sku, images) => ({
   id,
   color,
@@ -417,6 +420,60 @@ export const products = [
       ]),
     ],
   },
+  {
+    id: "prd-020",
+    name: "Training Short",
+    brandId: "common-form",
+    gender: "unisex",
+    categoryId: "athletics",
+    subcategory: "Activewear",
+    styleTags: ["Training"],
+    description: "A lightweight short built for warm-ups and hard sessions.",
+    basePrice: 42,
+    isNew: true,
+    variants: [
+      variant("prd-020-black", "Black", "M", "CF-ACTIVE-BK", [
+        "/img/pants.avif",
+        "/img/pantsfit.avif",
+      ]),
+    ],
+  },
+  {
+    id: "prd-021",
+    name: "Match Boot",
+    brandId: "northline",
+    gender: "unisex",
+    categoryId: "athletics",
+    subcategory: "Football Boots",
+    styleTags: ["Football"],
+    description: "A responsive boot for quick movement on the pitch.",
+    basePrice: 96,
+    isNew: false,
+    variants: [
+      variant("prd-021-black", "Black", "9", "NL-BOOT-001", [
+        "/img/shoe5.jpg",
+        "/img/shoe7.jpg",
+      ]),
+    ],
+  },
+  {
+    id: "prd-022",
+    name: "Track Jacket",
+    brandId: "atelier-zero",
+    gender: "unisex",
+    categoryId: "athletics",
+    subcategory: "Track Jackets",
+    styleTags: ["Training"],
+    description: "A light layer for the walk to training and the way back.",
+    basePrice: 74,
+    isNew: false,
+    variants: [
+      variant("prd-022-grey", "Grey", "M", "AZ-TRACK-GY", [
+        "/img/hoodie1.avif",
+        "/img/fit1.avif",
+      ]),
+    ],
+  },
 ];
 
 export const getCategoryById = (id) =>
@@ -438,6 +495,7 @@ export const getProducts = ({
   subcategory,
   styleTag,
   brandId,
+  query,
 } = {}) =>
   products.filter((product) => {
     if (gender && product.gender !== gender) return false;
@@ -455,7 +513,18 @@ export const getProducts = ({
     )
       return false;
     if (brandId && product.brandId !== brandId) return false;
+    if (query) {
+      const value = query.toLowerCase();
+      const matchesProduct = [
+        product.name,
+        brandName(product.brandId),
+        ...product.variants.map((item) => item.sku),
+      ].some((field) => field.toLowerCase().includes(value));
+      if (!matchesProduct) return false;
+    }
     return true;
   });
+
+export const searchProducts = (query) => getProducts({ query }).slice(0, 6);
 
 export const formatPrice = (value) => `$${value.toFixed(2)}`;

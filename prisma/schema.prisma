@@ -8,11 +8,162 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-enum Gender {
-  men
-  women
-  unisex
-  kids
+model User {
+  id              String          @id @db.Uuid
+  email           String          @unique
+  name            String?
+  role            Role            @default(CUSTOMER)
+  active          Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  orders          Order[]
+  wishlists       Wishlist[]
+  waitlistEntries WaitlistEntry[]
+  notifications   Notification[]
+  savedAddresses  SavedAddress[]
+  carts           Cart[]
+}
+
+model SavedAddress {
+  id        String   @id @default(cuid())
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  label     String
+  fullName  String
+  phone     String
+  address   String
+  city      String
+  state     String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Cart {
+  id                    String     @id @default(cuid())
+  userId                String     @unique @db.Uuid
+  user                  User       @relation(fields: [userId], references: [id])
+  items                 CartItem[]
+  updatedAt             DateTime   @updatedAt
+  abandonedReminderSent Boolean    @default(false)
+}
+
+model CartItem {
+  id        String @id @default(cuid())
+  cartId    String
+  cart      Cart   @relation(fields: [cartId], references: [id])
+  productId String
+  variantId String
+  quantity  Int
+}
+
+model Order {
+  id                String      @id @default(cuid())
+  userId            String      @db.Uuid
+  user             User        @relation(fields: [userId], references: [id])
+  status            OrderStatus @default(PENDING)
+  total             Float
+  paystackReference String      @unique
+  fullName          String
+  phone             String
+  address           String
+  city              String
+  state             String
+  items             OrderItem[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+model OrderItem {
+  id              String @id @default(cuid())
+  orderId         String
+  order           Order  @relation(fields: [orderId], references: [id])
+  productId       String
+  variantId       String
+  quantity        Int
+  priceAtPurchase Float
+}
+
+model Wishlist {
+  id        String   @id @default(cuid())
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
+  reminderSent Boolean @default(false)
+
+  @@unique([userId, productId])
+}
+
+model WaitlistEntry {
+  id        String         @id @default(cuid())
+  userId    String         @db.Uuid
+  user      User           @relation(fields: [userId], references: [id])
+  variantId String
+  variant   Variant        @relation(fields: [variantId], references: [id])
+  status    WaitlistStatus @default(WAITING)
+  createdAt DateTime       @default(now())
+  @@unique([userId, variantId])
+}
+
+enum WaitlistStatus {
+  WAITING
+  NOTIFIED
+  FULFILLED
+}
+
+model Notification {
+  id        String             @id @default(cuid())
+  userId    String             @db.Uuid
+  user      User               @relation(fields: [userId], references: [id])
+  productId String
+  type      NotificationType
+  message   String
+  sent      Boolean            @default(false)
+  createdAt DateTime           @default(now())
+}
+
+enum NotificationType {
+  WISHLIST_SALE
+  WISHLIST_LOW_STOCK
+  WAITLIST_RESTOCK
+}
+
+model JournalPost {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  excerpt     String
+  content     String
+  coverImage  String?
+  published   Boolean  @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ContactSubmission {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
 }
 
 model Brand {
@@ -25,51 +176,117 @@ model Brand {
 }
 
 model Category {
-  id        String             @id
-  name      String
-  styleTags CategoryStyleTag[]
-  products  Product[]
+  id            String             @id
+  name          String
+  styleTags     CategoryStyleTag[]
+  filterTypes   CategoryFilterType[]
+  subcategories Subcategory[]
+  products      Product[]
+}
+
+model FilterType {
+  id         String               @id @default(cuid())
+  name       String
+  slug       String               @unique
+  tags       Tag[]
+  categories CategoryFilterType[]
+}
+
+model CategoryFilterType {
+  categoryId   String
+  filterTypeId String
+  category     Category   @relation(fields: [categoryId], references: [id])
+  filterType   FilterType @relation(fields: [filterTypeId], references: [id])
+
+  @@id([categoryId, filterTypeId])
 }
 
 model CategoryStyleTag {
-  id         String   @id
+  id         String    @id
   name       String
   categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
-  products   Product[]
+  category   Category  @relation(fields: [categoryId], references: [id])
+  products   Product[] @relation("CategoryStyleTagToProduct")
 
   @@unique([categoryId, name])
 }
 
+model Subcategory {
+  id         String    @id @default(cuid())
+  name       String
+  slug       String    @unique
+  categoryId String
+  category   Category  @relation(fields: [categoryId], references: [id])
+  products   Product[]
+}
+
+model Tag {
+  id           String     @id @default(cuid())
+  name         String
+  slug         String     @unique
+  filterTypeId String
+  filterType   FilterType @relation(fields: [filterTypeId], references: [id])
+  products     ProductTag[]
+}
+
+model ProductTag {
+  productId String
+  tagId     String
+  product   Product @relation(fields: [productId], references: [id])
+  tag       Tag     @relation(fields: [tagId], references: [id])
+
+  @@id([productId, tagId])
+}
+
 model Product {
-  id          String             @id
-  name        String
-  gender      Gender
-  categoryId  String
-  subcategory String
-  description String
-  basePrice   Float
-  isNew       Boolean            @default(false)
-  brandId     String
-  brand       Brand             @relation(fields: [brandId], references: [id])
-  category    Category           @relation(fields: [categoryId], references: [id])
-  styleTags   CategoryStyleTag[]
-  variants    Variant[]
+  id            String             @id
+  name          String
+  gender        Gender
+  categoryId    String
+  subcategory   String
+  subcategoryId String?
+  description   String
+  basePrice     Float
+  imageUrl      String?
+  isNew         Boolean            @default(false)
+  brandId       String
+  brand         Brand              @relation(fields: [brandId], references: [id])
+  category      Category           @relation(fields: [categoryId], references: [id])
+  subcategoryRef Subcategory?      @relation(fields: [subcategoryId], references: [id])
+  variants      Variant[]
+  tags          ProductTag[]
+  wishlists     Wishlist[]
+  styleTags     CategoryStyleTag[] @relation("CategoryStyleTagToProduct")
 
   @@index([gender])
   @@index([categoryId])
   @@index([subcategory])
+  @@index([subcategoryId])
   @@index([brandId])
 }
 
 model Variant {
-  id        String  @id
+  id        String   @id
   color     String
   size      String
-  sku       String  @unique
+  stock     Int      @default(10)
+  sku       String   @unique
   images    String[]
   productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  waitlistEntries WaitlistEntry[]
 
   @@index([productId])
+}
+
+enum Gender {
+  men
+  women
+  unisex
+  kids
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
 }

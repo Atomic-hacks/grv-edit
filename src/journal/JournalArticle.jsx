@@ -1,29 +1,110 @@
-import React from "react";
-import { Link, useParams, Navigate } from "react-router-dom";
-import {
-  getJournalArticleBySlug,
-  journalArticles,
-} from "../data/Journal";
+import React, { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { motion as Motion } from "framer-motion";
+import LoadingImage from "../component/ui/LoadingImage";
+import Spinner from "../component/ui/Spinner";
+import FadeIn from "../component/ui/FadeIn";
+
+const formatDate = (date) =>
+  date ? new Date(date).toLocaleDateString() : "Unpublished";
 
 const JournalArticle = () => {
   const { slug } = useParams();
-  const article = getJournalArticleBySlug(slug);
+  const [post, setPost] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState("");
 
-  if (!article) return <Navigate to="/journal" replace />;
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setPost(null);
+    setNotFound(false);
+    setError("");
 
-  const moreArticles = journalArticles
-    .filter((item) => item.slug !== article.slug)
-    .slice(0, 3);
+    fetch(`/api/journal/${encodeURIComponent(slug)}`)
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (response.status === 404) {
+          if (!cancelled) setNotFound(true);
+          return null;
+        }
+        if (!response.ok) throw new Error(body.error || "Unable to load post");
+        return body;
+      })
+      .then((data) => {
+        if (!cancelled && data) setPost(data);
+      })
+      .catch((loadError) => {
+        if (!cancelled) setError(loadError.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  if (loading) {
+    return (
+      <main className="w-full bg-white px-6 py-24">
+        <Spinner
+          label="Loading journal post"
+          className="text-sm text-gray-500"
+        />
+      </main>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <main className="w-full bg-white px-6 py-24 text-center">
+        <h1 className="text-3xl font-semibold">Journal post not found</h1>
+        <p className="mt-3 text-sm text-gray-600">
+          This post may have been unpublished or removed.
+        </p>
+        <Link to="/journal" className="mt-6 inline-block text-sm underline">
+          Back to Journal
+        </Link>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="w-full bg-white px-6 py-24 text-center">
+        <h1 className="text-3xl font-semibold">Unable to load journal post</h1>
+        <p role="alert" className="mt-3 text-sm text-red-700">
+          {error}
+        </p>
+        <Link to="/journal" className="mt-6 inline-block text-sm underline">
+          Back to Journal
+        </Link>
+      </main>
+    );
+  }
 
   return (
     <main className="w-full bg-white pb-24">
-      <div className="relative h-[60vh] w-full overflow-hidden md:h-[70vh]">
-        <img
-          src={article.image}
-          alt={article.alt}
-          className="h-full w-full object-cover"
-        />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+      <Motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: "easeOut" }}
+        className="relative h-[60vh] w-full overflow-hidden bg-gray-100 md:h-[70vh]"
+      >
+        {post.coverImage && (
+          <LoadingImage
+            src={post.coverImage}
+            alt=""
+            width={1200}
+            loading="eager"
+            wrapperClassName="h-full w-full"
+            className="h-full w-full object-cover"
+          />
+        )}
+        <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/60 via-black/10 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 px-6 pb-10 text-white md:px-16 md:pb-14">
           <Link
             to="/journal"
@@ -32,43 +113,20 @@ const JournalArticle = () => {
             ← Journal
           </Link>
           <h1 className="max-w-2xl text-3xl font-semibold md:text-5xl">
-            {article.title}
+            {post.title}
           </h1>
-          <p className="mt-3 text-sm text-white/80">{article.date}</p>
-        </div>
-      </div>
-
-      <article className="mx-auto max-w-2xl px-6 py-14 md:px-0">
-        {article.body.map((paragraph, index) => (
-          <p
-            key={index}
-            className="mb-6 text-base leading-relaxed text-gray-700"
-          >
-            {paragraph}
+          <p className="mt-3 text-sm text-white/80">
+            {formatDate(post.publishedAt)}
           </p>
-        ))}
-      </article>
-
-      <section className="px-4 md:px-32">
-        <h2 className="mb-8 text-2xl font-semibold">More from the Journal</h2>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          {moreArticles.map((item) => (
-            <Link key={item.slug} to={`/journal/${item.slug}`} className="group block">
-              <div className="relative overflow-hidden bg-gray-100 aspect-[4/3]">
-                <img
-                  src={item.image}
-                  alt={item.alt}
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-              </div>
-              <h3 className="mt-4 text-base font-semibold text-black">
-                {item.title}
-              </h3>
-              <p className="mt-1 text-sm text-gray-600">{item.date}</p>
-            </Link>
-          ))}
         </div>
-      </section>
+      </Motion.div>
+
+      <FadeIn
+        className="mx-auto max-w-2xl whitespace-pre-wrap px-6 py-14 text-base leading-relaxed text-gray-700 md:px-0"
+        delay={0.12}
+      >
+        {post.content}
+      </FadeIn>
     </main>
   );
 };

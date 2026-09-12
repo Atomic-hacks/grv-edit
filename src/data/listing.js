@@ -1,5 +1,3 @@
-import { categories, getProducts } from "./products";
-
 export const filterGroups = [
   { key: "gender", label: "Gender" },
   { key: "categoryId", label: "Category" },
@@ -14,7 +12,10 @@ export const emptyFilters = () =>
     return filters;
   }, {});
 
-export const getFilterValues = (items, key, categoryId) => {
+// categories is optional — only needed by callers that want the styleTags
+// branch narrowed to one category's declared vocabulary (pass the fetched
+// /api/categories list; no more static import).
+export const getFilterValues = (items, key, categoryId, categories = []) => {
   if (key === "styleTags" && categoryId) {
     return (
       categories.find((category) => category.id === categoryId)?.styleTags || []
@@ -44,5 +45,3 @@ export const filterProducts = (items, filters) =>
       );
     }),
   );
-
-export { getProducts };

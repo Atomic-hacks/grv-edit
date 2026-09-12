@@ -1,17 +1,32 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion as Motion, AnimatePresence } from "framer-motion";
+import { getOptimizedImageUrl } from "../../lib/imageHelpers";
 
 const SWIPE_THRESHOLD = 60;
 
 const ProductImageSlider = ({ images = [], alt = "" }) => {
   const [index, setIndex] = useState(0);
   const [direction, setDirection] = useState(0);
+  const [loadedImages, setLoadedImages] = useState({});
+  const imageRef = useRef(null);
+  const imageSetKey = images.join("|");
 
   // Reset to the first image when the image set changes (e.g. new variant selected)
   useEffect(() => {
     setIndex(0);
     setDirection(0);
-  }, [images]);
+    setLoadedImages({});
+  }, [imageSetKey]);
+
+  const activeImage = images[index];
+  const isLoaded = loadedImages[activeImage];
+
+  useEffect(() => {
+    const image = imageRef.current;
+    if (image?.complete && image.naturalWidth > 0) {
+      setLoadedImages((current) => ({ ...current, [activeImage]: true }));
+    }
+  }, [activeImage]);
 
   if (images.length === 0) return null;
 
@@ -31,11 +46,21 @@ const ProductImageSlider = ({ images = [], alt = "" }) => {
 
   return (
     <div className="relative h-full w-full select-none overflow-hidden bg-gray-50">
+      {!isLoaded && (
+        <div className="absolute inset-0 z-20 animate-pulse bg-gray-200" />
+      )}
       <AnimatePresence initial={false} custom={direction} mode="popLayout">
         <Motion.img
-          key={images[index]}
-          src={images[index]}
+          ref={imageRef}
+          key={activeImage}
+          src={getOptimizedImageUrl(activeImage, 1200)}
           alt={alt}
+          onLoad={() =>
+            setLoadedImages((current) => ({ ...current, [activeImage]: true }))
+          }
+          onError={() =>
+            setLoadedImages((current) => ({ ...current, [activeImage]: true }))
+          }
           custom={direction}
           drag="x"
           dragConstraints={{ left: 0, right: 0 }}
@@ -45,7 +70,10 @@ const ProductImageSlider = ({ images = [], alt = "" }) => {
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: direction >= 0 ? "-100%" : "100%", opacity: 0 }}
           transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute inset-0 h-full w-full cursor-grab object-cover active:cursor-grabbing"
+          className={`absolute inset-0 h-full w-full cursor-grab object-cover transition-opacity duration-300 active:cursor-grabbing ${
+            isLoaded ? "opacity-100" : "opacity-0"
+          }`}
+          loading={index === 0 ? "eager" : "lazy"}
           draggable={false}
         />
       </AnimatePresence>
@@ -59,7 +87,15 @@ const ProductImageSlider = ({ images = [], alt = "" }) => {
             aria-label="Previous image"
             className="absolute left-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-black/30 text-white backdrop-blur-sm transition-opacity disabled:opacity-0"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            >
               <path d="M9 2.5L4 7l5 4.5" />
             </svg>
           </button>
@@ -70,7 +106,15 @@ const ProductImageSlider = ({ images = [], alt = "" }) => {
             aria-label="Next image"
             className="absolute right-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-black/30 text-white backdrop-blur-sm transition-opacity disabled:opacity-0"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            >
               <path d="M5 2.5l5 4.5-5 4.5" />
             </svg>
           </button>

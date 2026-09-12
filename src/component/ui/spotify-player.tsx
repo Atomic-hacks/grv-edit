@@ -9,7 +9,7 @@ const SpotifyPlayer = () => {
         h-[120px] sm:h-[130px] md:h-[140px] lg:h-[152px]
         rounded-xl
       "
-      src="https://open.spotify.com/embed/track/7cFLFmj3fLV5wxhcFfol7u?utm_source=generator&theme=0"
+      src="https://open.spotify.com/embed/playlist/37i9dQZF1DX5ll2DhWOB1F?utm_source=generator&si=fa5450abac4e4545"
       frameBorder="0"
       allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
       loading="lazy"

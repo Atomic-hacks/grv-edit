@@ -1,43 +1,54 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion as Motion } from "framer-motion";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
-import { featuredArticles, regularArticles } from "../data/Journal";
+import LoadingImage from "../component/ui/LoadingImage";
+import Spinner from "../component/ui/Spinner";
 
-const JournalCard = ({ article, size = "regular" }) => {
-  const isLarge = size === "large";
+const formatDate = (date) =>
+  date ? new Date(date).toLocaleDateString() : "Unpublished";
 
+const JournalCard = ({ post, index }) => {
   return (
-    <Link to={`/journal/${article.slug}`} className="block">
+    <Link to={`/journal/${post.slug}`} className="block">
       <Motion.article
         className="group relative cursor-pointer"
         whileHover="hover"
-        initial="initial"
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          duration: 0.55,
+          delay: index * 0.06,
+          ease: [0.22, 1, 0.36, 1],
+        }}
       >
-        {/* Image Container */}
-        <div className="relative overflow-hidden bg-gray-100 aspect-[4/3]">
-          <img
-            src={article.image}
-            alt={article.alt}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
+        <div className="relative aspect-4/3 overflow-hidden bg-gray-100">
+          {post.coverImage ? (
+            <LoadingImage
+              src={post.coverImage}
+              alt=""
+              width={800}
+              wrapperClassName="h-full w-full"
+              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            />
+          ) : (
+            <div className="h-full w-full bg-gray-100" />
+          )}
         </div>
 
-        {/* Content */}
         <div className="mt-4 space-y-2">
           <div className="flex items-start justify-between gap-4">
             <h3 className="text-base font-semibold text-black leading-snug flex-1">
-              {article.title}
+              {post.title}
             </h3>
 
-            {/* Animated Arrow */}
             <Motion.div
               variants={{
                 initial: { x: 0 },
                 hover: { x: 4 },
               }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className="flex-shrink-0"
+              className="shrink-0"
             >
               <svg
                 width="20"
@@ -54,17 +65,13 @@ const JournalCard = ({ article, size = "regular" }) => {
             </Motion.div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <p className="text-sm text-gray-600">{article.date}</p>
+          <p className="line-clamp-2 text-sm leading-relaxed text-gray-600">
+            {post.excerpt}
+          </p>
+          <p className="text-sm text-gray-500">
+            {formatDate(post.publishedAt)}
+          </p>
 
-            {isLarge && (
-              <div className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center">
-                <div className="w-2 h-2 rounded-full bg-gray-400" />
-              </div>
-            )}
-          </div>
-
-          {/* Animated Underline */}
           <Motion.div
             className="h-[1.5px] bg-black origin-left"
             variants={{
@@ -80,28 +87,59 @@ const JournalCard = ({ article, size = "regular" }) => {
 };
 
 const Journal = () => {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/journal")
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok)
+          throw new Error(body.error || "Unable to load journal");
+        return body;
+      })
+      .then((data) => {
+        if (!cancelled) setPosts(data);
+      })
+      .catch((loadError) => {
+        if (!cancelled) setError(loadError.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <section className="w-full bg-white py-16 px-4 md:px-32">
       <div className="max-w-xl">
         <AnimatedPageTitle title="Journal" />
       </div>
 
-      <p className="text-sm text-gray-600 mb-6">(Featured)</p>
+      {loading && (
+        <Spinner
+          label="Loading journal"
+          className="mt-8 text-sm text-gray-500"
+        />
+      )}
+      {error && (
+        <p role="alert" className="mt-8 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      {!loading && !error && posts.length === 0 && (
+        <p className="mt-8 text-sm text-gray-500">No journal posts yet.</p>
+      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-16">
-        <div>
-          <JournalCard article={featuredArticles[0]} size="large" />
-        </div>
-
-        <div className="grid grid-cols-2 gap-6">
-          <JournalCard article={featuredArticles[1]} size="small" />
-          <JournalCard article={featuredArticles[2]} size="small" />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {regularArticles.map((article) => (
-          <JournalCard key={article.id} article={article} size="regular" />
+      <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+        {posts.map((post, index) => (
+          <JournalCard key={post.id} post={post} index={index} />
         ))}
       </div>
     </section>

@@ -15,10 +15,10 @@ const Button = ({
       className={clsx(" text-xs group relative z-10 w-fit ", containerClass)}
       onClick={onPress}
     >
-      <span className="h-4 w-4 rounded-full bg-white transition-opacity duration-500" />
+      
       {leftIcon && <span className="inline-flex items-center">{leftIcon}</span>}
 
-      <span className="relative inline-flex overflow-hidden text-base font-semibold tracking-widest">
+      <span className="relative inline-flex overflow-hidden text-base font-semibold tracking-widest ">
         <span className="translate-y-0 skew-y-0 transition duration-700 ease-in-out group-hover:-translate-y-[160%] group-hover:skew-y-12">
           {title}
         </span>

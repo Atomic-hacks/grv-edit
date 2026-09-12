@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Card from "../component/ui/Card";
+import { ProductGridSkeleton } from "../component/ui/LoadingSkeletons";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
 import FilterDrawer from "../component/ui/FilterDrawer";
 import ListingToolbar from "../component/ui/ListingToolbar";
-import { categories, formatPrice, getProducts } from "../data/products";
-import { emptyFilters, filterProducts } from "../data/listing";
+import { formatPrice, getProductImages } from "../lib/productHelpers";
+import { fetchCategories, fetchProducts } from "../lib/apiClient";
+import { useQuery } from "@tanstack/react-query";
+import { emptyFilters } from "../data/listing";
 import { useCart } from "../context/CartContext";
 
 const facetConfig = {
@@ -13,6 +16,7 @@ const facetConfig = {
   women: { title: "Women", fixed: { gender: "women" } },
   accessories: { title: "Accessories", fixed: { categoryId: "accessories" } },
   athletics: { title: "Athletics", fixed: { categoryId: "athletics" } },
+  lifestyle: { title: "Lifestyle", fixed: { styleTag: "Casual" } },
   footwear: { title: "Footwear", fixed: { categoryId: "footwear" } },
 };
 
@@ -27,21 +31,40 @@ const GenderCatalogue = ({ facet }) => {
   const subcategory = searchParams.get("subcategory") || "";
   const styleTag = searchParams.get("style") || "";
   const gender = searchParams.get("gender") || "";
-  const baseProducts = getProducts(config.fixed);
+  const { data: categories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => fetchCategories(),
+  });
+  const { data: baseProductsData, isPending: baseLoading } = useQuery({
+    queryKey: ["products", config.fixed],
+    queryFn: () => fetchProducts(config.fixed),
+  });
+  const baseProducts = useMemo(
+    () => baseProductsData || [],
+    [baseProductsData],
+  );
   const effectiveCategoryId = config.fixed.categoryId || categoryId;
   const effectiveGender = config.fixed.gender || gender;
-  const visibleProducts = useMemo(
-    () =>
-      getProducts({
-        ...config.fixed,
-        categoryId: effectiveCategoryId || undefined,
-        subcategory: subcategory || undefined,
-        styleTag: styleTag || undefined,
-        gender: effectiveGender || undefined,
-      }),
-    [config.fixed, effectiveCategoryId, effectiveGender, styleTag, subcategory],
+  const effectiveStyleTag = config.fixed.styleTag || styleTag;
+  const visibleProductFilters = {
+    ...config.fixed,
+    categoryId: effectiveCategoryId || undefined,
+    subcategory: subcategory || undefined,
+    styleTag: effectiveStyleTag || undefined,
+    gender: effectiveGender || undefined,
+  };
+  const {
+    data: visibleProductsData,
+    isPending: visibleLoading,
+    error: visibleError,
+  } = useQuery({
+    queryKey: ["products", visibleProductFilters],
+    queryFn: () => fetchProducts(visibleProductFilters),
+  });
+  const visibleProducts = visibleProductsData || [];
+  const category = (categories || []).find(
+    (item) => item.id === effectiveCategoryId,
   );
-  const category = categories.find((item) => item.id === effectiveCategoryId);
   const activeLabel = styleTag || subcategory || category?.name || "VIEW ALL";
 
   useEffect(() => {
@@ -54,6 +77,7 @@ const GenderCatalogue = ({ facet }) => {
       ...(effectiveCategoryId ? { categoryId: [effectiveCategoryId] } : {}),
       ...(subcategory ? { subcategory: [subcategory] } : {}),
       ...(styleTag ? { styleTags: [styleTag] } : {}),
+      ...(config.fixed.styleTag ? { styleTags: [config.fixed.styleTag] } : {}),
       ...(effectiveGender ? { gender: [effectiveGender] } : {}),
     });
   }, [
@@ -75,7 +99,7 @@ const GenderCatalogue = ({ facet }) => {
       },
     ];
     if (facet === "men" || facet === "women") {
-      categories.forEach((item) => {
+      (categories || []).forEach((item) => {
         options.push({
           id: item.id,
           label: item.name,
@@ -127,10 +151,24 @@ const GenderCatalogue = ({ facet }) => {
       );
     }
     return options;
-  }, [baseProducts, categoryId, facet, gender, styleTag, subcategory]);
+  }, [
+    baseProducts,
+    categoryId,
+    categories,
+    facet,
+    gender,
+    styleTag,
+    subcategory,
+  ]);
 
   const handleFacetSelect = (option) => {
-    setSearchParams(option.params);
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+      Object.entries(option.params).forEach(([key, value]) => {
+        nextParams.set(key, value);
+      });
+      return nextParams;
+    });
     setIsFilterOpen(false);
   };
 
@@ -171,10 +209,14 @@ const GenderCatalogue = ({ facet }) => {
           Object.values(appliedFilters).flat().filter(Boolean).length
         }
       />
-      {visibleProducts.length ? (
+      {visibleLoading || baseLoading ? (
+        <ProductGridSkeleton />
+      ) : visibleError ? (
+        <p className="py-16 text-sm text-red-600">Couldn't load products.</p>
+      ) : visibleProducts.length ? (
         <div className="product-grid">
           {visibleProducts.map((item) => {
-            const images = item.variants[0]?.images || [];
+            const images = getProductImages(item);
             return (
               <div
                 key={item.id}
@@ -186,6 +228,7 @@ const GenderCatalogue = ({ facet }) => {
                   hoverImg={images[1] || images[0]}
                   alt={item.name}
                   title={item.name}
+                  product={item}
                   category={item.subcategory}
                   details={item.gender}
                   badge={item.isNew ? "NEW" : undefined}
@@ -217,6 +260,7 @@ const GenderCatalogue = ({ facet }) => {
         products={baseProducts}
         appliedFilters={appliedFilters}
         activeCategoryId={effectiveCategoryId}
+        categories={categories || []}
         facetOptions={facetOptions}
         onFacetSelect={handleFacetSelect}
         onApply={applyFilters}
