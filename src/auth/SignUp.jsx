@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { supabase } from "../lib/supabaseClient";
 
 const SignUp = () => {
   const { signUp } = useAuth();
@@ -12,10 +13,25 @@ const SignUp = () => {
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [resendMessage, setResendMessage] = useState("");
+  const [resendError, setResendError] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown === 0) return undefined;
+
+    const timer = window.setInterval(() => {
+      setResendCooldown((current) => Math.max(0, current - 1));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [resendCooldown]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError(null);
+    setResendMessage("");
+    setResendError("");
     setSubmitting(true);
     try {
       await signUp({ email, password, name });
@@ -25,6 +41,27 @@ const SignUp = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const resendConfirmationEmail = async () => {
+    if (resendCooldown > 0) return;
+
+    setResendMessage("");
+    setResendError("");
+    setResendCooldown(60);
+
+    const { error: resendErrorResponse } = await supabase.auth.resend({
+      type: "signup",
+      email,
+    });
+
+    if (resendErrorResponse) {
+      setResendCooldown(0);
+      setResendError(resendErrorResponse.message);
+      return;
+    }
+
+    setResendMessage("Email resent");
   };
 
   if (submitted) {
@@ -41,6 +78,22 @@ const SignUp = () => {
           </Link>
           .
         </p>
+        <button
+          type="button"
+          onClick={resendConfirmationEmail}
+          disabled={resendCooldown > 0}
+          className="mt-6 text-sm underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+        >
+          {resendCooldown > 0
+            ? `Resend available in ${resendCooldown}s`
+            : "Didn't receive an email? Resend"}
+        </button>
+        {resendMessage && (
+          <p className="mt-3 text-sm text-green-700">{resendMessage}</p>
+        )}
+        {resendError && (
+          <p className="mt-3 text-sm text-red-600">{resendError}</p>
+        )}
       </main>
     );
   }
