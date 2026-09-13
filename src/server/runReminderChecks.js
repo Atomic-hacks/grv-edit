@@ -41,8 +41,6 @@ const formatWishlistEmail = (wishlist) => {
 const describeError = (kind, id, error) =>
   `${kind} ${id}: ${error instanceof Error ? error.message : String(error)}`;
 
-const REMINDER_INTERVAL_MS = 30 * 60 * 1000;
-
 export const runReminderChecks = async ({
   prismaClient = prisma,
   emailSender = sendEmail,
@@ -172,35 +170,6 @@ export const runReminderChecks = async ({
   }
 
   return { cartsReminded, wishlistsReminded, errors };
-};
-
-export const startReminderScheduler = ({
-  intervalMs = REMINDER_INTERVAL_MS,
-} = {}) => {
-  let running = false;
-
-  const run = async () => {
-    if (running) {
-      console.warn("[reminders] previous check is still running; skipping");
-      return;
-    }
-
-    running = true;
-    try {
-      const summary = await runReminderChecks();
-      console.log(
-        `[reminders] carts=${summary.cartsReminded} wishlists=${summary.wishlistsReminded} errors=${summary.errors.length}`,
-      );
-    } catch (error) {
-      console.error("[reminders] reminder check failed", error);
-    } finally {
-      running = false;
-    }
-  };
-
-  const interval = setInterval(run, intervalMs);
-  interval.unref?.();
-  return () => clearInterval(interval);
 };
 
 export default runReminderChecks;

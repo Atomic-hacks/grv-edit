@@ -1,14 +1,10 @@
 import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import { handleApiRequest } from "./src/api/routes.js";
-import { startReminderScheduler } from "./src/server/runReminderChecks.js";
 
 const apiPlugin = () => ({
   name: "static-api-routes",
   configureServer(server) {
-    const stopReminderScheduler = startReminderScheduler();
-    server.httpServer?.once("close", stopReminderScheduler);
-
     server.middlewares.use(async (request, response, next) => {
       if (!request.url?.startsWith("/api/")) {
         next();

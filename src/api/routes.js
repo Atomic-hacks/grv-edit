@@ -3248,6 +3248,11 @@ const handlePaystackWebhook = async (request) => {
   return jsonResponse({ ok: true });
 };
 
+const isVercelCronRequest = (request) =>
+  request.method === "GET" &&
+  Boolean(process.env.CRON_SECRET) &&
+  request.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`;
+
 export const handleApiRequest = async (request) => {
   const url = new URL(request.url);
   const segments = url.pathname.split("/").filter(Boolean); // e.g. ["api","products",":id"]
@@ -3399,15 +3404,20 @@ export const handleApiRequest = async (request) => {
   }
 
   if (
-    request.method === "POST" &&
     segments[0] === "api" &&
     segments[1] === "admin" &&
     segments[2] === "reminders" &&
     segments[3] === "run"
   ) {
     try {
-      const guard = await requireAdmin(request);
-      if (!guard.ok) return jsonResponse(guard.body, guard.status);
+      const cronRequest = isVercelCronRequest(request);
+      if (request.method !== "POST" && !cronRequest) {
+        return jsonResponse({ error: "Method not allowed" }, 405);
+      }
+      if (!cronRequest) {
+        const guard = await requireAdmin(request);
+        if (!guard.ok) return jsonResponse(guard.body, guard.status);
+      }
       return jsonResponse(await runReminderChecks());
     } catch (error) {
       console.error("Reminder check request failed", error);
