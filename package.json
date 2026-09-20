@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "set -a && . ./.env.local && set +a && vite",
-    "build": "vite build",
+    "build": "prisma generate && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "db:push": "set -a && . ./.env.local && set +a && prisma db push",
