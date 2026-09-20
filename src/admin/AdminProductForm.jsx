@@ -23,7 +23,9 @@ const emptyForm = {
   department: "men",
   subcategoryId: "",
   basePrice: "",
+  discountPercent: "",
   imageUrl: "",
+  archived: false,
 };
 
 const emptyVariantForm = {
@@ -88,7 +90,13 @@ const AdminProductForm = () => {
               department,
               subcategoryId: product.subcategoryId || "",
               basePrice: String(product.basePrice),
+              discountPercent:
+                product.discountPercent === null ||
+                product.discountPercent === undefined
+                  ? ""
+                  : String(product.discountPercent),
               imageUrl: product.imageUrl || "",
+              archived: Boolean(product.archived),
             });
             setSelectedTagIds(product.tags.map((tag) => tag.id));
             setVariants(product.variants || []);
@@ -125,6 +133,10 @@ const AdminProductForm = () => {
       ),
     [selectedDepartment?.categoryId, subcategories],
   );
+  const canArchive =
+    isEditing &&
+    variants.length > 0 &&
+    variants.every((variant) => variant.stock === 0);
 
   const updateField = (event) => {
     const { name, value } = event.target;
@@ -190,7 +202,10 @@ const AdminProductForm = () => {
         subcategoryId: form.subcategoryId,
         gender: selectedDepartment.gender,
         basePrice: form.basePrice,
+        discountPercent:
+          form.discountPercent === "" ? null : form.discountPercent,
         imageUrl: form.imageUrl,
+        archived: form.archived,
       };
       const product = await request(
         isEditing ? `/api/admin/products/${id}` : "/api/admin/products",
@@ -429,6 +444,20 @@ const AdminProductForm = () => {
             />
           </label>
           <label className="text-sm">
+            <span className="mb-2 block font-medium">Discount %</span>
+            <input
+              min="0"
+              max="100"
+              step="0.01"
+              type="number"
+              name="discountPercent"
+              value={form.discountPercent}
+              onChange={updateField}
+              placeholder="Optional"
+              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+            />
+          </label>
+          <label className="text-sm">
             <span className="mb-2 block font-medium">Main product image</span>
             <input
               type="file"
@@ -486,6 +515,30 @@ const AdminProductForm = () => {
             ))}
           </div>
         </fieldset>
+
+        {isEditing && (
+          <label className="flex items-start gap-3 border-t border-gray-200 pt-6 text-sm">
+            <input
+              type="checkbox"
+              name="archived"
+              checked={form.archived}
+              disabled={!canArchive && !form.archived}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  archived: event.target.checked,
+                }))
+              }
+              className="mt-1 h-4 w-4 accent-black"
+            />
+            <span>
+              <span className="block font-medium">Archive this product</span>
+              <span className="mt-1 block text-gray-500">
+                Archive is only available when every variant is sold out.
+              </span>
+            </span>
+          </label>
+        )}
 
         <div className="flex gap-4 border-t border-gray-200 pt-6">
           <button
@@ -567,41 +620,37 @@ const AdminProductForm = () => {
             </button>
           </form>
 
-          <div className="mt-6 overflow-x-auto border-t border-black">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="border-b border-gray-200 text-xs uppercase tracking-[0.15em] text-gray-500">
-                <tr>
-                  <th className="px-3 py-4 font-medium">Image</th>
-                  <th className="px-3 py-4 font-medium">Color</th>
-                  <th className="px-3 py-4 font-medium">Size</th>
-                  <th className="px-3 py-4 font-medium">SKU</th>
-                  <th className="px-3 py-4 font-medium">Stock</th>
-                  <th className="px-3 py-4 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {variants.map((variant) => (
-                  <tr
-                    key={variant.id}
-                    className="border-b border-gray-200 align-middle"
-                  >
-                    <td className="px-3 py-3">
-                      {variant.images?.[0] ? (
-                        <img
-                          src={variant.images[0]}
-                          alt=""
-                          className="h-14 w-12 object-cover"
-                        />
-                      ) : (
-                        <span className="text-xs text-gray-400">No image</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">{variant.color}</td>
-                    <td className="px-3 py-3">{variant.size}</td>
-                    <td className="px-3 py-3 font-mono text-xs">
+          <div className="mt-6 space-y-2 border-t border-black pt-2">
+            {variants.map((variant) => (
+              <details key={variant.id} className="border-b border-gray-200">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-sm marker:hidden">
+                  <span className="min-w-0">
+                    <span className="font-medium">
+                      {variant.color} / {variant.size}
+                    </span>
+                    <span className="ml-3 font-mono text-xs text-gray-500">
                       {variant.sku}
-                    </td>
-                    <td className="px-3 py-3">
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-gray-600">
+                    {variant.stock} in stock
+                  </span>
+                </summary>
+                <div className="grid gap-5 border-t border-gray-100 py-5 md:grid-cols-[auto_1fr]">
+                  {variant.images?.[0] ? (
+                    <img
+                      src={variant.images[0]}
+                      alt=""
+                      className="h-28 w-24 object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-28 w-24 items-center justify-center bg-gray-100 text-center text-xs text-gray-400">
+                      No image
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-end gap-4">
+                    <label className="text-sm">
+                      <span className="mb-2 block font-medium">Stock</span>
                       <input
                         type="number"
                         min="0"
@@ -614,43 +663,39 @@ const AdminProductForm = () => {
                           }))
                         }
                         onBlur={() => saveVariantStock(variant)}
-                        className="w-20 border border-gray-300 px-2 py-1.5"
+                        className="w-24 border border-gray-300 px-2 py-2"
                       />
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex justify-end gap-4">
-                        <button
-                          type="button"
-                          onClick={() => saveVariantStock(variant)}
-                          disabled={variantSavingId === variant.id}
-                          className="text-sm underline disabled:opacity-50"
-                        >
-                          {variantSavingId === variant.id &&
-                          variantAction === "saving" ? (
-                            <Spinner label="Saving" />
-                          ) : (
-                            "Save stock"
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => deleteVariant(variant.id)}
-                          disabled={variantSavingId === variant.id}
-                          className="text-sm text-red-700 underline disabled:opacity-50"
-                        >
-                          {variantSavingId === variant.id &&
-                          variantAction === "deleting" ? (
-                            <Spinner label="Deleting" />
-                          ) : (
-                            "Delete"
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => saveVariantStock(variant)}
+                      disabled={variantSavingId === variant.id}
+                      className="text-sm underline disabled:opacity-50"
+                    >
+                      {variantSavingId === variant.id &&
+                      variantAction === "saving" ? (
+                        <Spinner label="Saving" />
+                      ) : (
+                        "Save stock"
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteVariant(variant.id)}
+                      disabled={variantSavingId === variant.id}
+                      className="text-sm text-red-700 underline disabled:opacity-50"
+                    >
+                      {variantSavingId === variant.id &&
+                      variantAction === "deleting" ? (
+                        <Spinner label="Deleting" />
+                      ) : (
+                        "Delete"
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </details>
+            ))}
           </div>
         </section>
       )}

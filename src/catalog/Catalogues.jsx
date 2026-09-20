@@ -5,9 +5,10 @@ import RevealImage from "../component/ui/RevealImage";
 import { ProductGridSkeleton } from "../component/ui/LoadingSkeletons";
 import CtaButton from "../component/ui/CtaButton";
 import HorizontalCarousel from "../component/ui/HorizontalCarousel";
-import { fetchBrands, fetchProducts } from "../lib/apiClient";
+import { fetchBrands, fetchNewArrivals } from "../lib/apiClient";
 import { useAsync } from "../lib/useAsync";
-import { formatPrice } from "../lib/productHelpers";
+import DiscountPrice from "../component/ui/DiscountPrice";
+import { useSiteImages } from "../lib/useSiteImages";
 
 const SECTION = "py-16 md:py-24";
 const SECTION_HEAD = "mb-6 md:mb-10";
@@ -16,36 +17,42 @@ const departments = [
   {
     id: "men",
     name: "Men",
+    key: "department-men",
     image: "/img/maleheromodel.jpg",
     path: "/men",
   },
   {
     id: "women",
     name: "Women",
+    key: "department-women",
     image: "/img/femaletop.jpg",
     path: "/women",
   },
   {
     id: "footwear",
     name: "Footwear",
+    key: "department-footwear",
     image: "/img/shoe.jpg",
     path: "/footwear",
   },
   {
     id: "accessories",
     name: "Accessories",
+    key: "department-accessories",
     image: "/img/bag1.jpg",
     path: "/accessories",
   },
   {
     id: "athletics",
     name: "Athletics",
+    key: "department-athletics",
     image: "/img/model4.jpg",
     path: "/athletics",
   },
   {
     id: "apparel",
     name: "Apparel",
+    key: "department-apparel",
     image: "/img/top1.avif",
     path: "/men?category=apparel",
   },
@@ -59,21 +66,27 @@ const CatalogueTile = ({ name, image, logo, path }) => (
       className="aspect-4/3 w-full transition-opacity group-hover:opacity-75"
       revealDuration={0.9}
     />
-    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/5 to-transparent" />
-    <span className="absolute inset-x-4 bottom-4 text-lg font-semibold uppercase tracking-wide text-white transition-colors group-hover:text-(--color-accent-orange)">
-      {name}
-    </span>
+    <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/60 via-black/5 to-transparent" />
+    <div className="absolute inset-x-4 bottom-4 flex items-end justify-between gap-3">
+      <span className="text-lg font-semibold uppercase tracking-wide text-white transition-colors group-hover:text-(--color-accent-orange)">
+        {name}
+      </span>
+      <span className="shrink-0 border border-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white transition-colors group-hover:bg-white group-hover:text-black">
+        Explore
+      </span>
+    </div>
   </Link>
 );
 
 const Catalogues = () => {
+  const siteImages = useSiteImages();
   const {
     data: products,
     loading,
     error,
-  } = useAsync(() => fetchProducts({}), []);
+  } = useAsync(() => fetchNewArrivals(), []);
   const { data: brands } = useAsync(() => fetchBrands(), []);
-  const newArrivals = (products || []).filter((product) => product.isNew);
+  const newArrivals = products || [];
 
   return (
     <main className="min-h-screen bg-white text-black">
@@ -122,7 +135,12 @@ const Catalogues = () => {
                     />
                     <div className="absolute inset-x-4 bottom-4 flex items-end justify-between text-sm font-semibold text-white">
                       <span>{product.name}</span>
-                      <span>{formatPrice(product.basePrice)}</span>
+                      <DiscountPrice
+                        basePrice={product.basePrice}
+                        discountPercent={product.discountPercent}
+                        className="text-right"
+                        light
+                      />
                     </div>
                   </Link>
                 );
@@ -164,7 +182,7 @@ const Catalogues = () => {
               <CatalogueTile
                 key={department.id}
                 name={department.name}
-                image={department.image}
+                image={siteImages[department.key] || department.image}
                 path={department.path}
               />
             ))}

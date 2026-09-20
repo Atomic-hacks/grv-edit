@@ -19,7 +19,22 @@ const HeartIcon = ({ filled }) => (
   </svg>
 );
 
-const WishlistButton = ({ product, className = "" }) => {
+const CloseIcon = () => (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+);
+
+const WishlistButton = ({ product, className = "", icon = "heart" }) => {
   const { isWishlisted, toggleWishlist } = useWishlist();
   const requireAuthAction = useRequireAuthAction();
   const [pending, setPending] = useState(false);
@@ -45,9 +60,15 @@ const WishlistButton = ({ product, className = "" }) => {
       disabled={pending}
       aria-label={saved ? "Remove from wishlist" : "Save to wishlist"}
       aria-pressed={saved}
-      className={`flex h-10 w-10 items-center justify-center bg-white/90 text-black shadow-sm transition hover:bg-white disabled:cursor-wait disabled:opacity-60 ${className}`}
+      className={`flex h-10 w-10 items-center justify-center  text-black shadow-sm transition disabled:cursor-wait disabled:opacity-60 ${className}`}
     >
-      {pending ? <Spinner /> : <HeartIcon filled={saved} />}
+      {pending ? (
+        <Spinner />
+      ) : icon === "close" ? (
+        <CloseIcon />
+      ) : (
+        <HeartIcon filled={saved} className="hover:scale-110 transition-transform duration-300" />
+      )}
     </button>
   );
 };

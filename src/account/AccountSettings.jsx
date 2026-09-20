@@ -7,25 +7,24 @@ import { createAuthenticatedRequest } from "../lib/apiClient";
 import FadeIn from "../component/ui/FadeIn";
 import SubmitButton from "../component/ui/SubmitButton";
 import Spinner from "../component/ui/Spinner";
+import AddressFields from "../component/address/AddressFields";
+import PasswordInput from "../component/ui/PasswordInput";
 
 const emptyAddress = {
   label: "",
-  fullName: "",
+  firstName: "",
+  lastName: "",
+  country: "",
+  countryCode: "",
   phone: "",
   address: "",
+  addressLine2: undefined,
   city: "",
   state: "",
+  postalCode: "",
+  useAsBilling: false,
   isDefault: false,
 };
-
-const addressFields = [
-  ["label", "Label", "e.g. Home"],
-  ["fullName", "Full name", "Full name"],
-  ["phone", "Phone", "Phone number"],
-  ["address", "Address", "Street address"],
-  ["city", "City", "City"],
-  ["state", "State", "State"],
-];
 
 const AccountSettings = ({ embedded = false, activeSection = "details" }) => {
   const { session, user, appUser } = useAuth();
@@ -114,14 +113,26 @@ const AccountSettings = ({ embedded = false, activeSection = "details" }) => {
 
   const startAddressEdit = (address) => {
     clearMessages();
+    const [firstName = "", ...lastNameParts] = (address.fullName || "").split(
+      " ",
+    );
+    const [addressLine = "", addressLine2] = (address.address || "").split(
+      "\n",
+    );
     setEditingAddressId(address.id);
     setAddressForm({
       label: address.label,
-      fullName: address.fullName,
+      firstName,
+      lastName: lastNameParts.join(" "),
+      country: address.country || "",
+      countryCode: "",
       phone: address.phone,
-      address: address.address,
+      address: addressLine,
+      addressLine2,
       city: address.city,
       state: address.state,
+      postalCode: address.postalCode || "",
+      useAsBilling: false,
       isDefault: address.isDefault,
     });
   };
@@ -136,13 +147,25 @@ const AccountSettings = ({ embedded = false, activeSection = "details" }) => {
     clearMessages();
     setSavingAddress(true);
     try {
+      const addressPayload = {
+        ...addressForm,
+        fullName: `${addressForm.firstName} ${addressForm.lastName}`.trim(),
+        address: [addressForm.address, addressForm.addressLine2]
+          .filter(Boolean)
+          .join("\n"),
+      };
+      delete addressPayload.firstName;
+      delete addressPayload.lastName;
+      delete addressPayload.countryCode;
+      delete addressPayload.addressLine2;
+      delete addressPayload.useAsBilling;
       const savedAddress = await request(
         editingAddressId
           ? `/api/account/addresses/${encodeURIComponent(editingAddressId)}`
           : "/api/account/addresses",
         {
           method: editingAddressId ? "PUT" : "POST",
-          body: JSON.stringify(addressForm),
+          body: JSON.stringify(addressPayload),
         },
       );
       queryClient.setQueryData(
@@ -316,40 +339,32 @@ const AccountSettings = ({ embedded = false, activeSection = "details" }) => {
                 Change password
               </h2>
               <form onSubmit={savePassword} className="mt-5">
-                <label
-                  className="block text-sm font-medium"
-                  htmlFor="new-password"
-                >
-                  New password
-                </label>
-                <input
+                <PasswordInput
                   id="new-password"
-                  type="password"
+                  label="New password"
                   required
                   minLength={6}
+                  autoComplete="new-password"
                   value={newPassword}
                   onChange={(event) => setNewPassword(event.target.value)}
-                  className="mt-2 w-full border border-gray-300 bg-gray-50 px-3.5 py-3 text-sm outline-none transition-[background-color,border-color] duration-300 ease-in-out focus:border-black focus:bg-white"
+                  className="mt-2 border border-gray-300 bg-gray-50 px-3.5 py-3 text-sm outline-none transition-[background-color,border-color] duration-300 ease-in-out focus:border-black focus:bg-white"
                 />
-                <label
-                  className="mt-4 block text-sm font-medium"
-                  htmlFor="confirm-password"
-                >
-                  Confirm password
-                </label>
-                <input
-                  id="confirm-password"
-                  type="password"
-                  required
-                  minLength={6}
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  className={`mt-2 w-full border bg-gray-50 px-3.5 py-3 text-sm outline-none transition-[background-color,border-color] duration-300 ease-in-out focus:bg-white ${
-                    confirmPassword && newPassword !== confirmPassword
-                      ? "border-red-300 focus:border-red-600"
-                      : "border-gray-300 focus:border-black"
-                  }`}
-                />
+                <div className="mt-4">
+                  <PasswordInput
+                    id="confirm-password"
+                    label="Confirm password"
+                    required
+                    minLength={6}
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    className={`mt-2 w-full border bg-gray-50 px-3.5 py-3 text-sm outline-none transition-[background-color,border-color] duration-300 ease-in-out focus:bg-white ${
+                      confirmPassword && newPassword !== confirmPassword
+                        ? "border-red-300 focus:border-red-600"
+                        : "border-gray-300 focus:border-black"
+                    }`}
+                  />
+                </div>
                 {confirmPassword && newPassword !== confirmPassword && (
                   <p className="mt-2 text-sm text-red-600">
                     Passwords do not match.
@@ -443,7 +458,9 @@ const AccountSettings = ({ embedded = false, activeSection = "details" }) => {
                       <br />
                       {address.address}
                       <br />
-                      {address.city}, {address.state}
+                      {address.city}, {address.state} {address.postalCode}
+                      <br />
+                      {address.country}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3 text-sm">
@@ -496,21 +513,25 @@ const AccountSettings = ({ embedded = false, activeSection = "details" }) => {
                 <h3 className="font-semibold text-gray-950">
                   {editingAddressId ? "Edit address" : "Add address"}
                 </h3>
-                <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                  {addressFields.map(([field, label, placeholder]) => (
-                    <label key={field} className="block text-sm font-medium">
-                      {label}
-                      <input
-                        required
-                        value={addressForm[field]}
-                        placeholder={placeholder}
-                        onChange={(event) =>
-                          updateAddressField(field, event.target.value)
-                        }
-                        className="mt-2 w-full border border-gray-300 bg-white px-3.5 py-3 font-normal outline-none transition-[background-color,border-color] duration-300 ease-in-out focus:border-black"
-                      />
-                    </label>
-                  ))}
+                <label className="mt-5 block text-sm font-medium">
+                  Address label
+                  <input
+                    required
+                    value={addressForm.label}
+                    placeholder="e.g. Home"
+                    onChange={(event) =>
+                      updateAddressField("label", event.target.value)
+                    }
+                    className="mt-2 w-full border border-gray-300 bg-white px-3.5 py-3 font-normal outline-none focus:border-black"
+                  />
+                </label>
+                <div className="mt-5">
+                  <AddressFields
+                    value={addressForm}
+                    onChange={setAddressForm}
+                    idPrefix="account-address"
+                    showHeader
+                  />
                 </div>
                 <label className="mt-5 flex items-center gap-3 text-sm">
                   <input

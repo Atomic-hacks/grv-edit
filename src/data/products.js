@@ -1,3 +1,5 @@
+export { formatPrice } from "../lib/productHelpers.js";
+
 export const categories = [
   {
     id: "footwear",
@@ -526,5 +528,3 @@ export const getProducts = ({
   });
 
 export const searchProducts = (query) => getProducts({ query }).slice(0, 6);
-
-export const formatPrice = (value) => `$${value.toFixed(2)}`;

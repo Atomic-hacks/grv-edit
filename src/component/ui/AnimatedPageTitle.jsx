@@ -1,9 +1,10 @@
 import React from "react";
 import { motion as Motion } from "framer-motion";
 
-const AnimatedPageTitle = ({ title, subtitle, className = "" }) => {
+const AnimatedPageTitle = ({ img, title, subtitle, className = "" }) => {
   return (
     <div className="z-10 overflow-hidden">
+      {img && <img src={img} alt={title} className="w-40 mx-auto " />}
       <Motion.h2
         className={`text-6xl md:text-7xl font-semibold ${className}`}
         initial={{ y: 80, opacity: 0 }}

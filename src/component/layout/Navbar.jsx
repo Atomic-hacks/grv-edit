@@ -55,7 +55,7 @@ const ProfileIcon = () => (
   </svg>
 );
 
-const Chevron = ({ open }) => (
+const Chevron = ({ open, direction = "down" }) => (
   <svg
     width="12"
     height="12"
@@ -66,7 +66,7 @@ const Chevron = ({ open }) => (
     strokeLinecap="round"
     strokeLinejoin="round"
     className={`shrink-0 transition-transform duration-300 ${
-      open ? "rotate-180" : ""
+      direction === "right" ? "-rotate-90" : open ? "rotate-180" : ""
     }`}
   >
     <path d="M2.5 4.5L6 8l3.5-3.5" />
@@ -308,7 +308,7 @@ const Navbar = () => {
 
   return (
     <nav className="relative w-full border-b border-gray-200 bg-white">
-      <div className="mx-auto flex items-center justify-between px-4 lg:px-6 xl:px-16 py-2">
+      <div className="relative mx-auto flex min-h-16 items-end justify-between px-4 py-2 lg:px-6 xl:px-16">
         {/* Left Navigation Links - Desktop */}
         <div className="hidden lg:flex items-center gap-3 xl:gap-8">
           {navLinks.map((link) => (
@@ -384,11 +384,47 @@ const Navbar = () => {
           </span>
         </Link>
 
-        {/* Mobile logo */}
-        <Link to="/" className="lg:hidden">
-          <span className="text-2xl font-bold tracking-tight">
-            <img src="/img/log.png" alt="GRV" className="h-12 w-26" />
-          </span>
+        {/* Mobile navigation: wishlist and bag left, logo centered, controls right */}
+        <div className="flex items-center gap-1 lg:hidden">
+          <Link
+            to="/wishlist"
+            aria-label="Wishlist"
+            className="flex h-10 w-10 items-center justify-center text-black"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M10 17.2 3.5 10.8A4.1 4.1 0 0 1 9.3 5l.7.8.7-.8a4.1 4.1 0 0 1 5.8 5.8L10 17.2Z" />
+            </svg>
+          </Link>
+          <button
+            type="button"
+            onClick={openCart}
+            aria-label={`Open Goody Bag (${itemCount} items)`}
+            className="flex h-10 items-center gap-1 text-xs font-semibold tracking-wide text-black"
+          >
+            <BagIcon />
+            <span>{itemCount}</span>
+          </button>
+        </div>
+
+        <Link
+          to="/"
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 lg:hidden"
+        >
+          <img
+            src="/img/log.png"
+            alt="GRV"
+            className="h-11 w-24 object-contain"
+          />
         </Link>
 
         {/* Right Side Icons - Desktop */}
@@ -456,7 +492,7 @@ const Navbar = () => {
               {isAccountOpen && (
                 <div className="absolute right-0 top-full z-50 mt-3 w-80 border border-gray-200 bg-white p-6">
                   <div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
-                    <h2 className="max-w-[14rem] text-2xl font-semibold leading-tight">
+                    <h2 className="max-w-56 text-2xl font-semibold leading-tight">
                       {accountName}
                     </h2>
                     <button
@@ -519,7 +555,7 @@ const Navbar = () => {
           <button
             type="button"
             onClick={openCart}
-            aria-label={`Open cart (${itemCount} items)`}
+            aria-label={`Open Goody Bag (${itemCount} items)`}
             className="flex shrink-0 items-center gap-1 text-sm font-medium text-black transition-colors hover:text-gray-600"
           >
             <BagIcon />
@@ -528,7 +564,7 @@ const Navbar = () => {
         </div>
 
         {/* Mobile/Tablet Controls */}
-        <div className="flex items-center gap-4 lg:hidden">
+        <div className="flex items-center gap-1 lg:hidden">
           <button
             type="button"
             onClick={() => {
@@ -551,15 +587,6 @@ const Navbar = () => {
               <circle cx="8.5" cy="8.5" r="5.5" />
               <path d="M12.5 12.5l4 4" strokeLinecap="round" />
             </svg>
-          </button>
-          <button
-            type="button"
-            onClick={openCart}
-            aria-label={`Open cart (${itemCount} items)`}
-            className="flex items-center gap-1 text-xs font-semibold tracking-wide text-black"
-          >
-            <BagIcon />
-            <span>{itemCount}</span>
           </button>
           <button
             type="button"
@@ -625,7 +652,7 @@ const Navbar = () => {
               transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-6 py-5">
+              <div className="sticky top-0 z-10 flex place-items-center justify-between border-b border-gray-200 bg-white px-6 py-5">
                 <span className="text-xl font-bold tracking-tight">
                   <img src="/img/log.png" alt="GRV" className="h-12 w-26" />
                 </span>
@@ -779,7 +806,7 @@ const Navbar = () => {
                   );
                 })}
 
-                <div className="py-4">
+                <div className="mt-4 border-t border-gray-200 pt-4">
                   <Link
                     to={accountPath}
                     aria-label={
@@ -790,22 +817,19 @@ const Navbar = () => {
                           : "Sign up"
                     }
                     onClick={() => setIsMobileOpen(false)}
-                    className="flex items-center text-sm font-semibold text-black"
+                    className="flex items-center justify-between gap-4 py-3 text-black"
                   >
-                    {session ? (
+                    <span className="flex min-w-0 items-center gap-3">
                       <ProfileIcon />
-                    ) : accountPath === "/login" ? (
-                      "Login"
-                    ) : (
-                      "Sign Up"
-                    )}
-                  </Link>
-                  <Link
-                    to="/wishlist"
-                    onClick={() => setIsMobileOpen(false)}
-                    className="ml-6 text-sm font-semibold text-black"
-                  >
-                    Wishlist
+                      <span className="truncate text-sm font-semibold">
+                        {session
+                          ? accountName
+                          : accountPath === "/login"
+                            ? "Login"
+                            : "Sign Up"}
+                      </span>
+                    </span>
+                    <Chevron direction="right" open={false} />
                   </Link>
                 </div>
               </nav>

@@ -18,7 +18,7 @@ const formatCartEmail = (cart, productsById) => {
   const lines = cart.items
     .map((item) => {
       const product = productsById.get(item.productId);
-      const name = product?.name || "Item from your cart";
+      const name = product?.name || "Item from your Goody Bag";
       const image = product?.imageUrl
         ? `<img src="${escapeHtml(product.imageUrl)}" alt="${escapeHtml(name)}" width="80" />`
         : "";
@@ -26,7 +26,7 @@ const formatCartEmail = (cart, productsById) => {
     })
     .join("");
 
-  return `<p>You left something in your cart.</p><ul>${lines}</ul><p><a href="${escapeHtml(`${siteUrl()}/shop`)}">Return to GRV</a></p>`;
+  return `<p>You left something in your Goody Bag.</p><ul>${lines}</ul><p><a href="${escapeHtml(`${siteUrl()}/shop`)}">Return to GRV</a></p>`;
 };
 
 const formatWishlistEmail = (wishlist) => {
@@ -98,7 +98,7 @@ export const runReminderChecks = async ({
     try {
       const sent = await emailSender({
         to: cart.user.email,
-        subject: "You left something in your cart",
+        subject: "You left something in your Goody Bag",
         html: formatCartEmail(cart, productsById),
       });
       if (!sent) throw new Error("Email provider did not accept the message");

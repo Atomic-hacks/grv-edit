@@ -1,11 +1,120 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import RequireAuth from "../component/auth/RequireAuth";
 import WishlistButton from "../component/ui/WishlistButton";
-import LoadingImage from "../component/ui/LoadingImage";
 import Spinner from "../component/ui/Spinner";
 import { useWishlist } from "../context/WishlistContext";
-import { formatPrice, getProductImages } from "../lib/productHelpers";
+import { useCart } from "../context/CartContext";
+import { getOptimizedImageUrl } from "../lib/imageHelpers";
+import DiscountPrice from "../component/ui/DiscountPrice";
+
+const WishlistCard = ({ item }) => {
+  const { addToCart } = useCart();
+  const product = item.product;
+  const firstVariant = product.variants?.[0];
+  const [selectedVariantId, setSelectedVariantId] = useState(
+    firstVariant?.id || "",
+  );
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const selectedVariant = product.variants?.find(
+    (variant) => variant.id === selectedVariantId,
+  );
+  const image = selectedVariant?.images?.[0] || product.imageUrl;
+
+  useEffect(() => {
+    setImageLoaded(!image);
+  }, [image]);
+
+  return (
+    <article className="group">
+      <div className="relative aspect-3/4 overflow-hidden bg-gray-100">
+        {!imageLoaded && image && (
+          <div className="absolute inset-0 z-10 animate-pulse bg-gray-200" />
+        )}
+        {image ? (
+          <Link to={`/product/${item.productId}`}>
+            <img
+              src={getOptimizedImageUrl(image, 600)}
+              alt={product.name}
+              loading="lazy"
+              decoding="async"
+              onLoad={() => setImageLoaded(true)}
+              onError={() => setImageLoaded(true)}
+              className={`h-full w-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.03] ${imageLoaded ? "opacity-100" : "opacity-0"}`}
+            />
+          </Link>
+        ) : (
+          <Link
+            to={`/product/${item.productId}`}
+            className="flex h-full items-center justify-center text-xs uppercase tracking-[0.16em] text-gray-400"
+          >
+            Image unavailable
+          </Link>
+        )}
+        <WishlistButton
+          product={product}
+          icon="close"
+          className="absolute right-3 top-3 z-20"
+        />
+      </div>
+      <div className="mt-4">
+        {product.isNew && <p className="text-xs text-gray-500">New Season</p>}
+        <p className="mt-1 font-semibold">{product.brand?.name}</p>
+        <Link
+          to={`/product/${item.productId}`}
+          className="mt-1 block text-sm text-gray-700"
+        >
+          {product.name}
+        </Link>
+        <DiscountPrice
+          basePrice={product.basePrice}
+          discountPercent={product.discountPercent}
+          className="mt-3 items-start font-semibold"
+        />
+        <label className="mt-4 block text-xs text-gray-500">
+          Variant
+          <select
+            value={selectedVariantId}
+            onChange={(event) => setSelectedVariantId(event.target.value)}
+            className="mt-2 w-full border border-gray-300 bg-white px-3 py-3 text-sm text-black outline-none focus:border-black"
+            disabled={!product.variants?.length}
+          >
+            {!product.variants?.length && (
+              <option>No variants available</option>
+            )}
+            {product.variants?.map((variant) => (
+              <option
+                key={variant.id}
+                value={variant.id}
+                disabled={variant.stock < 1}
+              >
+                {variant.color} / {variant.size}
+                {variant.stock < 1 ? " (Sold out)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={!selectedVariant || selectedVariant.stock < 1}
+          onClick={() =>
+            addToCart(
+              {
+                ...product,
+                variantId: selectedVariantId,
+                price: product.basePrice,
+              },
+              1,
+            )
+          }
+          className="mt-4 w-full bg-black px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+        >
+          Add To Bag
+        </button>
+      </div>
+    </article>
+  );
+};
 
 const WishlistContent = () => {
   const { items, loading } = useWishlist();
@@ -36,41 +145,9 @@ const WishlistContent = () => {
           </div>
         ) : (
           <div className="mt-12 grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-4 md:gap-x-5">
-            {items.map((item) => {
-              const product = item.product;
-              const image = getProductImages(product)[0];
-              return (
-                <article key={item.productId} className="group">
-                  <div className="relative aspect-3/4 overflow-hidden bg-gray-100">
-                    <Link to={`/product/${item.productId}`}>
-                      <LoadingImage
-                        src={image}
-                        alt={product.name}
-                        width={600}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                        wrapperClassName="h-full w-full"
-                      />
-                    </Link>
-                    <WishlistButton
-                      product={product}
-                      className="absolute right-3 top-3"
-                    />
-                  </div>
-                  <Link
-                    to={`/product/${item.productId}`}
-                    className="mt-3 block"
-                  >
-                    <div className="flex justify-between gap-3 text-sm font-semibold">
-                      <span>{product.name}</span>
-                      <span>{formatPrice(product.basePrice)}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {product.brand?.name}
-                    </p>
-                  </Link>
-                </article>
-              );
-            })}
+            {items.map((item) => (
+              <WishlistCard key={item.productId} item={item} />
+            ))}
           </div>
         )}
       </div>

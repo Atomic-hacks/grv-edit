@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import PasswordInput from "../component/ui/PasswordInput";
 
 const ResetPassword = () => {
   const navigate = useNavigate();
@@ -91,30 +92,24 @@ const ResetPassword = () => {
 
       {!checkingRecovery && recoveryReady && (
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
-          <label className="flex flex-col gap-1 text-sm">
-            New password
-            <input
-              type="password"
-              required
-              minLength={6}
-              autoComplete="new-password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              className="border border-gray-300 px-3 py-2"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Confirm new password
-            <input
-              type="password"
-              required
-              minLength={6}
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              className="border border-gray-300 px-3 py-2"
-            />
-          </label>
+          <PasswordInput
+            id="reset-new-password"
+            label="New password"
+            required
+            minLength={6}
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+          />
+          <PasswordInput
+            id="reset-confirm-password"
+            label="Confirm new password"
+            required
+            minLength={6}
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+          />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"

@@ -4,15 +4,186 @@ import { requireAdmin } from "../server/requireAdmin.js";
 import { getSupabaseAdmin } from "../server/supabaseAdmin.js";
 import { sendEmail } from "../server/sendEmail.js";
 import { runReminderChecks } from "../server/runReminderChecks.js";
+import { formatPrice } from "../lib/productHelpers.js";
+import { getRegionForState, NIGERIAN_REGIONS } from "../lib/nigeriaRegions.js";
 import { v2 as cloudinary } from "cloudinary";
 import { parse } from "csv-parse/sync";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
+
+const VERIFICATION_CODE_TTL_MS = 15 * 60 * 1000;
+const FIRST_ORDER_PROMO_ID = "first-order-promo";
+const SHIPPING_FEE_REGIONS = [...NIGERIAN_REGIONS, "DEFAULT"];
+
+const shippingFeeSelect = { id: true, region: true, fee: true };
+
+const getShippingFeeForState = async (state) => {
+  const region = getRegionForState(state) || "DEFAULT";
+  const shippingFee = await prisma.shippingFee.findUnique({
+    where: { region },
+    select: shippingFeeSelect,
+  });
+  const fallback =
+    shippingFee ||
+    (region !== "DEFAULT"
+      ? await prisma.shippingFee.findUnique({
+          where: { region: "DEFAULT" },
+          select: shippingFeeSelect,
+        })
+      : null);
+  return { region, fee: fallback?.fee ?? 0 };
+};
+
+const findActiveDiscount = async (code) => {
+  const discount = await prisma.discount.findUnique({ where: { code } });
+  if (
+    !discount ||
+    !discount.active ||
+    (discount.expiresAt && discount.expiresAt <= new Date()) ||
+    (discount.maxUses !== null && discount.usedCount >= discount.maxUses)
+  ) {
+    return null;
+  }
+  return discount;
+};
+
+const getDiscountAmount = (discount, subtotal) =>
+  Math.min(
+    subtotal,
+    discount.type === "PERCENTAGE"
+      ? subtotal * (discount.value / 100)
+      : discount.value,
+  );
+
+const firstOrderPromoSelect = {
+  id: true,
+  discountPercent: true,
+  freeShipping: true,
+  active: true,
+  bannerMessage: true,
+  updatedAt: true,
+};
+
+const getFirstOrderPromoConfig = () =>
+  prisma.firstOrderPromo.findFirst({
+    orderBy: { updatedAt: "desc" },
+    select: firstOrderPromoSelect,
+  });
+
+const serializeFirstOrderPromo = (promo, user) => ({
+  ...promo,
+  eligible: Boolean(user && !user.firstOrderPromoUsed && promo?.active),
+});
+
+const sendVerificationCode = async (request) => {
+  let user = await getCurrentUser(request);
+  if (!user) {
+    const body = await request.json().catch(() => ({}));
+    const userId = typeof body.userId === "string" ? body.userId.trim() : "";
+    if (!/^[0-9a-f-]{36}$/i.test(userId)) {
+      return jsonResponse({ error: "Unauthorized" }, 401);
+    }
+
+    const { data, error } =
+      await getSupabaseAdmin().auth.admin.getUserById(userId);
+    if (error || !data?.user?.email) {
+      return jsonResponse({ error: "Unauthorized" }, 401);
+    }
+
+    const syncedUser = await prisma.user.upsert({
+      where: { id: userId },
+      update: { email: data.user.email },
+      create: {
+        id: userId,
+        email: data.user.email,
+        name: data.user.user_metadata?.name || null,
+      },
+    });
+    if (!syncedUser.active) return jsonResponse({ error: "Unauthorized" }, 401);
+    user = {
+      id: syncedUser.id,
+      email: syncedUser.email,
+    };
+  }
+
+  const code = String(randomInt(100000, 1000000));
+  const expiresAt = new Date(Date.now() + VERIFICATION_CODE_TTL_MS);
+  await prisma.$transaction(async (transaction) => {
+    await transaction.emailVerificationCode.deleteMany({
+      where: { userId: user.id, usedAt: null },
+    });
+    await transaction.emailVerificationCode.create({
+      data: { userId: user.id, code, expiresAt },
+    });
+  });
+
+  const sent = await sendEmail({
+    to: user.email,
+    subject: "Confirm your GRV email",
+    html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#111"><p style="font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#666">GRV</p><h1 style="font-size:28px;margin:24px 0 12px">Confirm your email</h1><p>Enter this code to verify your GRV account:</p><p style="font-size:36px;letter-spacing:0.28em;font-weight:700;margin:28px 0">${code}</p><p style="color:#666">This code expires in 15 minutes.</p></div>`,
+  });
+  if (!sent.sent) {
+    const status = sent.statusCode === 429 ? 429 : 502;
+    return jsonResponse(
+      {
+        error:
+          status === 429
+            ? "Email provider rate limit reached. Please wait a moment and try again."
+            : "Could not send your verification email.",
+      },
+      status,
+    );
+  }
+  return jsonResponse({ sent: true });
+};
+
+const verifyEmail = async (request) => {
+  const user = await getCurrentUser(request);
+  if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+
+  const body = await request.json();
+  const code = typeof body.code === "string" ? body.code.trim() : "";
+  if (!/^\d{6}$/.test(code)) {
+    return jsonResponse({ error: "Enter the 6-digit verification code" }, 400);
+  }
+
+  const now = new Date();
+  const verificationCode = await prisma.emailVerificationCode.findFirst({
+    where: { userId: user.id, code, usedAt: null, expiresAt: { gt: now } },
+    select: { id: true },
+  });
+  if (!verificationCode) {
+    return jsonResponse(
+      { error: "That verification code is invalid or expired" },
+      400,
+    );
+  }
+
+  await prisma.$transaction(async (transaction) => {
+    const claimed = await transaction.emailVerificationCode.updateMany({
+      where: {
+        id: verificationCode.id,
+        usedAt: null,
+        expiresAt: { gt: now },
+      },
+      data: { usedAt: now },
+    });
+    if (claimed.count !== 1) {
+      throw new Error("Verification code was already used");
+    }
+    await transaction.user.update({
+      where: { id: user.id },
+      data: { emailVerified: true },
+    });
+  });
+
+  return jsonResponse({ verified: true });
+};
 
 const notificationEmailContent = {
   WISHLIST_SALE: {
@@ -51,7 +222,7 @@ const sendNotificationEmail = async (
       html: `<p>${content.message(productName)}</p><p><a href="${productUrl}">View product</a></p>`,
     });
 
-    if (emailSent) {
+    if (emailSent.sent) {
       await transaction.notification.update({
         where: { id: notification.id },
         data: { sent: true },
@@ -265,8 +436,12 @@ const serializeProduct = (product) => ({
   })),
   description: product.description,
   basePrice: product.basePrice,
+  discountPercent: product.discountPercent,
+  status: product.status,
+  createdAt: product.createdAt,
   imageUrl: product.imageUrl,
   isNew: product.isNew,
+  archived: product.archived,
   brandId: product.brandId,
   brandName: product.brand?.name,
   variants: product.variants.map((variant) => ({
@@ -292,8 +467,9 @@ const buildProductsWhere = (url) => {
   const styleTag = url.searchParams.get("style");
   const brandId = url.searchParams.get("brand");
   const query = url.searchParams.get("q");
+  const archived = url.searchParams.get("archived") === "true";
 
-  const where = {};
+  const where = { archived };
   if (gender) where.gender = gender;
   if (categoryId) where.categoryId = categoryId;
   if (subcategory)
@@ -343,6 +519,20 @@ const listProducts = async (url) => {
   });
 };
 
+const listNewArrivals = async () => {
+  const products = await prisma.product.findMany({
+    where: { status: "ACTIVE" },
+    include: productInclude,
+    orderBy: { createdAt: "desc" },
+    take: 10,
+  });
+
+  return jsonResponse({
+    items: products.map(serializeProduct),
+    total: products.length,
+  });
+};
+
 const getProductById = async (id) => {
   const product = await prisma.product.findUnique({
     where: { id },
@@ -388,6 +578,33 @@ const listFilterTypes = async () => {
     orderBy: { name: "asc" },
   });
   return jsonResponse(filterTypes);
+};
+
+const listSiteImages = async () => {
+  const images = await prisma.siteImage.findMany({
+    select: { key: true, imageUrl: true },
+    orderBy: { key: "asc" },
+  });
+  return jsonResponse(
+    Object.fromEntries(images.map((image) => [image.key, image.imageUrl])),
+  );
+};
+
+const updateAdminSiteImage = async (request, key) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const body = await request.json();
+  if (typeof body.imageUrl !== "string" || !body.imageUrl.trim()) {
+    return jsonResponse({ error: "imageUrl must be a non-empty string" }, 400);
+  }
+
+  const image = await prisma.siteImage.update({
+    where: { key },
+    data: { imageUrl: body.imageUrl.trim() },
+    select: { key: true, imageUrl: true, updatedAt: true },
+  });
+  return jsonResponse(image);
 };
 
 const uploadImage = async (request) => {
@@ -910,6 +1127,304 @@ const handleAdminTagRequest = async (request, segments) => {
   return jsonResponse({ error: "Method not allowed" }, 405);
 };
 
+const sectionSelect = {
+  id: true,
+  title: true,
+  slug: true,
+  description: true,
+  showOnHomepage: true,
+  homepageOrder: true,
+  createdAt: true,
+  products: { select: { productId: true } },
+};
+
+const serializeAdminSection = (section) => ({
+  ...section,
+  productIds: section.products.map(({ productId }) => productId),
+  productCount: section.products.length,
+  products: undefined,
+});
+
+const validateSectionInput = (body, { partial = false } = {}) => {
+  const data = {};
+  for (const field of ["title", "slug", "description"]) {
+    if (body[field] !== undefined) {
+      if (typeof body[field] !== "string" || !body[field].trim()) {
+        return { error: `${field} must be a non-empty string` };
+      }
+      data[field] = body[field].trim();
+    } else if (!partial) {
+      return { error: `${field} is required` };
+    }
+  }
+  if (body.showOnHomepage !== undefined) {
+    if (typeof body.showOnHomepage !== "boolean") {
+      return { error: "showOnHomepage must be a boolean" };
+    }
+    data.showOnHomepage = body.showOnHomepage;
+  }
+  if (body.homepageOrder !== undefined) {
+    if (
+      body.homepageOrder !== null &&
+      (!Number.isInteger(Number(body.homepageOrder)) ||
+        Number(body.homepageOrder) < 0)
+    ) {
+      return { error: "homepageOrder must be a non-negative integer or null" };
+    }
+    data.homepageOrder =
+      body.homepageOrder === null ? null : Number(body.homepageOrder);
+  }
+  return { data };
+};
+
+const listAdminSections = async (request) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  const sections = await prisma.section.findMany({
+    orderBy: [{ homepageOrder: "asc" }, { createdAt: "desc" }],
+    select: sectionSelect,
+  });
+  return jsonResponse(sections.map(serializeAdminSection));
+};
+
+const getAdminSection = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  const section = await prisma.section.findUnique({
+    where: { id },
+    select: sectionSelect,
+  });
+  if (!section) return jsonResponse({ error: "Section not found" }, 404);
+  return jsonResponse(serializeAdminSection(section));
+};
+
+const createAdminSection = async (request) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  const result = validateSectionInput(await request.json());
+  if (result.error) return jsonResponse({ error: result.error }, 400);
+  const section = await prisma.section.create({
+    data: result.data,
+    select: sectionSelect,
+  });
+  return jsonResponse(serializeAdminSection(section), 201);
+};
+
+const updateAdminSection = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  const result = validateSectionInput(await request.json(), { partial: true });
+  if (result.error || Object.keys(result.data).length === 0) {
+    return jsonResponse(
+      { error: result.error || "At least one section field is required" },
+      400,
+    );
+  }
+  const section = await prisma.section.update({
+    where: { id },
+    data: result.data,
+    select: sectionSelect,
+  });
+  return jsonResponse(serializeAdminSection(section));
+};
+
+const deleteAdminSection = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  await prisma.section.delete({ where: { id } });
+  return jsonResponse({ deleted: true, id });
+};
+
+const replaceAdminSectionProducts = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  const body = await request.json();
+  if (
+    !Array.isArray(body.productIds) ||
+    body.productIds.some((productId) => typeof productId !== "string")
+  ) {
+    return jsonResponse(
+      { error: "productIds must be an array of product IDs" },
+      400,
+    );
+  }
+  const productIds = [...new Set(body.productIds)];
+  const section = await prisma.section.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!section) return jsonResponse({ error: "Section not found" }, 404);
+  const productCount = await prisma.product.count({
+    where: { id: { in: productIds } },
+  });
+  if (productCount !== productIds.length) {
+    return jsonResponse({ error: "One or more products were not found" }, 400);
+  }
+  await prisma.$transaction([
+    prisma.productSection.deleteMany({ where: { sectionId: id } }),
+    prisma.productSection.createMany({
+      data: productIds.map((productId) => ({ productId, sectionId: id })),
+    }),
+  ]);
+  return getAdminSection(request, id);
+};
+
+const handleAdminSectionRequest = async (request, segments) => {
+  const id = segments[3] ? decodeURIComponent(segments[3]) : null;
+  if (request.method === "GET" && !id) return listAdminSections(request);
+  if (request.method === "GET" && id && segments[4] !== "products") {
+    return getAdminSection(request, id);
+  }
+  if (request.method === "POST" && !id) return createAdminSection(request);
+  if (request.method === "PUT" && id && segments[4] === "products") {
+    return replaceAdminSectionProducts(request, id);
+  }
+  if (request.method === "PUT" && id) return updateAdminSection(request, id);
+  if (request.method === "DELETE" && id) return deleteAdminSection(request, id);
+  return jsonResponse({ error: "Method not allowed" }, 405);
+};
+
+const serializePublicSection = (section) => ({
+  id: section.id,
+  title: section.title,
+  slug: section.slug,
+  description: section.description,
+  showOnHomepage: section.showOnHomepage,
+  homepageOrder: section.homepageOrder,
+  products: section.products.map(serializeProduct),
+});
+
+const sectionProductInclude = {
+  product: { include: productInclude },
+};
+
+const publicSectionProductsInclude = {
+  where: { product: { archived: false, status: "ACTIVE" } },
+  include: sectionProductInclude,
+};
+
+const getPublicSection = async (slug) => {
+  const section = await prisma.section.findUnique({
+    where: { slug },
+    include: { products: publicSectionProductsInclude },
+  });
+  if (!section) return jsonResponse({ error: "Section not found" }, 404);
+  return jsonResponse(
+    serializePublicSection({
+      ...section,
+      products: section.products.map(({ product }) => product),
+    }),
+  );
+};
+
+const listHomepageSections = async () => {
+  const sections = await prisma.section.findMany({
+    where: { showOnHomepage: true },
+    orderBy: [{ homepageOrder: "asc" }, { createdAt: "asc" }],
+    include: { products: publicSectionProductsInclude },
+  });
+  return jsonResponse(
+    sections.map((section) =>
+      serializePublicSection({
+        ...section,
+        products: section.products.map(({ product }) => product),
+      }),
+    ),
+  );
+};
+
+const discountSelect = {
+  id: true,
+  code: true,
+  type: true,
+  value: true,
+  active: true,
+  expiresAt: true,
+  maxUses: true,
+  usedCount: true,
+};
+
+const validateDiscountData = (body) => {
+  const code =
+    typeof body.code === "string" ? body.code.trim().toUpperCase() : "";
+  const type = body.type;
+  const value = Number(body.value);
+  const maxUses =
+    body.maxUses === "" || body.maxUses == null ? null : Number(body.maxUses);
+  const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+  if (!code || !["PERCENTAGE", "FIXED"].includes(type)) {
+    return { error: "code and a valid type are required" };
+  }
+  if (
+    !Number.isFinite(value) ||
+    value <= 0 ||
+    (type === "PERCENTAGE" && value > 100)
+  ) {
+    return {
+      error: "value must be positive and percentages cannot exceed 100",
+    };
+  }
+  if (maxUses !== null && (!Number.isInteger(maxUses) || maxUses < 1)) {
+    return { error: "maxUses must be a positive integer" };
+  }
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+    return { error: "expiresAt must be a valid date" };
+  }
+  return { data: { code, type, value, maxUses, expiresAt } };
+};
+
+const listAdminDiscounts = async (request) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  const discounts = await prisma.discount.findMany({
+    select: discountSelect,
+    orderBy: { code: "asc" },
+  });
+  return jsonResponse(discounts);
+};
+
+const createAdminDiscount = async (request) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  const validated = validateDiscountData(await request.json());
+  if (validated.error) return jsonResponse({ error: validated.error }, 400);
+  const discount = await prisma.discount.create({
+    data: validated.data,
+    select: discountSelect,
+  });
+  return jsonResponse(discount, 201);
+};
+
+const updateAdminDiscount = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  const validated = validateDiscountData(await request.json());
+  if (validated.error) return jsonResponse({ error: validated.error }, 400);
+  const discount = await prisma.discount.update({
+    where: { id },
+    data: validated.data,
+    select: discountSelect,
+  });
+  return jsonResponse(discount);
+};
+
+const deleteAdminDiscount = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  await prisma.discount.delete({ where: { id } });
+  return jsonResponse({ deleted: true, id });
+};
+
+const handleAdminDiscountRequest = async (request, segments) => {
+  const id = segments[3] ? decodeURIComponent(segments[3]) : null;
+  if (request.method === "GET" && !id) return listAdminDiscounts(request);
+  if (request.method === "POST" && !id) return createAdminDiscount(request);
+  if (request.method === "PUT" && id) return updateAdminDiscount(request, id);
+  if (request.method === "DELETE" && id)
+    return deleteAdminDiscount(request, id);
+  return jsonResponse({ error: "Method not allowed" }, 405);
+};
+
 const journalPostFields = [
   "title",
   "slug",
@@ -1046,11 +1561,14 @@ const customerOrderSelect = {
   id: true,
   status: true,
   total: true,
+  shippingFee: true,
   fullName: true,
+  country: true,
   phone: true,
   address: true,
   city: true,
   state: true,
+  postalCode: true,
   paystackReference: true,
   createdAt: true,
   updatedAt: true,
@@ -1114,12 +1632,15 @@ const adminOrderSelect = {
   id: true,
   status: true,
   total: true,
+  shippingFee: true,
   paystackReference: true,
   fullName: true,
+  country: true,
   phone: true,
   address: true,
   city: true,
   state: true,
+  postalCode: true,
   createdAt: true,
   updatedAt: true,
   user: { select: { id: true, name: true, email: true } },
@@ -1130,14 +1651,18 @@ const serializeAdminOrder = async (order) => ({
   id: order.id,
   status: order.status,
   total: order.total,
+  shippingFee: order.shippingFee,
   paystackReference: order.paystackReference,
   customer: order.user,
   shippingAddress: {
     fullName: order.fullName,
+    country: order.country,
     phone: order.phone,
     address: order.address,
     city: order.city,
     state: order.state,
+    region: getRegionForState(order.state),
+    postalCode: order.postalCode,
   },
   createdAt: order.createdAt,
   updatedAt: order.updatedAt,
@@ -1173,6 +1698,8 @@ const listAdminOrders = async (request, url) => {
       customer: order.customer,
       status: order.status,
       total: order.total,
+      state: order.shippingAddress.state,
+      region: order.shippingAddress.region,
       itemCount: order.items.reduce((count, item) => count + item.quantity, 0),
       firstImage: order.items[0]?.image || null,
       createdAt: order.createdAt,
@@ -1764,8 +2291,10 @@ const serializeAdminProduct = (product) => ({
   gender: product.gender,
   description: product.description,
   basePrice: product.basePrice,
+  discountPercent: product.discountPercent,
   imageUrl: product.imageUrl,
   isNew: product.isNew,
+  archived: product.archived,
   brandId: product.brandId,
   brandName: product.brand?.name,
   categoryId: product.categoryId,
@@ -1789,8 +2318,10 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
     "gender",
     "description",
     "basePrice",
+    "discountPercent",
     "imageUrl",
     "isNew",
+    "archived",
     "brandId",
     "categoryId",
     "subcategoryId",
@@ -1827,8 +2358,24 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
     if (!Number.isFinite(data.basePrice))
       return { error: "basePrice must be a number" };
   }
+  if (data.discountPercent !== undefined && data.discountPercent !== null) {
+    data.discountPercent = Number(data.discountPercent);
+    if (
+      !Number.isFinite(data.discountPercent) ||
+      data.discountPercent < 0 ||
+      data.discountPercent > 100
+    ) {
+      return { error: "discountPercent must be between 0 and 100" };
+    }
+  }
   if (data.isNew !== undefined && typeof data.isNew !== "boolean") {
     return { error: "isNew must be a boolean" };
+  }
+  if (data.archived !== undefined && typeof data.archived !== "boolean") {
+    return { error: "archived must be a boolean" };
+  }
+  if (data.archived !== undefined) {
+    data.status = data.archived ? "ARCHIVED" : "ACTIVE";
   }
 
   if (data.subcategoryId !== undefined && data.subcategoryId !== null) {
@@ -1900,10 +2447,30 @@ const updateAdminProduct = async (request, id) => {
 
   const existingProduct = await prisma.product.findUnique({
     where: { id },
-    select: { id: true, name: true, basePrice: true },
+    select: {
+      id: true,
+      name: true,
+      basePrice: true,
+      variants: { select: { stock: true } },
+    },
   });
   if (!existingProduct)
     return jsonResponse({ error: "Product not found" }, 404);
+  if (input.data.archived === true) {
+    const hasVariants = existingProduct.variants.length > 0;
+    const isSoldOut = existingProduct.variants.every(
+      (variant) => variant.stock === 0,
+    );
+    if (!hasVariants || !isSoldOut) {
+      return jsonResponse(
+        {
+          error:
+            "A product can only be archived when it has variants and every variant is sold out.",
+        },
+        409,
+      );
+    }
+  }
 
   const product = await prisma.$transaction(async (transaction) => {
     const updatedProduct = await transaction.product.update({
@@ -2235,7 +2802,15 @@ const initializeCheckout = async (request) => {
   }
 
   const body = await request.json();
-  const requiredFields = ["fullName", "phone", "address", "city", "state"];
+  const requiredFields = [
+    "fullName",
+    "country",
+    "phone",
+    "address",
+    "city",
+    "state",
+    "postalCode",
+  ];
   const missingFields = requiredFields.filter(
     (field) => typeof body[field] !== "string" || !body[field].trim(),
   );
@@ -2266,7 +2841,7 @@ const initializeCheckout = async (request) => {
       quantity <= 0,
   );
   if (invalidLine) {
-    return jsonResponse({ error: "Cart contains an invalid item" }, 400);
+    return jsonResponse({ error: "Goody Bag contains an invalid item" }, 400);
   }
 
   const products = await prisma.product.findMany({
@@ -2277,6 +2852,7 @@ const initializeCheckout = async (request) => {
       id: true,
       name: true,
       basePrice: true,
+      discountPercent: true,
       variants: { select: { id: true, size: true, color: true, stock: true } },
     },
   });
@@ -2312,12 +2888,14 @@ const initializeCheckout = async (request) => {
       continue;
     }
 
-    total += product.basePrice * lineItem.quantity;
+    const itemPrice =
+      product.basePrice * (1 - (product.discountPercent ?? 0) / 100);
+    total += itemPrice * lineItem.quantity;
     orderItems.push({
       productId: product.id,
       variantId: variant.id,
       quantity: lineItem.quantity,
-      priceAtPurchase: product.basePrice,
+      priceAtPurchase: itemPrice,
     });
   }
 
@@ -2331,16 +2909,65 @@ const initializeCheckout = async (request) => {
     );
   }
 
+  const firstOrderPromo = await getFirstOrderPromoConfig();
+  const firstOrderEligible = Boolean(
+    firstOrderPromo?.active && !user.firstOrderPromoUsed,
+  );
+  const firstOrderDiscountPercent = firstOrderEligible
+    ? firstOrderPromo.discountPercent
+    : null;
+  const firstOrderDiscountAmount = firstOrderEligible
+    ? total * (firstOrderPromo.discountPercent / 100)
+    : 0;
+  const subtotalAfterFirstOrderDiscount = total - firstOrderDiscountAmount;
+  let discount = null;
+  let discountAmount = 0;
+  const discountCode =
+    typeof body.discountCode === "string"
+      ? body.discountCode.trim().toUpperCase()
+      : "";
+  if (discountCode) {
+    discount = await findActiveDiscount(discountCode);
+    if (!discount) {
+      return jsonResponse(
+        { error: "This promo code is invalid or unavailable" },
+        400,
+      );
+    }
+    discountAmount = getDiscountAmount(
+      discount,
+      subtotalAfterFirstOrderDiscount,
+    );
+  }
+  const firstOrderFreeShipping = Boolean(
+    firstOrderEligible && firstOrderPromo.freeShipping,
+  );
+  const { fee: regionalShippingFee } = await getShippingFeeForState(body.state);
+  const shippingFee = firstOrderFreeShipping ? 0 : regionalShippingFee;
+  const orderTotal = Math.max(
+    0,
+    subtotalAfterFirstOrderDiscount - discountAmount + shippingFee,
+  );
+
   const order = await prisma.order.create({
     data: {
       userId: user.id,
-      total,
+      total: orderTotal,
+      discountId: discount?.id,
+      discountAmount,
+      firstOrderDiscountPercent,
+      firstOrderDiscountAmount,
+      firstOrderFreeShipping,
+      shippingFee,
+      shippingAmount: shippingFee,
       paystackReference: `pending-${crypto.randomUUID()}`,
       fullName: body.fullName.trim(),
+      country: body.country.trim(),
       phone: body.phone.trim(),
       address: body.address.trim(),
       city: body.city.trim(),
       state: body.state.trim(),
+      postalCode: body.postalCode.trim(),
       items: { create: orderItems },
     },
   });
@@ -2355,7 +2982,8 @@ const initializeCheckout = async (request) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          amount: Math.round(total * 100),
+          amount: Math.round(orderTotal * 100),
+          currency: "NGN",
           email: user.email,
           callback_url: `${new URL(request.url).origin}/checkout/complete`,
         }),
@@ -2363,9 +2991,21 @@ const initializeCheckout = async (request) => {
     );
     const paystackBody = await paystackResponse.json().catch(() => null);
     if (!paystackResponse.ok || !paystackBody?.status || !paystackBody.data) {
+      console.error("Paystack rejected checkout initialization", {
+        status: paystackResponse.status,
+        message: paystackBody?.message,
+        gatewayResponse: paystackBody?.data?.gateway_response,
+        amount: Math.round(orderTotal * 100),
+        hasEmail: Boolean(user.email),
+      });
       await prisma.order.delete({ where: { id: order.id } });
       return jsonResponse(
-        { error: paystackBody?.message || "Unable to initialize payment" },
+        {
+          error:
+            paystackBody?.message ||
+            paystackBody?.data?.gateway_response ||
+            "Unable to initialize payment",
+        },
         502,
       );
     }
@@ -2404,10 +3044,10 @@ const sendAdminOrderAlert = async (order) => {
     const emailSent = await sendEmail({
       to: process.env.ADMIN_ALERT_EMAIL,
       subject: `New order #${order.id}`,
-      html: `<p>New order <strong>#${order.id}</strong> has been paid.</p><p>Customer: ${order.fullName} (${order.user.email})</p><p>Total: $${order.total.toFixed(2)}</p><p>Item count: ${itemCount}</p>`,
+      html: `<p>New order <strong>#${order.id}</strong> has been paid.</p><p>Customer: ${order.fullName} (${order.user.email})</p><p>Total: ${formatPrice(order.total)}</p><p>Item count: ${itemCount}</p>`,
     });
 
-    if (!emailSent) console.error("Admin order alert failed", order.id);
+    if (!emailSent.sent) console.error("Admin order alert failed", order.id);
   } catch (error) {
     console.error("Admin order alert failed", { orderId: order.id, error });
   }
@@ -2520,6 +3160,23 @@ const markOrderAsPaid = async (reference) => {
       });
     }
     transitionedToPaid = true;
+
+    if (order.discountId) {
+      await transaction.discount.update({
+        where: { id: order.discountId },
+        data: { usedCount: { increment: 1 } },
+      });
+    }
+
+    if (
+      order.firstOrderDiscountPercent !== null ||
+      order.firstOrderFreeShipping
+    ) {
+      await transaction.user.updateMany({
+        where: { id: order.userId, firstOrderPromoUsed: false },
+        data: { firstOrderPromoUsed: true },
+      });
+    }
 
     for (const item of order.items) {
       const variant = await transaction.variant.findUnique({
@@ -2739,6 +3396,7 @@ const listOrders = async (request) => {
       id: true,
       status: true,
       total: true,
+      state: true,
       createdAt: true,
       items: orderItemInclude,
     },
@@ -2749,6 +3407,8 @@ const listOrders = async (request) => {
       id: order.id,
       status: order.status,
       total: order.total,
+      state: order.state,
+      region: getRegionForState(order.state),
       createdAt: order.createdAt,
       itemCount: order.items.reduce((count, item) => count + item.quantity, 0),
       firstImage: order.items[0]?.image || null,
@@ -2767,10 +3427,12 @@ const getOrder = async (request, id) => {
       status: true,
       total: true,
       fullName: true,
+      country: true,
       phone: true,
       address: true,
       city: true,
       state: true,
+      postalCode: true,
       createdAt: true,
       items: orderItemInclude,
     },
@@ -2778,17 +3440,22 @@ const getOrder = async (request, id) => {
   if (!order) return jsonResponse({ error: "Order not found" }, 404);
 
   const [enrichedOrder] = await enrichOrderItems([order]);
-  return jsonResponse(enrichedOrder);
+  return jsonResponse({
+    ...enrichedOrder,
+    region: getRegionForState(enrichedOrder.state),
+  });
 };
 
 const savedAddressSelect = {
   id: true,
   label: true,
   fullName: true,
+  country: true,
   phone: true,
   address: true,
   city: true,
   state: true,
+  postalCode: true,
   isDefault: true,
   createdAt: true,
 };
@@ -2818,6 +3485,201 @@ const updateAccountProfile = async (request) => {
     select: { id: true, name: true, email: true, role: true, active: true },
   });
   return jsonResponse({ user: updatedUser });
+};
+
+const markFirstOrderBannerSeen = async (request) => {
+  const user = await getAccountUser(request);
+  if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+
+  const updatedUser = await prisma.user.update({
+    where: { id: user.id },
+    data: { hasSeenFirstOrderBanner: true },
+    select: {
+      id: true,
+      hasSeenFirstOrderBanner: true,
+      firstOrderPromoUsed: true,
+    },
+  });
+  return jsonResponse({ user: updatedUser });
+};
+
+const getFirstOrderPromoForUser = async (request) => {
+  const user = await getAccountUser(request);
+  if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+  const promo = await getFirstOrderPromoConfig();
+  if (!promo)
+    return jsonResponse({ error: "First-order promo is not configured" }, 404);
+  return jsonResponse(serializeFirstOrderPromo(promo, user));
+};
+
+const getCheckoutShippingFee = async (request, url) => {
+  const user = await getAccountUser(request);
+  if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+
+  const { region, fee } = await getShippingFeeForState(
+    url.searchParams.get("state"),
+  );
+  const promo = await getFirstOrderPromoConfig();
+  const freeShipping = Boolean(
+    promo?.active && promo.freeShipping && !user.firstOrderPromoUsed,
+  );
+  return jsonResponse({
+    region,
+    fee,
+    chargedFee: freeShipping ? 0 : fee,
+    freeShipping,
+  });
+};
+
+const previewCheckoutDiscount = async (request) => {
+  const user = await getAccountUser(request);
+  if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+
+  const body = await request.json();
+  const code =
+    typeof body.code === "string" ? body.code.trim().toUpperCase() : "";
+  const subtotal = Number(body.subtotal);
+  if (!code) return jsonResponse({ error: "Enter a promo code" }, 400);
+  if (!Number.isFinite(subtotal) || subtotal < 0) {
+    return jsonResponse({ error: "Invalid checkout subtotal" }, 400);
+  }
+
+  const discount = await findActiveDiscount(code);
+  if (!discount) {
+    return jsonResponse(
+      { error: "This promo code is invalid or unavailable" },
+      400,
+    );
+  }
+  const firstOrderPromo = await getFirstOrderPromoConfig();
+  const firstOrderEligible = Boolean(
+    firstOrderPromo?.active && !user.firstOrderPromoUsed,
+  );
+  const firstOrderDiscount = firstOrderEligible
+    ? subtotal * (firstOrderPromo.discountPercent / 100)
+    : 0;
+  const discountAmount = getDiscountAmount(
+    discount,
+    Math.max(0, subtotal - firstOrderDiscount),
+  );
+  return jsonResponse({
+    code: discount.code,
+    type: discount.type,
+    value: discount.value,
+    discountAmount,
+  });
+};
+
+const getAdminFirstOrderPromo = async (request) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  const promo = await getFirstOrderPromoConfig();
+  if (!promo)
+    return jsonResponse({ error: "First-order promo is not configured" }, 404);
+  return jsonResponse(promo);
+};
+
+const updateAdminFirstOrderPromo = async (request) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const body = await request.json();
+  const data = {};
+  if (body.discountPercent !== undefined) {
+    data.discountPercent = Number(body.discountPercent);
+    if (
+      !Number.isFinite(data.discountPercent) ||
+      data.discountPercent < 0 ||
+      data.discountPercent > 100
+    ) {
+      return jsonResponse(
+        { error: "discountPercent must be between 0 and 100" },
+        400,
+      );
+    }
+  }
+  if (body.freeShipping !== undefined) {
+    if (typeof body.freeShipping !== "boolean") {
+      return jsonResponse({ error: "freeShipping must be a boolean" }, 400);
+    }
+    data.freeShipping = body.freeShipping;
+  }
+  if (body.active !== undefined) {
+    if (typeof body.active !== "boolean") {
+      return jsonResponse({ error: "active must be a boolean" }, 400);
+    }
+    data.active = body.active;
+  }
+  if (body.bannerMessage !== undefined) {
+    if (typeof body.bannerMessage !== "string" || !body.bannerMessage.trim()) {
+      return jsonResponse(
+        { error: "bannerMessage must be a non-empty string" },
+        400,
+      );
+    }
+    data.bannerMessage = body.bannerMessage.trim();
+  }
+  if (Object.keys(data).length === 0) {
+    return jsonResponse({ error: "At least one promo field is required" }, 400);
+  }
+
+  const existing = await getFirstOrderPromoConfig();
+  const promo = existing
+    ? await prisma.firstOrderPromo.update({
+        where: { id: existing.id },
+        data,
+        select: firstOrderPromoSelect,
+      })
+    : await prisma.firstOrderPromo.create({
+        data: {
+          id: FIRST_ORDER_PROMO_ID,
+          discountPercent: data.discountPercent ?? 10,
+          freeShipping: data.freeShipping ?? true,
+          active: data.active ?? true,
+          bannerMessage:
+            data.bannerMessage ||
+            "Welcome to GRV. Enjoy 10% off and free shipping on your first order.",
+        },
+        select: firstOrderPromoSelect,
+      });
+  return jsonResponse(promo);
+};
+
+const listAdminShippingFees = async (request) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  const fees = await prisma.shippingFee.findMany({
+    where: { region: { in: SHIPPING_FEE_REGIONS } },
+    orderBy: { id: "asc" },
+    select: shippingFeeSelect,
+  });
+  return jsonResponse(
+    SHIPPING_FEE_REGIONS.map(
+      (region) =>
+        fees.find((fee) => fee.region === region) || { region, fee: 0 },
+    ),
+  );
+};
+
+const updateAdminShippingFee = async (request, region) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+  if (!SHIPPING_FEE_REGIONS.includes(region)) {
+    return jsonResponse({ error: "Unknown shipping region" }, 404);
+  }
+
+  const body = await request.json();
+  const fee = Number(body.fee);
+  if (!Number.isFinite(fee) || fee < 0) {
+    return jsonResponse({ error: "fee must be a non-negative number" }, 400);
+  }
+  const shippingFee = await prisma.shippingFee.upsert({
+    where: { region },
+    create: { region, fee },
+    update: { fee },
+    select: shippingFeeSelect,
+  });
+  return jsonResponse(shippingFee);
 };
 
 const changeAccountPassword = async (request) => {
@@ -2854,7 +3716,16 @@ const listAccountAddresses = async (request) => {
 };
 
 const getSavedAddressData = (body, { partial = false } = {}) => {
-  const fields = ["label", "fullName", "phone", "address", "city", "state"];
+  const fields = [
+    "label",
+    "fullName",
+    "country",
+    "phone",
+    "address",
+    "city",
+    "state",
+    "postalCode",
+  ];
   const data = Object.fromEntries(
     fields
       .filter((field) => body[field] !== undefined)
@@ -2976,7 +3847,12 @@ const wishlistProductSelect = {
   name: true,
   imageUrl: true,
   basePrice: true,
+  discountPercent: true,
   brand: { select: { id: true, name: true, slug: true } },
+  variants: {
+    select: { id: true, color: true, size: true, stock: true, images: true },
+    orderBy: { id: "asc" },
+  },
 };
 
 const cartItemSelect = {
@@ -3027,7 +3903,7 @@ const syncCart = async (request) => {
       quantity <= 0,
   );
   if (invalidItem) {
-    return jsonResponse({ error: "Cart contains an invalid item" }, 400);
+    return jsonResponse({ error: "Goody Bag contains an invalid item" }, 400);
   }
 
   const cart = await prisma.$transaction(async (transaction) => {
@@ -3143,6 +4019,12 @@ const listWaitlist = async (request) => {
 const addToWaitlist = async (request) => {
   const user = await getCurrentUser(request);
   if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+  if (!user.emailVerified) {
+    return jsonResponse(
+      { error: "Verify your email before joining the waitlist" },
+      403,
+    );
+  }
 
   const body = await request.json();
   if (typeof body.variantId !== "string" || !body.variantId.trim()) {
@@ -3194,6 +4076,12 @@ const addToWaitlist = async (request) => {
 const removeFromWaitlist = async (request, id) => {
   const user = await getCurrentUser(request);
   if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+  if (!user.emailVerified) {
+    return jsonResponse(
+      { error: "Verify your email before placing an order" },
+      403,
+    );
+  }
 
   await prisma.waitlistEntry.deleteMany({ where: { id, userId: user.id } });
   return jsonResponse({ success: true, id });
@@ -3260,6 +4148,37 @@ export const handleApiRequest = async (request) => {
   if (
     request.method === "POST" &&
     segments[0] === "api" &&
+    segments[1] === "auth" &&
+    segments[2] === "send-verification"
+  ) {
+    try {
+      return await sendVerificationCode(request);
+    } catch (error) {
+      console.error("Verification email send failed", error);
+      return jsonResponse(
+        { error: "Could not send your verification email" },
+        500,
+      );
+    }
+  }
+
+  if (
+    request.method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "auth" &&
+    segments[2] === "verify-email"
+  ) {
+    try {
+      return await verifyEmail(request);
+    } catch (error) {
+      console.error("Email verification failed", error);
+      return jsonResponse({ error: "Could not verify your email" }, 500);
+    }
+  }
+
+  if (
+    request.method === "POST" &&
+    segments[0] === "api" &&
     segments[1] === "admin" &&
     segments[2] === "upload-image"
   ) {
@@ -3296,7 +4215,7 @@ export const handleApiRequest = async (request) => {
       return jsonResponse({ error: "Method not allowed" }, 405);
     } catch (error) {
       console.error("Cart request failed", error);
-      return jsonResponse({ error: "Cart request failed" }, 500);
+      return jsonResponse({ error: "Goody Bag request failed" }, 500);
     }
   }
 
@@ -3376,13 +4295,87 @@ export const handleApiRequest = async (request) => {
     segments[1] === "account" &&
     (segments[2] === "profile" ||
       segments[2] === "change-password" ||
-      segments[2] === "addresses")
+      segments[2] === "addresses" ||
+      segments[2] === "first-order-promo")
   ) {
     try {
+      if (request.method === "GET" && segments[2] === "first-order-promo") {
+        return await getFirstOrderPromoForUser(request);
+      }
+      if (request.method === "POST" && segments[2] === "first-order-promo") {
+        return await markFirstOrderBannerSeen(request);
+      }
       return await handleAccountRequest(request, segments);
     } catch (error) {
       console.error("Account request failed", error);
       return jsonResponse({ error: "Account request failed" }, 500);
+    }
+  }
+
+  if (
+    segments[0] === "api" &&
+    segments[1] === "admin" &&
+    segments[2] === "first-order-promo"
+  ) {
+    try {
+      if (request.method === "GET")
+        return await getAdminFirstOrderPromo(request);
+      if (request.method === "PUT")
+        return await updateAdminFirstOrderPromo(request);
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    } catch (error) {
+      console.error("First-order promo request failed", error);
+      return jsonResponse({ error: "First-order promo request failed" }, 500);
+    }
+  }
+
+  if (
+    request.method === "GET" &&
+    segments[0] === "api" &&
+    segments[1] === "checkout" &&
+    segments[2] === "shipping-fee"
+  ) {
+    try {
+      return await getCheckoutShippingFee(request, url);
+    } catch (error) {
+      console.error("Checkout shipping fee request failed", error);
+      return jsonResponse({ error: "Unable to load shipping fee" }, 500);
+    }
+  }
+
+  if (
+    request.method === "POST" &&
+    segments[0] === "api" &&
+    segments[1] === "checkout" &&
+    segments[2] === "discount"
+  ) {
+    try {
+      return await previewCheckoutDiscount(request);
+    } catch (error) {
+      console.error("Checkout discount request failed", error);
+      return jsonResponse({ error: "Unable to apply promo code" }, 500);
+    }
+  }
+
+  if (
+    segments[0] === "api" &&
+    segments[1] === "admin" &&
+    segments[2] === "shipping-fees"
+  ) {
+    try {
+      if (request.method === "GET" && !segments[3]) {
+        return await listAdminShippingFees(request);
+      }
+      if (request.method === "PUT" && segments[3]) {
+        return await updateAdminShippingFee(
+          request,
+          decodeURIComponent(segments[3]),
+        );
+      }
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    } catch (error) {
+      console.error("Shipping fee request failed", error);
+      return jsonResponse({ error: "Shipping fee request failed" }, 500);
     }
   }
 
@@ -3422,6 +4415,50 @@ export const handleApiRequest = async (request) => {
     } catch (error) {
       console.error("Reminder check request failed", error);
       return jsonResponse({ error: "Reminder check failed" }, 500);
+    }
+  }
+
+  if (
+    segments[0] === "api" &&
+    segments[1] === "admin" &&
+    segments[2] === "site-images"
+  ) {
+    try {
+      const key = segments[3] ? decodeURIComponent(segments[3]) : null;
+      if (request.method === "PUT" && key) {
+        return await updateAdminSiteImage(request, key);
+      }
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    } catch (error) {
+      console.error(error);
+      return jsonResponse({ error: "Site image update failed" }, 500);
+    }
+  }
+
+  if (
+    request.method === "GET" &&
+    segments[0] === "api" &&
+    segments[1] === "site-images" &&
+    !segments[2]
+  ) {
+    try {
+      return await listSiteImages();
+    } catch (error) {
+      console.error(error);
+      return jsonResponse({ error: "Site images request failed" }, 500);
+    }
+  }
+
+  if (
+    segments[0] === "api" &&
+    segments[1] === "admin" &&
+    segments[2] === "discounts"
+  ) {
+    try {
+      return await handleAdminDiscountRequest(request, segments);
+    } catch (error) {
+      console.error(error);
+      return jsonResponse({ error: "Discount request failed" }, 500);
     }
   }
 
@@ -3512,6 +4549,19 @@ export const handleApiRequest = async (request) => {
     } catch (error) {
       console.error(error);
       return jsonResponse({ error: "Tag request failed" }, 500);
+    }
+  }
+
+  if (
+    segments[0] === "api" &&
+    segments[1] === "admin" &&
+    segments[2] === "sections"
+  ) {
+    try {
+      return await handleAdminSectionRequest(request, segments);
+    } catch (error) {
+      console.error(error);
+      return jsonResponse({ error: "Section request failed" }, 500);
     }
   }
 
@@ -3614,6 +4664,8 @@ export const handleApiRequest = async (request) => {
   try {
     if (segments[0] !== "api") return jsonResponse({ error: "Not found" }, 404);
 
+    if (segments[1] === "products" && segments[2] === "new-arrivals")
+      return listNewArrivals();
     if (segments[1] === "products" && !segments[2]) return listProducts(url);
     if (segments[1] === "products" && segments[2])
       return getProductById(decodeURIComponent(segments[2]));
@@ -3622,6 +4674,10 @@ export const handleApiRequest = async (request) => {
     if (segments[1] === "filter-types" && !segments[2])
       return listFilterTypes();
     if (segments[1] === "tags" && !segments[2]) return listTags();
+    if (segments[1] === "sections" && segments[2] === "homepage")
+      return listHomepageSections();
+    if (segments[1] === "sections" && segments[2])
+      return getPublicSection(decodeURIComponent(segments[2]));
     if (segments[1] === "brands" && segments[2])
       return getBrandBySlug(decodeURIComponent(segments[2]));
     if (segments[1] === "journal" && !segments[2])

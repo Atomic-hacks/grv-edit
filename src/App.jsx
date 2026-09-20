@@ -26,8 +26,10 @@ import GenderCatalogue from "./catalog/GenderCatalogue";
 import ShopBy from "./shop/ShopBy";
 import SignUp from "./auth/SignUp";
 import LogIn from "./auth/LogIn";
+import EmailConfirmed from "./auth/EmailConfirmed";
 import ForgotPassword from "./auth/ForgotPassword";
 import ResetPassword from "./auth/ResetPassword";
+import ConfirmEmail from "./auth/ConfirmEmail";
 import Account from "./account/Account";
 import AccountSettings from "./account/AccountSettings";
 import OrderDetail from "./account/OrderDetail";
@@ -51,10 +53,17 @@ import AdminCustomerDetail from "./admin/AdminCustomerDetail";
 import AdminOrders from "./admin/AdminOrders";
 import AdminOrderDetail from "./admin/AdminOrderDetail";
 import AdminContactSubmissions from "./admin/AdminContactSubmissions";
+import AdminDiscounts from "./admin/AdminDiscounts";
+import AdminFirstOrderPromo from "./admin/AdminFirstOrderPromo";
+import AdminShippingFees from "./admin/AdminShippingFees";
+import AdminSiteImages from "./admin/AdminSiteImages";
+import AdminSections from "./admin/AdminSections";
+import SectionPage from "./section/SectionPage";
 import RequireAuth from "./component/auth/RequireAuth";
 import AdminRoute from "./component/auth/AdminRoute";
 import Wishlist from "./wishlist/Wishlist";
 import NewsletterBanner from "./component/ui/NewsletterBanner";
+import FirstOrderPromoBanner from "./component/ui/FirstOrderPromoBanner";
 
 const newsletterPathPattern =
   /^\/(men|women|accessories|athletics|footwear|lifestyle)(\/|$)/;
@@ -67,6 +76,7 @@ const shouldShowNewsletter = (pathname) =>
   pathname === "/catalogues" ||
   pathname === "/brands" ||
   pathname.startsWith("/brands/") ||
+  pathname.startsWith("/sections/") ||
   pathname.startsWith("/product/") ||
   pathname === "/checkout" ||
   pathname === "/contact" ||
@@ -79,6 +89,7 @@ const AppLayout = () => {
   return (
     <>
       {!hideNavbar && <Navbar />}
+      <FirstOrderPromoBanner />
       <Routes>
         <Route path="/" element={<Hero />} />
 
@@ -90,6 +101,7 @@ const AppLayout = () => {
           element={<GenderCatalogue facet="lifestyle" />}
         />
         <Route path="/product/:id" element={<ProductDetail />} />
+        <Route path="/sections/:slug" element={<SectionPage />} />
         <Route path="/catalogues" element={<Catalogues />} />
         <Route path="/brands" element={<Brands />} />
         <Route path="/brands/:slug" element={<BrandCatalogue />} />
@@ -107,6 +119,7 @@ const AppLayout = () => {
           path="/footwear"
           element={<GenderCatalogue facet="footwear" />}
         />
+        <Route path="/archive" element={<GenderCatalogue facet="archive" />} />
         <Route path="/brand" element={<Brand />} />
         <Route path="/journal" element={<Journal />} />
         <Route path="/Departments" element={<Catalogues />} />
@@ -116,6 +129,8 @@ const AppLayout = () => {
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/login" element={<LogIn />} />
+        <Route path="/email-confirmed" element={<EmailConfirmed />} />
+        <Route path="/confirm-email" element={<ConfirmEmail />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route
@@ -179,6 +194,15 @@ const AppLayout = () => {
                     path="customers/:id"
                     element={<AdminCustomerDetail />}
                   />
+                  <Route path="discounts" element={<AdminDiscounts />} />
+                  <Route
+                    path="first-order-promo"
+                    element={<AdminFirstOrderPromo />}
+                  />
+                  <Route path="shipping-fees" element={<AdminShippingFees />} />
+                  <Route path="site-images" element={<AdminSiteImages />} />
+                  <Route path="sections" element={<AdminSections />} />
+                  <Route path="sections/:id/edit" element={<AdminSections />} />
                   <Route path="orders" element={<AdminOrders />} />
                   <Route path="orders/:id" element={<AdminOrderDetail />} />
                   <Route

@@ -18,6 +18,7 @@ const facetConfig = {
   athletics: { title: "Athletics", fixed: { categoryId: "athletics" } },
   lifestyle: { title: "Lifestyle", fixed: { styleTag: "Casual" } },
   footwear: { title: "Footwear", fixed: { categoryId: "footwear" } },
+  archive: { title: "Archive", fixed: { archived: true } },
 };
 
 const GenderCatalogue = ({ facet }) => {
@@ -189,7 +190,7 @@ const GenderCatalogue = ({ facet }) => {
   if (!config) return null;
 
   return (
-    <main className="min-h-screen bg-white px-1.5 pb-20 sm:px-4 lg:px-1.5">
+    <main className="min-h-screen max-w-360 mx-auto bg-white px-1.5 pb-20 sm:px-4 lg:px-1.5">
       <div className="relative py-16">
         <AnimatedPageTitle title={config.title} />
         <p className="mt-6 max-w-lg text-lg leading-relaxed text-gray-700">

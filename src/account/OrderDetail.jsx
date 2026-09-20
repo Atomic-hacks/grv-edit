@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
 import { formatPrice } from "../lib/productHelpers";
 import Spinner from "../component/ui/Spinner";
+import OrderTimeline from "../component/order/OrderTimeline";
 
 const formatDate = (value) =>
   new Intl.DateTimeFormat("en", {
@@ -57,6 +58,10 @@ const OrderDetailContent = () => {
             <p className="border border-gray-300 px-3 py-2 text-sm font-semibold">
               {order.status}
             </p>
+          </div>
+
+          <div className="mt-8">
+            <OrderTimeline status={order.status} />
           </div>
 
           <section className="mt-10 border border-gray-200 p-6">
@@ -118,7 +123,9 @@ const OrderDetailContent = () => {
               <br />
               {order.address}
               <br />
-              {order.city}, {order.state}
+              {order.city}, {order.state} {order.postalCode}
+              <br />
+              {order.country}
             </p>
           </section>
         </>

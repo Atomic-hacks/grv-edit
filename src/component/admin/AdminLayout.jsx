@@ -13,6 +13,7 @@ const navigationGroups = [
       { label: "Filter Types", to: "/admin/filter-types", exact: true },
       { label: "Category Filters", to: "/admin/category-filter-types" },
       { label: "Bulk Upload", to: "/admin/products/bulk-upload" },
+      { label: "Site Images", to: "/admin/site-images" },
     ],
   },
   {
@@ -20,6 +21,10 @@ const navigationGroups = [
     items: [
       { label: "Orders", to: "/admin/orders" },
       { label: "Customers", to: "/admin/customers" },
+      { label: "Discounts", to: "/admin/discounts" },
+      { label: "First-order Promo", to: "/admin/first-order-promo" },
+      { label: "Shipping Fees", to: "/admin/shipping-fees" },
+      { label: "Sections", to: "/admin/sections" },
     ],
   },
   {

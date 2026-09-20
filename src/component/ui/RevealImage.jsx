@@ -37,7 +37,7 @@ const RevealImage = ({
         {!isLoaded && (
           <div className="absolute inset-0 z-20 animate-pulse bg-gray-200" />
         )}
-        <div className="pointer-events-none absolute inset-0 z-10 bg-linear-to-b from-black/60 via-black/5 to-black/75" />
+        <div className="pointer-events-none absolute inset-0 z-50 bg-linear-to-b from-black/60 via-black/5 to-black/75" />
         <img
           ref={imageRef}
           src={getOptimizedImageUrl(src, width)}

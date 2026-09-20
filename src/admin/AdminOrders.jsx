@@ -5,7 +5,9 @@ import { AnimatePresence, motion as Motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
 import { formatPrice } from "../lib/productHelpers";
+import { NIGERIAN_REGIONS } from "../lib/nigeriaRegions";
 import Spinner from "../component/ui/Spinner";
+import OrderTimeline from "../component/order/OrderTimeline";
 
 const formatDate = (value) =>
   new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(
@@ -13,8 +15,6 @@ const formatDate = (value) =>
   );
 
 const statuses = ["", "PENDING", "PAID", "SHIPPED", "DELIVERED", "CANCELLED"];
-const lifecycle = ["PENDING", "PAID", "SHIPPED", "DELIVERED"];
-
 const statusLabel = (status) =>
   status.charAt(0) + status.slice(1).toLowerCase();
 
@@ -27,6 +27,8 @@ const AdminOrders = () => {
   const [detailError, setDetailError] = useState("");
   const [savingStatus, setSavingStatus] = useState(false);
   const status = searchParams.get("status") || "";
+  const state = searchParams.get("state") || "";
+  const region = searchParams.get("region") || "";
   const request = useMemo(() => createAuthenticatedRequest(session), [session]);
   const queryClient = useQueryClient();
   const ordersQuery = useQuery({
@@ -38,20 +40,28 @@ const AdminOrders = () => {
   const loading = ordersQuery.isPending;
   const displayError = ordersQuery.error?.message;
 
-  const updateStatusFilter = (value) => {
-    if (value) setSearchParams({ status: value });
-    else setSearchParams({});
+  const updateFilter = (name, value) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (value) nextParams.set(name, value);
+    else nextParams.delete(name);
+    setSearchParams(nextParams);
   };
+
+  const states = [
+    ...new Set(orders.map((order) => order.state).filter(Boolean)),
+  ].sort();
 
   const filteredOrders = orders.filter((order) => {
     const matchesStatus = !status || order.status === status;
+    const matchesState = !state || order.state === state;
+    const matchesRegion = !region || order.region === region;
     const query = search.trim().toLowerCase();
     const matchesSearch =
       !query ||
       order.id.toLowerCase().includes(query) ||
       order.customer.name?.toLowerCase().includes(query) ||
       order.customer.email?.toLowerCase().includes(query);
-    return matchesStatus && matchesSearch;
+    return matchesStatus && matchesState && matchesRegion && matchesSearch;
   });
 
   const counts = orders.reduce(
@@ -103,15 +113,6 @@ const AdminOrders = () => {
         ? ["DELIVERED", "CANCELLED"]
         : [];
 
-  const timelineStatus = (step) => {
-    if (selectedOrder?.status === "CANCELLED") return "cancelled";
-    const currentIndex = lifecycle.indexOf(selectedOrder?.status);
-    const stepIndex = lifecycle.indexOf(step);
-    if (stepIndex < currentIndex) return "complete";
-    if (stepIndex === currentIndex) return "current";
-    return "future";
-  };
-
   return (
     <main className="mx-auto max-w-7xl px-6 py-12 md:px-12 md:py-20">
       <div className="flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
@@ -149,13 +150,46 @@ const AdminOrders = () => {
           <button
             key={option || "all"}
             type="button"
-            onClick={() => updateStatusFilter(option)}
+            onClick={() => updateFilter("status", option)}
             className={`border-b-2 pb-3 text-sm ${status === option ? "border-black font-semibold text-black" : "border-transparent text-gray-500 hover:text-black"}`}
           >
             {option ? statusLabel(option) : "All"} (
             {option ? counts[option] || 0 : counts.total})
           </button>
         ))}
+      </div>
+
+      <div className="mt-6 grid max-w-3xl gap-4 sm:grid-cols-2">
+        <label className="text-sm font-medium">
+          State
+          <select
+            value={state}
+            onChange={(event) => updateFilter("state", event.target.value)}
+            className="mt-2 w-full border border-gray-300 bg-white px-4 py-3 outline-none focus:border-black"
+          >
+            <option value="">All states</option>
+            {states.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm font-medium">
+          Region
+          <select
+            value={region}
+            onChange={(event) => updateFilter("region", event.target.value)}
+            className="mt-2 w-full border border-gray-300 bg-white px-4 py-3 outline-none focus:border-black"
+          >
+            <option value="">All regions</option>
+            {NIGERIAN_REGIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <label className="mt-6 block max-w-xl text-sm font-medium">
@@ -429,52 +463,7 @@ const AdminOrders = () => {
                     </p>
                   </section>
 
-                  <section className="border-t border-gray-200 pt-6">
-                    <h3 className="font-semibold">Timeline</h3>
-                    <div className="mt-5 space-y-0">
-                      {lifecycle.map((step, index) => {
-                        const state = timelineStatus(step);
-                        return (
-                          <div
-                            key={step}
-                            className="relative flex gap-3 pb-5 last:pb-0"
-                          >
-                            <div
-                              className={`relative z-10 mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center border text-[10px] ${state === "complete" || state === "current" ? "border-black bg-black text-white" : "border-gray-300 text-gray-400"}`}
-                            >
-                              {state === "complete" ? "✓" : index + 1}
-                            </div>
-                            {index < lifecycle.length - 1 && (
-                              <span
-                                className={`absolute left-2.25 top-5 h-full w-px ${state === "complete" ? "bg-black" : "bg-gray-200"}`}
-                              />
-                            )}
-                            <p
-                              className={
-                                state === "future"
-                                  ? "text-gray-400"
-                                  : "font-medium"
-                              }
-                            >
-                              {step === "PENDING"
-                                ? "Order Placed"
-                                : step === "PAID"
-                                  ? "Payment Confirmed"
-                                  : statusLabel(step)}
-                            </p>
-                          </div>
-                        );
-                      })}
-                      {selectedOrder.status === "CANCELLED" && (
-                        <div className="flex gap-3">
-                          <div className="flex h-5 w-5 shrink-0 items-center justify-center border border-black bg-black text-[10px] text-white">
-                            ×
-                          </div>
-                          <p className="font-medium">Cancelled</p>
-                        </div>
-                      )}
-                    </div>
-                  </section>
+                  <OrderTimeline status={selectedOrder.status} />
                 </div>
               )}
             </Motion.aside>

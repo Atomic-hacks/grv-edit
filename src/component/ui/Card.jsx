@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import WishlistButton from "./WishlistButton";
 import { getOptimizedImageUrl } from "../../lib/imageHelpers";
 import Spinner from "./Spinner";
+import DiscountPrice from "./DiscountPrice";
 
 const Card = ({
   img,
@@ -138,9 +139,12 @@ const Card = ({
             </p>
           )}
         </div>
-        <p className="shrink-0 text-sm font-semibold text-neutral-800 sm:text-base">
-          {price}
-        </p>
+        <DiscountPrice
+          basePrice={product?.basePrice}
+          discountPercent={product?.discountPercent}
+          normalPrice={price}
+          className="shrink-0 text-sm font-semibold text-neutral-800 sm:text-base"
+        />
       </div>
     </div>
   );

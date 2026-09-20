@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import PasswordInput from "../component/ui/PasswordInput";
 
 const LogIn = () => {
   const { signIn } = useAuth();
@@ -46,16 +47,14 @@ const LogIn = () => {
             className="border border-gray-300 px-3 py-2"
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm">
-          Password
-          <input
-            type="password"
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="border border-gray-300 px-3 py-2"
-          />
-        </label>
+        <PasswordInput
+          id="login-password"
+          label="Password"
+          required
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
         <Link
           to="/forgot-password"
           className="self-start text-sm text-gray-600 underline underline-offset-4"

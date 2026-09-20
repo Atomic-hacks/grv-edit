@@ -32,6 +32,7 @@ export const fetchProducts = async ({
   query,
   page,
   pageSize,
+  archived,
 } = {}) => {
   const searchParams = new URLSearchParams();
   if (gender) searchParams.set("gender", gender);
@@ -42,6 +43,7 @@ export const fetchProducts = async ({
   if (query) searchParams.set("q", query);
   if (page) searchParams.set("page", String(page));
   if (pageSize) searchParams.set("pageSize", String(pageSize));
+  if (archived !== undefined) searchParams.set("archived", String(archived));
 
   const { items } = await jsonOrThrow(
     await fetch(`/api/products?${searchParams.toString()}`),
@@ -50,6 +52,22 @@ export const fetchProducts = async ({
 };
 
 export const searchProducts = (query) => fetchProducts({ query, pageSize: 6 });
+
+export const fetchNewArrivals = async () => {
+  const { items } = await jsonOrThrow(
+    await fetch("/api/products/new-arrivals"),
+  );
+  return items;
+};
+
+export const fetchSection = async (slug) => {
+  const response = await fetch(`/api/sections/${encodeURIComponent(slug)}`);
+  if (response.status === 404) return null;
+  return jsonOrThrow(response);
+};
+
+export const fetchHomepageSections = async () =>
+  jsonOrThrow(await fetch("/api/sections/homepage"));
 
 export const fetchProductById = async (id) => {
   const response = await fetch(`/api/products/${encodeURIComponent(id)}`);
@@ -61,6 +79,9 @@ export const fetchCategories = async () =>
   jsonOrThrow(await fetch("/api/categories"));
 
 export const fetchBrands = async () => jsonOrThrow(await fetch("/api/brands"));
+
+export const fetchSiteImages = async () =>
+  jsonOrThrow(await fetch("/api/site-images"));
 
 export const fetchBrandBySlug = async (slug) => {
   const response = await fetch(`/api/brands/${encodeURIComponent(slug)}`);

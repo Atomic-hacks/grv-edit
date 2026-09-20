@@ -16,6 +16,9 @@ const drawerVariants = {
   visible: { x: 0 },
 };
 
+const getItemStock = (product) =>
+  product?.variants?.find((variant) => variant.id === product.variantId)?.stock;
+
 const CartDrawer = () => {
   const {
     isCartOpen,
@@ -58,7 +61,7 @@ const CartDrawer = () => {
         >
           <Motion.button
             type="button"
-            aria-label="Close cart"
+            aria-label="Close Goody Bag"
             className="absolute inset-0 bg-black/40"
             variants={overlayVariants}
             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
@@ -70,7 +73,7 @@ const CartDrawer = () => {
             transition={{ type: "spring", stiffness: 320, damping: 32 }}
           >
             <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5">
-              <h3 className="text-lg font-semibold">Your Cart</h3>
+              <h3 className="text-lg font-semibold">Your Goody Bag</h3>
               <button
                 type="button"
                 onClick={closeCart}
@@ -92,7 +95,9 @@ const CartDrawer = () => {
 
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
               {cartItems.length === 0 && (
-                <p className="text-sm text-gray-500">Your cart is empty.</p>
+                <p className="text-sm text-gray-500">
+                  Your Goody Bag is empty.
+                </p>
               )}
               {cartItems.map((item) => (
                 <div key={item.id} className="flex gap-4">
@@ -124,25 +129,38 @@ const CartDrawer = () => {
                       </button>
                     </div>
                     <div className="mt-3 flex items-center gap-3">
-                      <div className="flex items-center border border-gray-200">
-                        <button
-                          type="button"
-                          className="w-8 h-8 text-sm"
-                          onClick={() => updateQty(item.id, item.qty - 1)}
-                        >
-                          -
-                        </button>
-                        <span className="w-8 text-center text-sm">
-                          {item.qty}
-                        </span>
-                        <button
-                          type="button"
-                          className="w-8 h-8 text-sm"
-                          onClick={() => updateQty(item.id, item.qty + 1)}
-                        >
-                          +
-                        </button>
-                      </div>
+                      {(() => {
+                        const stock = getItemStock(item.product);
+                        const atStockLimit =
+                          Number.isFinite(stock) && item.qty >= stock;
+                        return (
+                          <div className="flex items-center border border-gray-200">
+                            <button
+                              type="button"
+                              className="h-8 w-8 text-sm"
+                              onClick={() => updateQty(item.id, item.qty - 1)}
+                            >
+                              -
+                            </button>
+                            <span className="w-8 text-center text-sm">
+                              {item.qty}
+                            </span>
+                            <button
+                              type="button"
+                              className="h-8 w-8 text-sm disabled:cursor-not-allowed disabled:text-gray-300"
+                              onClick={() => updateQty(item.id, item.qty + 1)}
+                              disabled={atStockLimit}
+                              aria-label={
+                                atStockLimit
+                                  ? `Only ${stock} available`
+                                  : "Increase quantity"
+                              }
+                            >
+                              +
+                            </button>
+                          </div>
+                        );
+                      })()}
                       <p className="text-sm font-semibold">
                         {formatPrice(item.product.price * item.qty)}
                       </p>

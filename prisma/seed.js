@@ -14,6 +14,73 @@ const slugifyTag = (name) =>
 // the fly instead of being dropped — logged so it's never silent.
 const unmappedStyleTags = [];
 
+const siteImages = {
+  hero: "/img/heromodel5.jpg",
+  "department-men": "/img/maleheromodel.jpg",
+  "department-women": "/img/femaletop.jpg",
+  "department-accessories": "/img/bag1.jpg",
+  "department-brands": "/img/heromodel.jpg",
+  "brands-section": "/img/heromodel.jpg",
+  "brand-northline": "/img/maleheromodel.jpg",
+  "brand-atelier-zero": "/img/femaletop.jpg",
+  "brand-common-form": "/img/goth-girl2.jpg",
+  "collection-men": "/img/malemodel1.jpg",
+  "collection-women": "/img/model3.jpg",
+  "collection-bags": "/img/bag4.jpg",
+  "collection-athletics": "/img/shoe5.jpg",
+  "collection-lifestyle": "/img/model6.jpg",
+  "department-footwear": "/img/shoe.jpg",
+  "department-athletics": "/img/model4.jpg",
+  "department-apparel": "/img/top1.avif",
+};
+
+const firstOrderPromo = {
+  id: "first-order-promo",
+  discountPercent: 10,
+  freeShipping: true,
+  active: true,
+  bannerMessage:
+    "Welcome to GRV. Enjoy 10% off and free shipping on your first order.",
+};
+
+const shippingFees = [
+  "South-South",
+  "South-West",
+  "South-East",
+  "North-Central",
+  "North-West",
+  "North-East",
+  "DEFAULT",
+].map((region) => ({ region, fee: 2000 }));
+
+const seedShippingFees = async () => {
+  for (const shippingFee of shippingFees) {
+    await prisma.shippingFee.upsert({
+      where: { region: shippingFee.region },
+      create: shippingFee,
+      update: { fee: shippingFee.fee },
+    });
+  }
+};
+
+const seedFirstOrderPromo = async () => {
+  await prisma.firstOrderPromo.upsert({
+    where: { id: firstOrderPromo.id },
+    create: firstOrderPromo,
+    update: firstOrderPromo,
+  });
+};
+
+const seedSiteImages = async () => {
+  for (const [key, imageUrl] of Object.entries(siteImages)) {
+    await prisma.siteImage.upsert({
+      where: { key },
+      create: { key, imageUrl },
+      update: { imageUrl },
+    });
+  }
+};
+
 const seedCategories = async () => {
   for (const category of categories) {
     await prisma.category.upsert({
@@ -103,6 +170,7 @@ const seedProducts = async () => {
         subcategory: product.subcategory,
         description: product.description,
         basePrice: product.basePrice,
+        status: product.archived ? "ARCHIVED" : "ACTIVE",
         isNew: product.isNew,
         brandId: product.brandId,
         styleTags: { connect: styleTagConnections },
@@ -114,6 +182,7 @@ const seedProducts = async () => {
         subcategory: product.subcategory,
         description: product.description,
         basePrice: product.basePrice,
+        status: product.archived ? "ARCHIVED" : "ACTIVE",
         isNew: product.isNew,
         brandId: product.brandId,
         styleTags: { set: styleTagConnections },
@@ -184,6 +253,9 @@ const runIntegrityChecks = async () => {
 };
 
 const main = async () => {
+  await seedFirstOrderPromo();
+  await seedShippingFees();
+  await seedSiteImages();
   await seedCategories();
   await seedBrands();
   await seedProducts();

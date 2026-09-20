@@ -51,7 +51,9 @@ body {
 
 @media (min-width: 1024px) {
   .product-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    width: min(100%, 1440px);
+    margin-inline: auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

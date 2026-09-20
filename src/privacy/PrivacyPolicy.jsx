@@ -44,9 +44,9 @@ const PrivacyPolicy = () => (
           <p className="text-sm leading-7 text-neutral-600">
             We use information to process and deliver orders, manage accounts,
             provide customer support, and send marketing emails when you are on
-            the newsletter or have items in your cart, wishlist, or waitlist.
-            GRV also runs automated abandoned-cart reminders and wishlist or
-            waitlist reminder emails as part of these systems.
+            the newsletter or have items in your Goody Bag, wishlist, or
+            waitlist. GRV also runs automated abandoned-Goody-Bag reminders and
+            wishlist or waitlist reminder emails as part of these systems.
           </p>
         </section>
 

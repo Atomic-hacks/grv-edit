@@ -7,7 +7,8 @@ import FilterDrawer from "../component/ui/FilterDrawer";
 import ListingToolbar from "../component/ui/ListingToolbar";
 import { emptyFilters, filterProducts } from "../data/listing";
 import { formatPrice, getProductImages } from "../lib/productHelpers";
-import { fetchProducts } from "../lib/apiClient";
+import DiscountPrice from "../component/ui/DiscountPrice";
+import { fetchNewArrivals } from "../lib/apiClient";
 import { useAsync } from "../lib/useAsync";
 import { useCart } from "../context/CartContext";
 
@@ -20,8 +21,8 @@ const NewArrivals = () => {
     data: products,
     loading,
     error,
-  } = useAsync(() => fetchProducts({}), []);
-  const baseProducts = (products || []).filter((product) => product.isNew);
+  } = useAsync(() => fetchNewArrivals(), []);
+  const baseProducts = products || [];
   const arrivals = filterProducts(baseProducts, appliedFilters);
 
   return (

@@ -54,10 +54,23 @@ export const AuthProvider = ({ children }) => {
       password,
       options: {
         data: { name },
-        emailRedirectTo: `${window.location.origin}/login`,
       },
     });
     if (error) throw error;
+    if (!data.user?.id) throw new Error("Could not create your account.");
+    const verificationHeaders = { "Content-Type": "application/json" };
+    if (data.session?.access_token) {
+      verificationHeaders.Authorization = `Bearer ${data.session.access_token}`;
+    }
+    const verificationResponse = await fetch("/api/auth/send-verification", {
+      method: "POST",
+      headers: verificationHeaders,
+      body: JSON.stringify({ userId: data.user.id }),
+    });
+    if (!verificationResponse.ok) {
+      const body = await verificationResponse.json().catch(() => ({}));
+      throw new Error(body.error || "Could not send your verification code.");
+    }
     rememberAccountOnThisBrowser();
     return data;
   };

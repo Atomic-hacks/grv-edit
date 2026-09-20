@@ -10,7 +10,7 @@ import React, {
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "./AuthContext";
 import { createAuthenticatedRequest, fetchProductById } from "../lib/apiClient";
-import { getProductImages } from "../lib/productHelpers";
+import { getDiscountedPrice, getProductImages } from "../lib/productHelpers";
 import { useToast } from "./ToastContext";
 
 const CartContext = createContext(null);
@@ -20,23 +20,57 @@ const initialState = {
   isCartOpen: false,
 };
 
+const getAvailableStock = (product) => {
+  const variant = product?.variants?.find(
+    (candidate) => candidate.id === product.variantId,
+  );
+  return variant?.stock ?? null;
+};
+
+const withCurrentPrice = (product) => ({
+  ...product,
+  price: getDiscountedPrice(product.basePrice, product.discountPercent),
+});
+
+const clampQuantity = (product, qty) => {
+  const stock = getAvailableStock(product);
+  return stock === null ? qty : Math.min(qty, Math.max(stock, 0));
+};
+
+const mergeCartItems = (items) => {
+  const mergedItems = new Map();
+  for (const item of items) {
+    const existing = mergedItems.get(item.id);
+    mergedItems.set(item.id, {
+      ...(existing || item),
+      qty: (existing?.qty || 0) + item.qty,
+    });
+  }
+  return [...mergedItems.values()].map((item) => ({
+    ...item,
+    qty: clampQuantity(item.product, item.qty),
+  }));
+};
+
 const cartReducer = (state, action) => {
   switch (action.type) {
     case "ADD": {
       const { product, qty } = action.payload;
       const lineId = `${product.id}:${product.variantId || "default"}`;
       const existing = state.cartItems.find((item) => item.id === lineId);
+      const nextQty = clampQuantity(product, (existing?.qty || 0) + qty);
+      if (nextQty <= 0) return state;
       if (existing) {
         return {
           ...state,
           cartItems: state.cartItems.map((item) =>
-            item.id === lineId ? { ...item, qty: item.qty + qty } : item,
+            item.id === lineId ? { ...item, qty: nextQty } : item,
           ),
         };
       }
       return {
         ...state,
-        cartItems: [...state.cartItems, { id: lineId, qty, product }],
+        cartItems: [...state.cartItems, { id: lineId, qty: nextQty, product }],
       };
     }
     case "REMOVE":
@@ -55,14 +89,21 @@ const cartReducer = (state, action) => {
       return {
         ...state,
         cartItems: state.cartItems.map((item) =>
-          item.id === id ? { ...item, qty } : item,
+          item.id === id
+            ? { ...item, qty: clampQuantity(item.product, qty) }
+            : item,
         ),
       };
     }
     case "CLEAR":
       return { ...state, cartItems: [] };
     case "HYDRATE":
-      return { ...state, cartItems: action.payload };
+      return {
+        ...state,
+        cartItems: mergeCartItems(action.payload).filter(
+          (item) => item.qty > 0,
+        ),
+      };
     case "OPEN":
       return { ...state, isCartOpen: true };
     case "CLOSE":
@@ -101,7 +142,10 @@ export const CartProvider = ({ children }) => {
               product: {
                 ...product,
                 variantId: item.variantId,
-                price: product.basePrice,
+                price: getDiscountedPrice(
+                  product.basePrice,
+                  product.discountPercent,
+                ),
                 image: images[0],
                 hoverImage: images[1] || images[0],
               },
@@ -164,8 +208,11 @@ export const CartProvider = ({ children }) => {
   }, [accessToken, cartSyncReady, request, state.cartItems]);
 
   const addToCart = (product, qty = 1) => {
-    dispatch({ type: "ADD", payload: { product, qty } });
-    showToast("Added to cart");
+    dispatch({
+      type: "ADD",
+      payload: { product: withCurrentPrice(product), qty },
+    });
+    showToast("Added to Goody Bag");
   };
   const removeFromCart = (id) => dispatch({ type: "REMOVE", payload: id });
   const updateQty = (id, qty) =>

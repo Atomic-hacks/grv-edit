@@ -26,5 +26,8 @@ export const getCurrentUser = async (request) => {
     email: user.email,
     name: user.name,
     role: user.role,
+    emailVerified: user.emailVerified,
+    hasSeenFirstOrderBanner: user.hasSeenFirstOrderBanner,
+    firstOrderPromoUsed: user.firstOrderPromoUsed,
   };
 };

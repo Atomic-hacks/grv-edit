@@ -8,13 +8,39 @@ import { createAuthenticatedRequest } from "../lib/apiClient";
 import { formatPrice } from "../lib/productHelpers";
 import Spinner from "../component/ui/Spinner";
 import FadeIn from "../component/ui/FadeIn";
+import AddressFields from "../component/address/AddressFields";
 
 const emptyForm = {
-  fullName: "",
+  firstName: "",
+  lastName: "",
+  country: "",
+  countryCode: "",
   phone: "",
   address: "",
+  addressLine2: undefined,
   city: "",
   state: "",
+  postalCode: "",
+  useAsBilling: false,
+};
+
+const addressToForm = (address) => {
+  const [firstName = "", ...lastNameParts] = (address.fullName || "").split(
+    " ",
+  );
+  const [addressLine = "", addressLine2] = (address.address || "").split("\n");
+  return {
+    ...emptyForm,
+    firstName,
+    lastName: lastNameParts.join(" "),
+    country: address.country || "",
+    phone: address.phone || "",
+    address: addressLine,
+    addressLine2,
+    city: address.city || "",
+    state: address.state || "",
+    postalCode: address.postalCode || "",
+  };
 };
 
 const CheckoutContent = () => {
@@ -25,8 +51,36 @@ const CheckoutContent = () => {
   const [selectedAddressId, setSelectedAddressId] = useState(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [discountCode, setDiscountCode] = useState("");
+  const [appliedDiscount, setAppliedDiscount] = useState(null);
+  const [applyingDiscount, setApplyingDiscount] = useState(false);
+  const [discountError, setDiscountError] = useState("");
 
   const { user } = useAuth();
+  const firstOrderPromoQuery = useQuery({
+    queryKey: ["first-order-promo", user?.id],
+    queryFn: () =>
+      createAuthenticatedRequest(session)("/api/account/first-order-promo"),
+    enabled: Boolean(session && user),
+  });
+  const firstOrderPromo = firstOrderPromoQuery.data?.eligible
+    ? firstOrderPromoQuery.data
+    : null;
+  const firstOrderDiscount = firstOrderPromo
+    ? subtotal * (firstOrderPromo.discountPercent / 100)
+    : 0;
+  const shippingFeeQuery = useQuery({
+    queryKey: ["checkout", "shipping-fee", user?.id, form.state],
+    queryFn: () =>
+      createAuthenticatedRequest(session)(
+        `/api/checkout/shipping-fee?state=${encodeURIComponent(form.state)}`,
+      ),
+    enabled: Boolean(session && user && form.state),
+  });
+  const shippingFee = shippingFeeQuery.data?.chargedFee ?? 0;
+  const discountAmount = appliedDiscount?.discountAmount ?? 0;
+  const checkoutTotal =
+    subtotal - firstOrderDiscount - discountAmount + shippingFee;
   const addressesQuery = useQuery({
     queryKey: ["account", "addresses", user?.id],
     queryFn: () =>
@@ -42,19 +96,8 @@ const CheckoutContent = () => {
     const defaultAddress = savedAddresses.find((address) => address.isDefault);
     if (!defaultAddress) return;
     setSelectedAddressId(defaultAddress.id);
-    setForm({
-      fullName: defaultAddress.fullName,
-      phone: defaultAddress.phone,
-      address: defaultAddress.address,
-      city: defaultAddress.city,
-      state: defaultAddress.state,
-    });
+    setForm(addressToForm(defaultAddress));
   }, [savedAddresses]);
-
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setForm((current) => ({ ...current, [name]: value }));
-  };
 
   const selectAddress = (addressId) => {
     setSelectedAddressId(addressId);
@@ -66,13 +109,31 @@ const CheckoutContent = () => {
       (address) => address.id === addressId,
     );
     if (!selectedAddress) return;
-    setForm({
-      fullName: selectedAddress.fullName,
-      phone: selectedAddress.phone,
-      address: selectedAddress.address,
-      city: selectedAddress.city,
-      state: selectedAddress.state,
-    });
+    setForm(addressToForm(selectedAddress));
+  };
+
+  const applyDiscount = async (event) => {
+    event.preventDefault();
+    setApplyingDiscount(true);
+    setDiscountError("");
+    try {
+      const discount = await createAuthenticatedRequest(session)(
+        "/api/checkout/discount",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            code: discountCode,
+            subtotal,
+          }),
+        },
+      );
+      setAppliedDiscount(discount);
+    } catch (requestError) {
+      setAppliedDiscount(null);
+      setDiscountError(requestError.message || "Unable to apply promo code.");
+    } finally {
+      setApplyingDiscount(false);
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -82,17 +143,28 @@ const CheckoutContent = () => {
 
     try {
       const request = createAuthenticatedRequest(session);
+      const addressPayload = {
+        ...form,
+        fullName: `${form.firstName} ${form.lastName}`.trim(),
+        address: [form.address, form.addressLine2].filter(Boolean).join("\n"),
+      };
+      delete addressPayload.firstName;
+      delete addressPayload.lastName;
+      delete addressPayload.countryCode;
+      delete addressPayload.addressLine2;
+      delete addressPayload.useAsBilling;
       const { authorization_url: authorizationUrl, orderId } = await request(
         "/api/checkout/initialize",
         {
           method: "POST",
           body: JSON.stringify({
-            ...form,
+            ...addressPayload,
             items: cartItems.map((item) => ({
               productId: item.product.id,
               variantId: item.product.variantId,
               quantity: item.qty,
             })),
+            discountCode: appliedDiscount?.code || "",
           }),
         },
       );
@@ -104,6 +176,17 @@ const CheckoutContent = () => {
     }
   };
 
+  const isAddressValid = [
+    form.firstName,
+    form.lastName,
+    form.country,
+    form.phone,
+    form.address,
+    form.city,
+    form.state,
+    form.postalCode,
+  ].every((field) => typeof field === "string" && field.trim());
+
   if (cartItems.length === 0) {
     return (
       <main className="min-h-screen px-6 py-24 md:px-12">
@@ -111,7 +194,9 @@ const CheckoutContent = () => {
           <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
             Checkout
           </p>
-          <h1 className="mt-4 text-4xl font-semibold">Your cart is empty</h1>
+          <h1 className="mt-4 text-4xl font-semibold">
+            Your Goody Bag is empty
+          </h1>
           <Link
             to="/shop"
             className="mt-8 inline-flex bg-black px-6 py-3 text-sm font-medium text-white"
@@ -127,11 +212,6 @@ const CheckoutContent = () => {
     <main className="min-h-screen bg-white px-6 py-16 md:px-12 md:py-24">
       <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[minmax(0,1fr)_380px]">
         <FadeIn>
-          <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
-            Checkout
-          </p>
-          <h1 className="mt-4 text-4xl font-semibold">Delivery details</h1>
-
           {savedAddresses.length > 0 && !addressesLoading && (
             <fieldset className="mt-10 border border-gray-200 p-5">
               <legend className="px-2 text-sm font-semibold">
@@ -159,7 +239,9 @@ const CheckoutContent = () => {
                         {savedAddress.fullName}, {savedAddress.phone}
                         <br />
                         {savedAddress.address}, {savedAddress.city},{" "}
-                        {savedAddress.state}
+                        {savedAddress.state} {savedAddress.postalCode}
+                        <br />
+                        {savedAddress.country}
                       </span>
                     </span>
                   </label>
@@ -181,46 +263,31 @@ const CheckoutContent = () => {
             </fieldset>
           )}
 
-          <form
-            onSubmit={handleSubmit}
-            className="mt-10 grid gap-5 sm:grid-cols-2"
-          >
-            {[
-              ["fullName", "Full name", "text"],
-              ["phone", "Phone", "tel"],
-              ["address", "Address", "text"],
-              ["city", "City", "text"],
-              ["state", "State", "text"],
-            ].map(([name, label, type]) => (
-              <label
-                key={name}
-                className={`flex flex-col gap-2 text-sm ${name === "address" ? "sm:col-span-2" : ""}`}
-              >
-                {label}
-                <input
-                  required
-                  type={type}
-                  name={name}
-                  value={form[name]}
-                  onChange={handleChange}
-                  className="border border-gray-300 px-3 py-3 outline-none focus:border-black"
-                />
-              </label>
-            ))}
-            {error && (
-              <p className="sm:col-span-2 text-sm text-red-600">{error}</p>
-            )}
+          <form onSubmit={handleSubmit} className="mt-10">
+            <AddressFields
+              value={form}
+              onChange={setForm}
+              idPrefix="checkout-address"
+            />
+            {error && <p className="mt-5 text-sm text-red-600">{error}</p>}
             <button
               type="submit"
-              disabled={submitting}
-              className="sm:col-span-2 bg-black px-6 py-4 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={submitting || !isAddressValid}
+              className="mt-6 w-full bg-black px-6 py-4 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
             >
               {submitting ? (
                 <Spinner label="Redirecting to payment" />
               ) : (
-                "Continue to payment"
+                "Place Order"
               )}
             </button>
+            <p className="mt-4 text-center text-xs leading-5 text-gray-500">
+              By placing your order, you agree to our{" "}
+              <Link to="/privacy-policy" className="underline">
+                Privacy Policy
+              </Link>{" "}
+              and terms of service.
+            </p>
           </form>
         </FadeIn>
 
@@ -228,8 +295,48 @@ const CheckoutContent = () => {
           className="h-fit border-t border-gray-200 pt-6 lg:border-l lg:border-t-0 lg:pl-8"
           delay={0.1}
         >
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Order summary</h2>
+          <div className="flex items-center justify-between border-b border-black pb-5">
+            <h2 className="text-lg font-semibold">Total</h2>
+            <span className="text-lg font-semibold">
+              {formatPrice(checkoutTotal)}
+            </span>
+          </div>
+          <form onSubmit={applyDiscount} className="mt-6">
+            <label className="block text-sm">
+              <span className="mb-2 block font-medium">Promo code</span>
+              <div className="flex gap-2">
+                <input
+                  value={discountCode}
+                  onChange={(event) => {
+                    setDiscountCode(event.target.value);
+                    setAppliedDiscount(null);
+                    setDiscountError("");
+                  }}
+                  placeholder="Enter code"
+                  className="min-w-0 flex-1 border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+                />
+                <button
+                  type="submit"
+                  disabled={applyingDiscount || !discountCode.trim()}
+                  className="border border-black px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {applyingDiscount ? "Applying..." : "Apply"}
+                </button>
+              </div>
+            </label>
+            {discountError && (
+              <p role="alert" className="mt-2 text-sm text-red-600">
+                {discountError}
+              </p>
+            )}
+            {appliedDiscount && (
+              <p className="mt-2 text-sm text-green-700">
+                {appliedDiscount.code} applied.
+              </p>
+            )}
+          </form>
+          <div className="mt-6 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Summary</h2>
             <button
               type="button"
               onClick={() => navigate(-1)}
@@ -238,7 +345,7 @@ const CheckoutContent = () => {
               Back
             </button>
           </div>
-          <div className="mt-6 divide-y divide-gray-200">
+          <div className="mt-4 divide-y divide-gray-200">
             {cartItems.map((item) => {
               const variant = item.product.variants?.find(
                 (candidate) => candidate.id === item.product.variantId,
@@ -248,8 +355,27 @@ const CheckoutContent = () => {
                   key={item.id}
                   className="flex justify-between gap-4 py-4 text-sm"
                 >
-                  <div>
-                    <p className="font-medium">{item.product.name}</p>
+                  <div className="flex min-w-0 gap-3">
+                    {item.product.imageUrl ? (
+                      <img
+                        src={item.product.imageUrl}
+                        alt=""
+                        className="h-16 w-12 shrink-0 object-cover"
+                      />
+                    ) : null}
+                    <div className="min-w-0">
+                      <p className="font-medium">{item.product.name}</p>
+                      {item.product.brandName && (
+                        <p className="mt-1 text-xs uppercase tracking-wide text-gray-500">
+                          {item.product.brandName}
+                        </p>
+                      )}
+                      {variant?.stock <= 3 && (
+                        <p className="mt-1 text-xs font-medium text-red-700">
+                          Last {variant.stock} left
+                        </p>
+                      )}
+                    </div>
                     <p className="mt-1 text-xs text-gray-500">
                       {variant?.color || ""}
                       {variant?.color && variant?.size ? " / " : ""}
@@ -264,8 +390,45 @@ const CheckoutContent = () => {
             })}
           </div>
           <div className="mt-4 flex justify-between border-t border-black pt-5 text-base font-semibold">
-            <span>Total</span>
+            <span>Subtotal</span>
             <span>{formatPrice(subtotal)}</span>
+          </div>
+          {firstOrderPromo && (
+            <>
+              <div className="mt-4 flex justify-between text-sm font-semibold text-green-700">
+                <span>
+                  First order discount: -{firstOrderPromo.discountPercent}%
+                </span>
+                <span>-{formatPrice(firstOrderDiscount)}</span>
+              </div>
+            </>
+          )}
+          {appliedDiscount && (
+            <div className="mt-4 flex justify-between text-sm font-semibold text-green-700">
+              <span>Promo code: -{appliedDiscount.code}</span>
+              <span>-{formatPrice(discountAmount)}</span>
+            </div>
+          )}
+          <div className="mt-4 flex justify-between text-base font-semibold">
+            <span>
+              Delivery
+              {shippingFeeQuery.data?.region && (
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  {shippingFeeQuery.data.region}
+                </span>
+              )}
+            </span>
+            <span>
+              {shippingFeeQuery.isPending && form.state
+                ? "..."
+                : shippingFee === 0
+                  ? "FREE"
+                  : formatPrice(shippingFee)}
+            </span>
+          </div>
+          <div className="mt-4 flex justify-between text-base font-semibold">
+            <span>Total</span>
+            <span>{formatPrice(checkoutTotal)}</span>
           </div>
         </FadeIn>
       </div>

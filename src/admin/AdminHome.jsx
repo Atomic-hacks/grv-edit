@@ -14,6 +14,7 @@ const groups = [
       ["Filter Types", "/admin/filter-types"],
       ["Category Filters", "/admin/category-filter-types"],
       ["Bulk Upload", "/admin/products/bulk-upload"],
+      ["Site Images", "/admin/site-images"],
     ],
   },
   {
@@ -22,6 +23,10 @@ const groups = [
     links: [
       ["Orders", "/admin/orders"],
       ["Customers", "/admin/customers"],
+      ["Discounts", "/admin/discounts"],
+      ["First-order Promo", "/admin/first-order-promo"],
+      ["Shipping Fees", "/admin/shipping-fees"],
+      ["Sections", "/admin/sections"],
     ],
   },
   {

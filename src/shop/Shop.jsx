@@ -5,29 +5,48 @@ import RevealImage from "../component/ui/RevealImage";
 import { HorizontalSkeleton } from "../component/ui/LoadingSkeletons";
 import CtaButton from "../component/ui/CtaButton";
 import HorizontalCarousel from "../component/ui/HorizontalCarousel";
-import { formatPrice, getProductImages } from "../lib/productHelpers";
-import { fetchProducts } from "../lib/apiClient";
+import { getProductImages } from "../lib/productHelpers";
+import DiscountPrice from "../component/ui/DiscountPrice";
+import { fetchNewArrivals } from "../lib/apiClient";
 import { useQuery } from "@tanstack/react-query";
 import WishlistButton from "../component/ui/WishlistButton";
+import { useSiteImages } from "../lib/useSiteImages";
 
 // Single spacing scale reused by every section on this page.
 const SECTION = "py-16 md:py-24";
 const SECTION_HEAD = "mb-6 md:mb-10";
 
 const departments = [
-  { name: "Men", image: "/img/maleheromodel.jpg", path: "/men" },
-  { name: "Women", image: "/img/femaletop.jpg", path: "/women" },
+  {
+    name: "Men",
+    key: "department-men",
+    image: "/img/maleheromodel.jpg",
+    path: "/men",
+  },
+  {
+    name: "Women",
+    key: "department-women",
+    image: "/img/femaletop.jpg",
+    path: "/women",
+  },
   {
     name: "Accessories",
+    key: "department-accessories",
     image: "/img/bag1.jpg",
     path: "/accessories",
   },
-  { name: "Brands", image: "/img/heromodel.jpg", path: "/brands" },
+  {
+    name: "Brands",
+    key: "department-brands",
+    image: "/img/heromodel.jpg",
+    path: "/brands",
+  },
 ];
 
 const collections = [
   {
     name: "Men",
+    key: "collection-men",
     eyebrow: "The essential edit",
     copy: "Clean layers and relaxed proportions for the everyday uniform.",
     image: "/img/malemodel1.jpg",
@@ -40,6 +59,7 @@ const collections = [
   },
   {
     name: "Women",
+    key: "collection-women",
     eyebrow: "A softer structure",
     copy: "Fluid shapes, considered textures, and pieces made to move.",
     image: "/img/model3.jpg",
@@ -52,6 +72,7 @@ const collections = [
   },
   {
     name: "Bags",
+    key: "collection-bags",
     eyebrow: "Carry it forward",
     copy: "Useful forms with a little more character than expected.",
     image: "/img/bag4.jpg",
@@ -64,6 +85,7 @@ const collections = [
   },
   {
     name: "Athletics",
+    key: "collection-athletics",
     eyebrow: "The details that matter",
     copy: "Small details, sharp silhouettes, and the pieces that stay.",
     image: "/img/shoe5.jpg",
@@ -76,6 +98,7 @@ const collections = [
   },
   {
     name: "Lifestyle",
+    key: "collection-lifestyle",
     eyebrow: "Off-duty, considered",
     copy: "Easy layers and everyday pieces for everything around the main event.",
     image: "/img/model6.jpg",
@@ -88,30 +111,33 @@ const collections = [
 ];
 
 const brands = [
-  ["Northline", "/brands/northline", "/img/maleheromodel.jpg"],
-  ["Atelier Zero", "/brands/atelier-zero", "/img/femaletop.jpg"],
-  ["Common Form", "/brands/common-form", "/img/goth-girl2.jpg"],
+  [
+    "Northline",
+    "/brands/northline",
+    "brand-northline",
+    "/img/maleheromodel.jpg",
+  ],
+  [
+    "Atelier Zero",
+    "/brands/atelier-zero",
+    "brand-atelier-zero",
+    "/img/femaletop.jpg",
+  ],
+  [
+    "Common Form",
+    "/brands/common-form",
+    "brand-common-form",
+    "/img/goth-girl2.jpg",
+  ],
 ];
 
-// Overlay boxes: min-h guarantees room for the text stack on mobile;
-// the aspect-ratio only takes over at md, where there's width to spare.
-const OVERLAY_LAYOUT = [
-  {
-    box: "min-h-[520px] md:aspect-21/9 md:min-h-0",
-    align: "items-center justify-center text-center",
-  },
-  {
-    box: "min-h-[560px] md:aspect-4/3 md:min-h-0",
-    align: "items-center justify-center text-center",
-  },
-  {
-    box: "min-h-[520px] md:aspect-16/9 md:min-h-0",
-    align: "items-center justify-center text-center",
-  },
-  {
-    box: "min-h-[560px] md:aspect-21/9 md:min-h-0",
-    align: "items-center justify-center text-center",
-  },
+// Desktop bento layout for the five Collections tiles.
+const BENTO_LAYOUT = [
+  { span: "col-span-1 md:col-span-4 md:row-span-2", compact: true },
+  { span: "col-span-1 md:col-span-2 md:row-span-2", compact: true },
+  { span: "col-span-1 md:col-span-2", compact: true },
+  { span: "col-span-1 md:col-span-2", compact: true },
+  { span: "col-span-1 md:col-span-4 md:row-span-2", compact: true },
 ];
 
 const LinkList = ({
@@ -140,27 +166,29 @@ const LinkList = ({
 
 const Shop = () => {
   const navigate = useNavigate();
+  const siteImages = useSiteImages();
   const {
     data: products,
     isPending: loading,
     error,
   } = useQuery({
     queryKey: ["products", { page: "home" }],
-    queryFn: () => fetchProducts({}),
+    queryFn: () => fetchNewArrivals(),
   });
-  const newArrivals = (products || []).filter((product) => product.isNew);
+  const newArrivals = products || [];
 
   return (
     <main className="bg-white text-black">
       {/* Full-bleed gradient hero */}
       <section className="relative h-screen w-full overflow-hidden">
         <RevealImage
-          src="/img/heromodel5.jpg"
+          src={siteImages.hero || "/img/heromodel5.jpg"}
           alt="Featured GRV collection"
           loading="eager"
           className="absolute inset-0 z-0 h-full w-full"
           revealDuration={2.4}
         />
+        <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/70 via-black/15 to-transparent" />
 
         <div className="relative z-20 mx-auto flex h-full max-w-3xl flex-col justify-end px-6 pb-16 text-center text-white md:px-14 md:pb-24 lg:px-16">
           <Motion.p
@@ -212,7 +240,7 @@ const Shop = () => {
         </div>
       </section>
 
-      <div className="px-1.5">
+      <div className="px-1.5 max-w-360 mx-auto">
         {/* New Arrivals */}
         <section className={SECTION}>
           <div
@@ -257,7 +285,12 @@ const Shop = () => {
                     />
                     <div className="absolute inset-x-4 bottom-4 flex items-end justify-between text-sm font-semibold text-white">
                       <span>{product.name}</span>
-                      <span>{formatPrice(product.basePrice)}</span>
+                      <DiscountPrice
+                        basePrice={product.basePrice}
+                        discountPercent={product.discountPercent}
+                        className="text-right"
+                        light
+                      />
                     </div>
                   </Link>
                 );
@@ -281,14 +314,19 @@ const Shop = () => {
                 className="group relative block"
               >
                 <RevealImage
-                  src={department.image}
+                  src={siteImages[department.key] || department.image}
                   alt={department.name}
                   className="aspect-3/4 w-full transition-opacity group-hover:opacity-75"
                   revealDuration={0.8}
                 />
-                <span className="absolute inset-x-4 bottom-5 text-lg font-semibold uppercase tracking-wide text-white">
-                  {department.name}
-                </span>
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                  <span className="text-xs md:text-xl font-semibold uppercase tracking-wide text-white">
+                    {department.name}
+                  </span>
+                  <span className="inline-flex shrink-0 items-center justify-center border border-white bg-transparent px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white transition-colors duration-300 group-hover:bg-white group-hover:text-black">
+                    Shop {department.name}
+                  </span>
+                </div>
               </Link>
             ))}
           </div>
@@ -301,7 +339,7 @@ const Shop = () => {
             className="group relative block min-h-120 md:aspect-21/9 md:min-h-0"
           >
             <RevealImage
-              src="/img/heromodel.jpg"
+              src={siteImages["brands-section"] || "/img/heromodel.jpg"}
               alt="Upcoming brands"
               className="absolute inset-0 h-full w-full transition-opacity group-hover:opacity-90"
             />
@@ -318,7 +356,7 @@ const Shop = () => {
                 keeps changing.
               </p>
               <p className="mt-4 text-sm font-semibold md:mt-6">
-                — or enjoy the classic
+                — or enjoy the classics
               </p>
               <span className="pointer-events-auto mt-4 inline-flex w-fit items-center justify-center border border-white bg-transparent px-6 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-white transition-colors duration-300 group-hover:bg-white group-hover:text-black">
                 VIEW CATALOGUE
@@ -326,76 +364,108 @@ const Shop = () => {
             </div>
           </Link>
 
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            {brands.map(([name, path, image]) => (
+          <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
+            {brands.map(([name, path, key, fallbackImage]) => (
               <Link key={name} to={path} className="group relative block">
                 <RevealImage
-                  src={image}
+                  src={siteImages[key] || fallbackImage}
                   alt={name}
                   className="aspect-3/4 w-full transition-opacity group-hover:opacity-75"
                   revealDuration={0.8}
                 />
-                <span className="absolute inset-x-3 bottom-3 text-xs font-semibold uppercase tracking-wide text-white">
-                  {name}
-                </span>
+                <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/65 via-black/10 to-transparent" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                  <span className="text-xs md:text-xl font-semibold uppercase tracking-wide text-white">
+                    {name}
+                  </span>
+                  <span className="shrink-0 border border-white px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-white transition-colors group-hover:bg-white group-hover:text-black">
+                    Explore
+                  </span>
+                </div>
               </Link>
             ))}
           </div>
         </section>
 
-        {/* Collections — min-h on mobile prevents the text stack overflowing the image */}
-        {collections.map((collection, index) => {
-          const layout = OVERLAY_LAYOUT[index % OVERLAY_LAYOUT.length];
-          return (
-            <section key={collection.name} className={SECTION}>
-              <div
-                role="link"
-                tabIndex={0}
-                onClick={() => navigate(collection.path)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    navigate(collection.path);
-                  }
-                }}
-                className={`group relative block cursor-pointer ${layout.box}`}
-              >
-                <RevealImage
-                  src={collection.image}
-                  alt={collection.name}
-                  className="absolute inset-0 h-full w-full transition-opacity group-hover:opacity-90"
-                />
-                <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/70 via-black/10 to-transparent" />
+        <section className={SECTION}>
+          <h2
+            className={`text-sm font-semibold uppercase tracking-[0.14em] ${SECTION_HEAD}`}
+          >
+            Shop the collections
+          </h2>
+          <div
+            className="grid grid-cols-1 gap-2 auto-rows-[260px] md:grid-cols-4 md:gap-4 md:auto-rows-[240px]"
+            style={{ gridAutoFlow: "dense" }}
+          >
+            {collections.map((collection, index) => {
+              const layout = BENTO_LAYOUT[index % BENTO_LAYOUT.length];
+              return (
                 <div
-                  className={`absolute inset-0 max-w-7xl mx-auto flex flex-col p-6 text-white md:p-12 ${layout.align}`}
+                  key={collection.name}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => navigate(collection.path)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      navigate(collection.path);
+                    }
+                  }}
+                  className={`group relative block cursor-pointer overflow-hidden ${layout.span}`}
                 >
-                  <div className={index === 3 ? "max-w-md" : "max-w-sm"}>
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/80">
-                      {collection.eyebrow}
-                    </p>
-                    <h2 className="mt-3 text-2xl font-semibold md:text-5xl">
+                  <RevealImage
+                    src={siteImages[collection.key] || collection.image}
+                    alt={collection.name}
+                    className="absolute inset-0 h-full w-full transition-opacity group-hover:opacity-90"
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/70 via-black/10 to-transparent" />
+                  <div
+                    className={`absolute inset-0 flex flex-col justify-center items-center p-4 text-white md:p-8 text-center ${
+                      layout.compact ? "" : "max-w-sm mx-auto"
+                    }`}
+                  >
+                    {!layout.compact && (
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/80">
+                        {collection.eyebrow}
+                      </p>
+                    )}
+                    <h2
+                      className={
+                        layout.compact
+                          ? "text-lg font-semibold md:text-2xl"
+                          : "mt-3 text-2xl font-semibold md:text-4xl"
+                      }
+                    >
                       {collection.name}
                     </h2>
-                    <p className="mt-3 text-sm leading-relaxed text-white/85 md:mt-4">
-                      {collection.copy}
-                    </p>
-                    <LinkList
-                      links={collection.links}
-                      light
-                      stopPropagation
-                      className={`mt-4 md:mt-6 ${
-                        index === 3 ? "justify-center" : ""
+                    {!layout.compact && (
+                      <p className="mt-3 text-sm leading-relaxed text-white/85 md:mt-4">
+                        {collection.copy}
+                      </p>
+                    )}
+                    {!layout.compact && (
+                      <LinkList
+                        links={collection.links}
+                        light
+                        stopPropagation
+                        className="mt-4 justify-start md:mt-6"
+                      />
+                    )}
+                    <span
+                      className={`pointer-events-none inline-flex w-fit items-center justify-center border border-white bg-transparent text-[10px] font-semibold uppercase tracking-[0.12em] text-white transition-colors duration-300 group-hover:bg-white group-hover:text-black ${
+                        layout.compact
+                          ? "mt-2 px-3 py-1.5"
+                          : "mt-4 px-6 py-3 text-xs md:mt-6"
                       }`}
-                    />
-                    <span className="pointer-events-none mt-4 inline-flex w-fit items-center justify-center border border-white bg-transparent px-6 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-white transition-colors duration-300 group-hover:bg-white group-hover:text-black md:mt-6">
-                      VIEW CATALOGUE
+                    >
+                      {layout.compact ? "Shop" : "VIEW CATALOGUE"}
                     </span>
                   </div>
                 </div>
-              </div>
-            </section>
-          );
-        })}
+              );
+            })}
+          </div>
+        </section>
       </div>
     </main>
   );
