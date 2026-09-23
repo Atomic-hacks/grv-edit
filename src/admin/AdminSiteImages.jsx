@@ -92,15 +92,15 @@ const AdminSiteImages = () => {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12 md:px-12 md:py-20">
-      <div className="border-b border-black pb-6">
+      <div className="border-b border-[var(--ink-900)] pb-6">
         <Link
           to="/admin"
-          className="text-xs uppercase tracking-[0.2em] text-gray-500"
+          className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
         >
           Admin
         </Link>
         <h1 className="mt-3 text-3xl font-semibold">Site images</h1>
-        <p className="mt-3 max-w-xl text-sm text-gray-600">
+        <p className="mt-3 max-w-xl text-sm text-[var(--ink-700)]">
           Update the imagery used across the Shop and catalogue pages.
         </p>
       </div>
@@ -115,10 +115,10 @@ const AdminSiteImages = () => {
       {imagesQuery.isPending ? (
         <Spinner
           label="Loading site images"
-          className="mt-8 text-sm text-gray-500"
+          className="mt-8 text-sm text-[var(--ink-500)]"
         />
       ) : (
-        <div className="mt-8 divide-y divide-gray-200 border-t border-black">
+        <div className="mt-8 divide-y divide-[var(--line)] border-t border-[var(--ink-900)]">
           {imageKeys.map(([key, label]) => {
             const value = getValue(key);
             const dirty = drafts[key] !== undefined;
@@ -129,10 +129,10 @@ const AdminSiteImages = () => {
               >
                 <div>
                   <h2 className="font-medium">{label}</h2>
-                  <p className="mt-1 text-xs text-gray-500">{key}</p>
+                  <p className="mt-1 text-xs text-[var(--ink-500)]">{key}</p>
                 </div>
                 <div className="flex min-w-0 items-center gap-4">
-                  <div className="h-24 w-32 shrink-0 overflow-hidden bg-gray-100">
+                  <div className="h-24 w-32 shrink-0 overflow-hidden bg-[var(--surface-muted)]">
                     {value && (
                       <img
                         src={value}
@@ -141,12 +141,12 @@ const AdminSiteImages = () => {
                       />
                     )}
                   </div>
-                  <p className="min-w-0 truncate text-xs text-gray-500">
+                  <p className="min-w-0 truncate text-xs text-[var(--ink-500)]">
                     {value || "No image configured"}
                   </p>
                 </div>
                 <div className="flex items-center gap-3 md:justify-end">
-                  <label className="cursor-pointer border border-gray-300 px-3 py-2 text-sm hover:border-black">
+                  <label className="cursor-pointer border border-[var(--line)] px-3 py-2 text-sm hover:border-[var(--ink-900)]">
                     {uploadingKey === key ? (
                       <Spinner label="Uploading" />
                     ) : (
@@ -164,7 +164,7 @@ const AdminSiteImages = () => {
                     type="button"
                     onClick={() => save(key)}
                     disabled={!dirty || savingKey !== null}
-                    className="border border-black bg-black px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {savingKey === key ? <Spinner label="Saving" /> : "Save"}
                   </button>

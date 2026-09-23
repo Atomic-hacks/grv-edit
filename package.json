@@ -11,10 +11,12 @@
     "db:push": "set -a && . ./.env.local && set +a && prisma db push",
     "db:pull": "set -a && . ./.env.local && set +a && prisma db pull",
     "db:generate": "set -a && . ./.env.local && set +a && prisma generate",
-    "db:seed": "set -a && . ./.env.local && set +a && node prisma/seed.js"
+    "db:seed": "set -a && . ./.env.local && set +a && node prisma/seed.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "@prisma/client": "^6.16.3",
+    "@prisma/client": "^6.19.3",
     "@supabase/supabase-js": "^2.115.0",
     "@tailwindcss/vite": "^4.1.17",
     "@tanstack/react-query": "^5.102.8",
@@ -39,6 +41,7 @@
     "eslint-plugin-react-refresh": "^0.4.22",
     "globals": "^16.4.0",
     "tailwindcss": "^4.1.17",
-    "vite": "^7.1.7"
+    "vite": "^7.1.7",
+    "vitest": "^5.0.1"
   }
 }

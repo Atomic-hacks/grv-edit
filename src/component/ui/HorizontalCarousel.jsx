@@ -14,7 +14,7 @@ const HorizontalCarousel = ({ children, className = "" }) => {
     <div className={`relative ${className}`}>
       <div
         ref={trackRef}
-        className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="rail-scroll flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 sm:gap-3"
       >
         {React.Children.map(children, (child) => (
           <div className="min-w-[78vw] snap-start sm:min-w-[42vw] lg:min-w-[24vw]">
@@ -27,7 +27,7 @@ const HorizontalCarousel = ({ children, className = "" }) => {
           type="button"
           aria-label="Previous items"
           onClick={() => move(-1)}
-          className="border border-black px-3 py-2 text-sm hover:bg-black hover:text-white"
+          className="flex h-9 w-9 items-center justify-center border border-[var(--line)] text-sm transition-colors hover:border-[var(--ink-900)] hover:bg-[var(--ink-900)] hover:text-white"
         >
           &larr;
         </button>
@@ -35,7 +35,7 @@ const HorizontalCarousel = ({ children, className = "" }) => {
           type="button"
           aria-label="Next items"
           onClick={() => move(1)}
-          className="border border-black px-3 py-2 text-sm hover:bg-black hover:text-white"
+          className="flex h-9 w-9 items-center justify-center border border-[var(--line)] text-sm transition-colors hover:border-[var(--ink-900)] hover:bg-[var(--ink-900)] hover:text-white"
         >
           &rarr;
         </button>

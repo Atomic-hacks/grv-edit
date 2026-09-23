@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
+import InlineNotice from "../component/ui/InlineNotice";
 
 const ConfirmEmail = () => {
   const [searchParams] = useSearchParams();
@@ -94,7 +95,7 @@ const ConfirmEmail = () => {
             className="border border-gray-300 px-3 py-3 text-center text-xl tracking-[0.35em] outline-none focus:border-black"
           />
         </label>
-        {error && <p className="text-left text-sm text-red-600">{error}</p>}
+        <InlineNotice tone="error" className="text-left">{error}</InlineNotice>
         {message && (
           <p className="text-left text-sm text-emerald-700" role="status">
             {message}

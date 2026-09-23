@@ -121,17 +121,17 @@ const AdminBrandForm = () => {
   if (loading) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-20">
-        <Spinner label="Loading brand" className="text-sm text-gray-500" />
+        <Spinner label="Loading brand" className="text-sm text-[var(--ink-500)]" />
       </main>
     );
   }
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12 md:px-12 md:py-20">
-      <div className="border-b border-black pb-6">
+      <div className="border-b border-[var(--ink-900)] pb-6">
         <Link
           to="/admin/brands"
-          className="text-xs uppercase tracking-[0.2em] text-gray-500"
+          className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
         >
           Brands
         </Link>
@@ -158,7 +158,7 @@ const AdminBrandForm = () => {
               name="name"
               value={form.name}
               onChange={updateName}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <label className="text-sm">
@@ -168,7 +168,7 @@ const AdminBrandForm = () => {
               name="slug"
               value={form.slug}
               onChange={updateSlug}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <label className="text-sm md:col-span-2">
@@ -178,13 +178,13 @@ const AdminBrandForm = () => {
               accept="image/*"
               onChange={uploadLogo}
               disabled={logoUploading}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
             {logoUploading && (
-              <span className="mt-2 block text-xs text-gray-500">
+              <span className="mt-2 block text-xs text-[var(--ink-500)]">
                 <Spinner
                   label="Uploading image"
-                  className="text-xs text-gray-500"
+                  className="text-xs text-[var(--ink-500)]"
                 />
               </span>
             )}
@@ -206,13 +206,13 @@ const AdminBrandForm = () => {
           <button
             type="submit"
             disabled={saving || logoUploading}
-            className="border border-black bg-black px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+            className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? <Spinner label="Saving" /> : "Save brand"}
           </button>
           <Link
             to="/admin/brands"
-            className="border border-gray-300 px-5 py-3 text-sm font-medium transition-colors hover:border-black"
+            className="border border-[var(--line)] px-5 py-3 text-sm font-medium transition-colors hover:border-[var(--ink-900)]"
           >
             Cancel
           </Link>

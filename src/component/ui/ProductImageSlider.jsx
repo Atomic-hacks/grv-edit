@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion as Motion, AnimatePresence } from "framer-motion";
 import { getOptimizedImageUrl } from "../../lib/imageHelpers";
 
@@ -21,7 +21,8 @@ const ProductImageSlider = ({ images = [], alt = "" }) => {
   const activeImage = images[index];
   const isLoaded = loadedImages[activeImage];
 
-  useEffect(() => {
+  // Before paint, not after — see LoadingImage for why.
+  useLayoutEffect(() => {
     const image = imageRef.current;
     if (image?.complete && image.naturalWidth > 0) {
       setLoadedImages((current) => ({ ...current, [activeImage]: true }));

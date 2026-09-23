@@ -120,17 +120,17 @@ const AdminSubcategories = () => {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12 md:px-12 md:py-20">
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
         <div>
           <Link
             to="/admin"
-            className="text-xs uppercase tracking-[0.2em] text-gray-500"
+            className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
           >
             Admin
           </Link>
           <h1 className="mt-3 text-3xl font-semibold">Subcategories</h1>
         </div>
-        <p className="max-w-sm text-sm text-gray-500">
+        <p className="max-w-sm text-sm text-[var(--ink-500)]">
           Keep the catalog taxonomy tidy and easy to browse.
         </p>
       </div>
@@ -146,7 +146,7 @@ const AdminSubcategories = () => {
 
       <form
         onSubmit={createSubcategory}
-        className="mt-8 grid gap-4 border-b border-gray-200 pb-8 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end"
+        className="mt-8 grid gap-4 border-b border-[var(--line)] pb-8 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end"
       >
         <label className="text-sm">
           <span className="mb-2 block font-medium">Name</span>
@@ -155,7 +155,7 @@ const AdminSubcategories = () => {
             name="name"
             value={form.name}
             onChange={updateField(setForm)}
-            className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+            className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
           />
         </label>
         <label className="text-sm">
@@ -165,7 +165,7 @@ const AdminSubcategories = () => {
             name="slug"
             value={form.slug}
             onChange={updateField(setForm)}
-            className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+            className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
           />
         </label>
         <label className="text-sm">
@@ -175,7 +175,7 @@ const AdminSubcategories = () => {
             name="categoryId"
             value={form.categoryId}
             onChange={updateField(setForm)}
-            className="w-full border border-gray-300 bg-white px-3 py-2.5 outline-none focus:border-black"
+            className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
           >
             <option value="" disabled>
               Select a category
@@ -190,15 +190,15 @@ const AdminSubcategories = () => {
         <button
           type="submit"
           disabled={saving || loading}
-          className="border border-black bg-black px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+          className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? <Spinner label="Saving" /> : "Add subcategory"}
         </button>
       </form>
 
-      <div className="mt-8 overflow-x-auto border-t border-black">
+      <div className="mt-8 overflow-x-auto border-t border-[var(--ink-900)]">
         <table className="w-full min-w-[700px] text-left text-sm">
-          <thead className="border-b border-gray-200 text-xs uppercase tracking-[0.15em] text-gray-500">
+          <thead className="border-b border-[var(--line)] text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
             <tr>
               <th className="px-3 py-4 font-medium">Name</th>
               <th className="px-3 py-4 font-medium">Slug</th>
@@ -210,14 +210,14 @@ const AdminSubcategories = () => {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan="5" className="px-3 py-8 text-gray-500">
+                <td colSpan="5" className="px-3 py-8 text-[var(--ink-500)]">
                   <Spinner label="Loading subcategories" />
                 </td>
               </tr>
             )}
             {!loading && subcategories.length === 0 && (
               <tr>
-                <td colSpan="5" className="px-3 py-8 text-gray-500">
+                <td colSpan="5" className="px-3 py-8 text-[var(--ink-500)]">
                   No subcategories yet.
                 </td>
               </tr>
@@ -225,7 +225,7 @@ const AdminSubcategories = () => {
             {subcategories.map((subcategory) => (
               <tr
                 key={subcategory.id}
-                className="border-b border-gray-200 align-top"
+                className="border-b border-[var(--line)] align-top"
               >
                 {editingId === subcategory.id ? (
                   <td colSpan="5" className="px-3 py-4">
@@ -234,7 +234,7 @@ const AdminSubcategories = () => {
                       className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto_auto] md:items-end"
                     >
                       <label className="text-sm">
-                        <span className="mb-1 block text-xs text-gray-500">
+                        <span className="mb-1 block text-xs text-[var(--ink-500)]">
                           Name
                         </span>
                         <input
@@ -242,11 +242,11 @@ const AdminSubcategories = () => {
                           name="name"
                           value={editingForm.name}
                           onChange={updateField(setEditingForm)}
-                          className="w-full border border-gray-300 px-2.5 py-2"
+                          className="w-full border border-[var(--line)] px-2.5 py-2"
                         />
                       </label>
                       <label className="text-sm">
-                        <span className="mb-1 block text-xs text-gray-500">
+                        <span className="mb-1 block text-xs text-[var(--ink-500)]">
                           Slug
                         </span>
                         <input
@@ -254,11 +254,11 @@ const AdminSubcategories = () => {
                           name="slug"
                           value={editingForm.slug}
                           onChange={updateField(setEditingForm)}
-                          className="w-full border border-gray-300 px-2.5 py-2"
+                          className="w-full border border-[var(--line)] px-2.5 py-2"
                         />
                       </label>
                       <label className="text-sm">
-                        <span className="mb-1 block text-xs text-gray-500">
+                        <span className="mb-1 block text-xs text-[var(--ink-500)]">
                           Parent category
                         </span>
                         <select
@@ -266,7 +266,7 @@ const AdminSubcategories = () => {
                           name="categoryId"
                           value={editingForm.categoryId}
                           onChange={updateField(setEditingForm)}
-                          className="w-full border border-gray-300 bg-white px-2.5 py-2"
+                          className="w-full border border-[var(--line)] bg-white px-2.5 py-2"
                         >
                           {categories.map((category) => (
                             <option key={category.id} value={category.id}>
@@ -278,7 +278,7 @@ const AdminSubcategories = () => {
                       <button
                         type="submit"
                         disabled={saving}
-                        className="border border-black bg-black px-3 py-2 text-sm text-white disabled:opacity-50"
+                        className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-3 py-2 text-sm text-white disabled:opacity-50"
                       >
                         {saving ? <Spinner label="Saving" /> : "Save"}
                       </button>
@@ -296,7 +296,7 @@ const AdminSubcategories = () => {
                     <td className="px-3 py-4 font-medium">
                       {subcategory.name}
                     </td>
-                    <td className="px-3 py-4 text-gray-500">
+                    <td className="px-3 py-4 text-[var(--ink-500)]">
                       {subcategory.slug}
                     </td>
                     <td className="px-3 py-4">{subcategory.category.name}</td>

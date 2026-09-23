@@ -329,17 +329,17 @@ const AdminProductForm = () => {
   if (loading) {
     return (
       <main className="mx-auto max-w-4xl px-6 py-20">
-        <Spinner label="Loading product" className="text-sm text-gray-500" />
+        <Spinner label="Loading product" className="text-sm text-[var(--ink-500)]" />
       </main>
     );
   }
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-12 md:px-12 md:py-20">
-      <div className="border-b border-black pb-6">
+      <div className="border-b border-[var(--ink-900)] pb-6">
         <Link
           to="/admin/products"
-          className="text-xs uppercase tracking-[0.2em] text-gray-500"
+          className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
         >
           Products
         </Link>
@@ -366,7 +366,7 @@ const AdminProductForm = () => {
               name="name"
               value={form.name}
               onChange={updateField}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <label className="text-sm">
@@ -376,7 +376,7 @@ const AdminProductForm = () => {
               name="brandId"
               value={form.brandId}
               onChange={updateField}
-              className="w-full border border-gray-300 bg-white px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             >
               <option value="">Select a brand</option>
               {brands.map((brand) => (
@@ -394,7 +394,7 @@ const AdminProductForm = () => {
               value={form.description}
               onChange={updateField}
               rows={5}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <label className="text-sm">
@@ -404,7 +404,7 @@ const AdminProductForm = () => {
               name="department"
               value={form.department}
               onChange={updateField}
-              className="w-full border border-gray-300 bg-white px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             >
               {departments.map((department) => (
                 <option key={department.value} value={department.value}>
@@ -420,7 +420,7 @@ const AdminProductForm = () => {
               name="subcategoryId"
               value={form.subcategoryId}
               onChange={updateField}
-              className="w-full border border-gray-300 bg-white px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             >
               <option value="">Select a subcategory</option>
               {filteredSubcategories.map((subcategory) => (
@@ -440,7 +440,7 @@ const AdminProductForm = () => {
               name="basePrice"
               value={form.basePrice}
               onChange={updateField}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <label className="text-sm">
@@ -454,7 +454,7 @@ const AdminProductForm = () => {
               value={form.discountPercent}
               onChange={updateField}
               placeholder="Optional"
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <label className="text-sm">
@@ -464,13 +464,13 @@ const AdminProductForm = () => {
               accept="image/*"
               onChange={uploadMainImage}
               disabled={imageUploading}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
             {imageUploading && (
-              <span className="mt-2 block text-xs text-gray-500">
+              <span className="mt-2 block text-xs text-[var(--ink-500)]">
                 <Spinner
                   label="Uploading image"
-                  className="text-xs text-gray-500"
+                  className="text-xs text-[var(--ink-500)]"
                 />
               </span>
             )}
@@ -493,7 +493,7 @@ const AdminProductForm = () => {
           <div className="mt-4 grid gap-6 sm:grid-cols-2">
             {filterTypes.map((filterType) => (
               <div key={filterType.id}>
-                <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-gray-500">
+                <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-[var(--ink-500)]">
                   {filterType.name}
                 </h2>
                 <div className="mt-3 space-y-2">
@@ -517,7 +517,7 @@ const AdminProductForm = () => {
         </fieldset>
 
         {isEditing && (
-          <label className="flex items-start gap-3 border-t border-gray-200 pt-6 text-sm">
+          <label className="flex items-start gap-3 border-t border-[var(--line)] pt-6 text-sm">
             <input
               type="checkbox"
               name="archived"
@@ -533,18 +533,18 @@ const AdminProductForm = () => {
             />
             <span>
               <span className="block font-medium">Archive this product</span>
-              <span className="mt-1 block text-gray-500">
+              <span className="mt-1 block text-[var(--ink-500)]">
                 Archive is only available when every variant is sold out.
               </span>
             </span>
           </label>
         )}
 
-        <div className="flex gap-4 border-t border-gray-200 pt-6">
+        <div className="flex gap-4 border-t border-[var(--line)] pt-6">
           <button
             type="submit"
             disabled={saving}
-            className="border border-black bg-black px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+            className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? <Spinner label="Saving" /> : "Save product"}
           </button>
@@ -555,17 +555,17 @@ const AdminProductForm = () => {
       </form>
 
       {isEditing && (
-        <section className="mt-12 border-t border-black pt-8">
+        <section className="mt-12 border-t border-[var(--ink-900)] pt-8">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <h2 className="text-xl font-semibold">Variants</h2>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-[var(--ink-500)]">
               {variants.length} variant{variants.length === 1 ? "" : "s"}
             </p>
           </div>
 
           <form
             onSubmit={createVariant}
-            className="mt-6 grid gap-3 border-b border-gray-200 pb-6 md:grid-cols-[1fr_0.8fr_1fr_0.7fr_1.4fr_auto] md:items-end"
+            className="mt-6 grid gap-3 border-b border-[var(--line)] pb-6 md:grid-cols-[1fr_0.8fr_1fr_0.7fr_1.4fr_auto] md:items-end"
           >
             {[
               ["color", "Color"],
@@ -579,7 +579,7 @@ const AdminProductForm = () => {
                   name={name}
                   value={variantForm[name]}
                   onChange={updateVariantField}
-                  className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+                  className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
                 />
               </label>
             ))}
@@ -593,7 +593,7 @@ const AdminProductForm = () => {
                 name="stock"
                 value={variantForm.stock}
                 onChange={updateVariantField}
-                className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+                className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
               />
             </label>
             <label className="text-sm">
@@ -604,13 +604,13 @@ const AdminProductForm = () => {
                 value={variantForm.imageUrl}
                 onChange={updateVariantField}
                 placeholder="https://..."
-                className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+                className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
               />
             </label>
             <button
               type="submit"
               disabled={variantSavingId === "new"}
-              className="border border-black bg-black px-4 py-2.5 text-sm font-medium text-white hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+              className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-4 py-2.5 text-sm font-medium text-white hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {variantSavingId === "new" ? (
                 <Spinner label="Saving" />
@@ -620,23 +620,23 @@ const AdminProductForm = () => {
             </button>
           </form>
 
-          <div className="mt-6 space-y-2 border-t border-black pt-2">
+          <div className="mt-6 space-y-2 border-t border-[var(--ink-900)] pt-2">
             {variants.map((variant) => (
-              <details key={variant.id} className="border-b border-gray-200">
+              <details key={variant.id} className="border-b border-[var(--line)]">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-sm marker:hidden">
                   <span className="min-w-0">
                     <span className="font-medium">
                       {variant.color} / {variant.size}
                     </span>
-                    <span className="ml-3 font-mono text-xs text-gray-500">
+                    <span className="ml-3 font-mono text-xs text-[var(--ink-500)]">
                       {variant.sku}
                     </span>
                   </span>
-                  <span className="shrink-0 text-gray-600">
+                  <span className="shrink-0 text-[var(--ink-700)]">
                     {variant.stock} in stock
                   </span>
                 </summary>
-                <div className="grid gap-5 border-t border-gray-100 py-5 md:grid-cols-[auto_1fr]">
+                <div className="grid gap-5 border-t border-[var(--line)] py-5 md:grid-cols-[auto_1fr]">
                   {variant.images?.[0] ? (
                     <img
                       src={variant.images[0]}
@@ -644,7 +644,7 @@ const AdminProductForm = () => {
                       className="h-28 w-24 object-cover"
                     />
                   ) : (
-                    <div className="flex h-28 w-24 items-center justify-center bg-gray-100 text-center text-xs text-gray-400">
+                    <div className="flex h-28 w-24 items-center justify-center bg-[var(--surface-muted)] text-center text-xs text-[var(--ink-300)]">
                       No image
                     </div>
                   )}
@@ -663,7 +663,7 @@ const AdminProductForm = () => {
                           }))
                         }
                         onBlur={() => saveVariantStock(variant)}
-                        className="w-24 border border-gray-300 px-2 py-2"
+                        className="w-24 border border-[var(--line)] px-2 py-2"
                       />
                     </label>
                     <button

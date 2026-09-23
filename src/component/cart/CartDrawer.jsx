@@ -4,7 +4,6 @@ import { Link } from "react-router-dom";
 import { useCart } from "../../context/CartContext";
 import { formatPrice } from "../../lib/productHelpers";
 import LoadingImage from "../ui/LoadingImage";
-import NewsletterBanner from "../ui/NewsletterBanner";
 
 const overlayVariants = {
   hidden: { opacity: 0 },
@@ -68,16 +67,24 @@ const CartDrawer = () => {
             onClick={closeCart}
           />
           <Motion.div
-            className="absolute right-0 top-0 h-full w-full sm:max-w-md md:max-w-lg bg-white text-black shadow-2xl flex flex-col"
+            className="absolute right-0 top-0 flex h-full w-full flex-col bg-white text-[var(--ink-900)] shadow-[-8px_0_40px_rgba(0,0,0,0.12)] sm:max-w-md md:max-w-lg"
             variants={drawerVariants}
-            transition={{ type: "spring", stiffness: 320, damping: 32 }}
+            transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
           >
-            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-5">
-              <h3 className="text-lg font-semibold">Your Goody Bag</h3>
+            <div className="flex items-center justify-between border-b border-[var(--line)] px-6 py-5">
+              <h3 className="text-[12px] font-semibold uppercase tracking-[0.14em]">
+                Your Goody Bag
+                {cartItems.length > 0 && (
+                  <span className="ml-2 font-normal normal-case tracking-normal text-[var(--ink-500)]">
+                    {cartItems.length}
+                  </span>
+                )}
+              </h3>
               <button
                 type="button"
                 onClick={closeCart}
-                className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                aria-label="Close Goody Bag"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--ink-500)] transition-colors hover:border-[var(--ink-900)] hover:text-[var(--ink-900)]"
               >
                 <svg
                   width="14"
@@ -95,13 +102,23 @@ const CartDrawer = () => {
 
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
               {cartItems.length === 0 && (
-                <p className="text-sm text-gray-500">
-                  Your Goody Bag is empty.
-                </p>
+                <div className="flex flex-col items-start gap-3 py-10">
+                  <p className="section-title">Your Goody Bag is empty</p>
+                  <p className="meta-text">
+                    Pieces you add will be kept here while you browse.
+                  </p>
+                  <Link
+                    to="/shop"
+                    onClick={closeCart}
+                    className="mt-2 border border-[var(--ink-900)] px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
+                  >
+                    Start shopping
+                  </Link>
+                </div>
               )}
               {cartItems.map((item) => (
                 <div key={item.id} className="flex gap-4">
-                  <div className="w-20 h-24 bg-gray-100 flex items-center justify-center overflow-hidden">
+                  <div className="h-28 w-21 shrink-0 overflow-hidden bg-[var(--surface-muted)]">
                     <LoadingImage
                       src={item.product.image}
                       alt={item.product.name}
@@ -112,18 +129,29 @@ const CartDrawer = () => {
                   </div>
                   <div className="flex-1">
                     <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-sm font-semibold">
+                      <div className="min-w-0">
+                        {item.product.brandName && (
+                          <p className="truncate text-[13px] font-semibold">
+                            {item.product.brandName}
+                          </p>
+                        )}
+                        <p
+                          className={`truncate text-[13px] ${
+                            item.product.brandName
+                              ? "text-[var(--ink-500)]"
+                              : "font-semibold"
+                          }`}
+                        >
                           {item.product.name}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="meta-text mt-0.5">
                           {formatPrice(item.product.price)}
                         </p>
                       </div>
                       <button
                         type="button"
                         onClick={() => removeFromCart(item.id)}
-                        className="text-xs text-gray-400 hover:text-gray-600"
+                        className="shrink-0 text-[11px] uppercase tracking-[0.1em] text-[var(--ink-300)] underline underline-offset-4 transition-colors hover:text-[var(--ink-900)]"
                       >
                         Remove
                       </button>
@@ -134,20 +162,21 @@ const CartDrawer = () => {
                         const atStockLimit =
                           Number.isFinite(stock) && item.qty >= stock;
                         return (
-                          <div className="flex items-center border border-gray-200">
+                          <div className="flex items-center border border-[var(--line)]">
                             <button
                               type="button"
-                              className="h-8 w-8 text-sm"
+                              aria-label="Decrease quantity"
+                              className="h-10 w-10 text-sm transition-colors hover:bg-[var(--surface-muted)]"
                               onClick={() => updateQty(item.id, item.qty - 1)}
                             >
-                              -
+                              −
                             </button>
-                            <span className="w-8 text-center text-sm">
+                            <span className="w-8 text-center text-[13px] font-semibold">
                               {item.qty}
                             </span>
                             <button
                               type="button"
-                              className="h-8 w-8 text-sm disabled:cursor-not-allowed disabled:text-gray-300"
+                              className="h-10 w-10 text-sm transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:text-[var(--ink-300)] disabled:hover:bg-transparent"
                               onClick={() => updateQty(item.id, item.qty + 1)}
                               disabled={atStockLimit}
                               aria-label={
@@ -161,7 +190,7 @@ const CartDrawer = () => {
                           </div>
                         );
                       })()}
-                      <p className="text-sm font-semibold">
+                      <p className="text-[13px] font-semibold">
                         {formatPrice(item.product.price * item.qty)}
                       </p>
                     </div>
@@ -170,20 +199,33 @@ const CartDrawer = () => {
               ))}
             </div>
 
-            <NewsletterBanner compact />
-            <div className="border-t border-gray-200 px-6 py-5">
-              <div className="flex items-center justify-between text-sm font-semibold">
+            <div className="border-t border-[var(--line)] px-6 py-5">
+              <div className="flex items-center justify-between text-[13px] font-semibold">
                 <span>Subtotal</span>
                 <span>{formatPrice(subtotal)}</span>
               </div>
+              <p className="meta-text mt-1">
+                Shipping and discounts are calculated at checkout.
+              </p>
               <Link
                 to="/checkout"
                 onClick={closeCart}
-                className={`mt-4 block w-full bg-black py-3 text-center text-sm font-medium text-white transition-colors hover:bg-gray-800 ${cartItems.length === 0 ? "pointer-events-none opacity-50" : ""}`}
+                className={`mt-4 block w-full bg-[var(--ink-900)] py-4 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-white transition-colors hover:bg-(--color-accent-orange) ${
+                  cartItems.length === 0 ? "pointer-events-none opacity-40" : ""
+                }`}
                 aria-disabled={cartItems.length === 0}
               >
                 Proceed to Checkout
               </Link>
+              {cartItems.length > 0 && (
+                <Link
+                  to="/cart"
+                  onClick={closeCart}
+                  className="mt-3 block text-center text-[11px] uppercase tracking-[0.1em] text-[var(--ink-500)] underline underline-offset-4 transition-colors hover:text-[var(--ink-900)]"
+                >
+                  View full bag
+                </Link>
+              )}
             </div>
           </Motion.div>
         </Motion.div>

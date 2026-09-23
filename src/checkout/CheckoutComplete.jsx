@@ -4,6 +4,9 @@ import RequireAuth from "../component/auth/RequireAuth";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
+import RecentlyViewedRail from "../component/section/RecentlyViewedRail";
+import StoreSupport from "../component/section/StoreSupport";
+import InlineNotice from "../component/ui/InlineNotice";
 
 const MAX_ATTEMPTS = 4;
 const RETRY_DELAY = 2500;
@@ -132,31 +135,63 @@ const CheckoutCompleteContent = () => {
             <h1 className="mt-4 text-4xl font-semibold">
               Payment successful, order #{result.orderId} confirmed
             </h1>
-            <Link
-              to={`/account/orders/${result.orderId}`}
-              className="mt-8 inline-flex bg-black px-6 py-3 text-sm font-medium text-white"
-            >
-              View order
-            </Link>
-          </>
-        ) : (
-          <>
-            <h1 className="mt-4 text-4xl font-semibold">Payment failed</h1>
-            <p className="mt-4 text-red-600">{result.error}</p>
-            {result.orderId && (
+            <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 to={`/account/orders/${result.orderId}`}
-                className="mt-8 inline-flex border border-black px-6 py-3 text-sm font-medium"
+                className="inline-flex bg-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-(--color-accent-orange)"
               >
                 View order
               </Link>
+              <Link
+                to="/shop"
+                className="inline-flex border border-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
+              >
+                Continue shopping
+              </Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <h1 className="mt-4 text-4xl font-semibold">Payment didn't go through</h1>
+            <p className="body-text mt-4">
+              Nothing was charged. You can try again from your bag, or check
+              the order for details on what happened.
+            </p>
+            {result.error && (
+              <InlineNotice tone="error" className="mt-4">
+                {result.error}
+              </InlineNotice>
             )}
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                to="/cart"
+                className="inline-flex bg-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-(--color-accent-orange)"
+              >
+                Back to bag
+              </Link>
+              {result.orderId && (
+                <Link
+                  to={`/account/orders/${result.orderId}`}
+                  className="inline-flex border border-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
+                >
+                  View order
+                </Link>
+              )}
+            </div>
           </>
         )}
         {result.status === "PENDING" && result.error && (
           <p className="mt-6 text-sm text-gray-600">{result.error}</p>
         )}
       </div>
+      {result.status === "PAID" && (
+        <>
+          <div className="page-shell">
+            <RecentlyViewedRail />
+          </div>
+          <StoreSupport promises={false} newsletter={false} />
+        </>
+      )}
     </main>
   );
 };

@@ -7,6 +7,7 @@ import { createAuthenticatedRequest } from "../lib/apiClient";
 import { formatPrice } from "../lib/productHelpers";
 import Spinner from "../component/ui/Spinner";
 import OrderTimeline from "../component/order/OrderTimeline";
+import InlineNotice from "../component/ui/InlineNotice";
 
 const formatDate = (value) =>
   new Intl.DateTimeFormat("en", {
@@ -39,7 +40,7 @@ const OrderDetailContent = () => {
       >
         Back to account
       </Link>
-      {error && <p className="mt-8 text-sm text-red-600">{error}</p>}
+      {error && <InlineNotice tone="error" className="mt-8">{error}</InlineNotice>}
       {!error && isPending && (
         <Spinner label="Loading order" className="mt-8 text-sm text-gray-500" />
       )}

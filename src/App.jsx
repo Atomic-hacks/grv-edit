@@ -5,6 +5,7 @@ import {
   Route,
   useLocation,
 } from "react-router-dom";
+import { motion as Motion } from "framer-motion";
 import Hero from "./component/Hero";
 import Footer from "./component/layout/Footer";
 
@@ -15,9 +16,11 @@ import JournalArticle from "./journal/JournalArticle";
 import Contact from "./contact/Contact";
 import About from "./about/About";
 import PrivacyPolicy from "./privacy/PrivacyPolicy";
+import SizeGuide from "./support/SizeGuide";
 import Navbar from "./component/layout/Navbar";
 import ProductDetail from "./ProductDetail";
 import CartDrawer from "./component/cart/CartDrawer";
+import CartPage from "./cart/CartPage";
 import Brands from "./brands/Brands";
 import BrandCatalogue from "./brands/BrandCatalogue";
 import Catalogues from "./catalog/Catalogues";
@@ -30,66 +33,101 @@ import EmailConfirmed from "./auth/EmailConfirmed";
 import ForgotPassword from "./auth/ForgotPassword";
 import ResetPassword from "./auth/ResetPassword";
 import ConfirmEmail from "./auth/ConfirmEmail";
-import Account from "./account/Account";
-import AccountSettings from "./account/AccountSettings";
-import OrderDetail from "./account/OrderDetail";
-import Checkout from "./checkout/Checkout";
-import CheckoutComplete from "./checkout/CheckoutComplete";
-import AdminHome from "./admin/AdminHome";
-import AdminLayout from "./component/admin/AdminLayout";
-import AdminSubcategories from "./admin/AdminSubcategories";
-import AdminFilterTypes from "./admin/AdminFilterTypes";
-import AdminCategoryFilterTypes from "./admin/AdminCategoryFilterTypes";
-import AdminTags from "./admin/AdminTags";
-import AdminBrands from "./admin/AdminBrands";
-import AdminBrandForm from "./admin/AdminBrandForm";
-import AdminProducts from "./admin/AdminProducts";
-import AdminBulkUpload from "./admin/AdminBulkUpload";
-import AdminProductForm from "./admin/AdminProductForm";
-import AdminJournal from "./admin/AdminJournal";
-import AdminJournalForm from "./admin/AdminJournalForm";
-import AdminCustomers from "./admin/AdminCustomers";
-import AdminCustomerDetail from "./admin/AdminCustomerDetail";
-import AdminOrders from "./admin/AdminOrders";
-import AdminOrderDetail from "./admin/AdminOrderDetail";
-import AdminContactSubmissions from "./admin/AdminContactSubmissions";
-import AdminDiscounts from "./admin/AdminDiscounts";
-import AdminFirstOrderPromo from "./admin/AdminFirstOrderPromo";
-import AdminShippingFees from "./admin/AdminShippingFees";
-import AdminSiteImages from "./admin/AdminSiteImages";
-import AdminSections from "./admin/AdminSections";
 import SectionPage from "./section/SectionPage";
+import Faq from "./support/Faq";
+import Unsubscribe from "./support/Unsubscribe";
 import RequireAuth from "./component/auth/RequireAuth";
 import AdminRoute from "./component/auth/AdminRoute";
 import Wishlist from "./wishlist/Wishlist";
 import NewsletterBanner from "./component/ui/NewsletterBanner";
 import FirstOrderPromoBanner from "./component/ui/FirstOrderPromoBanner";
+import Spinner from "./component/ui/Spinner";
 
-const newsletterPathPattern =
-  /^\/(men|women|accessories|athletics|footwear|lifestyle)(\/|$)/;
+// Checkout and account screens pull in the full country/state dataset
+// via AddressFields. They are always reached by navigation, never as a
+// landing page, so they load on demand.
+const Checkout = React.lazy(() => import("./checkout/Checkout"));
+const CheckoutComplete = React.lazy(() => import("./checkout/CheckoutComplete"));
+const Account = React.lazy(() => import("./account/Account"));
+const AccountSettings = React.lazy(() => import("./account/AccountSettings"));
+const OrderDetail = React.lazy(() => import("./account/OrderDetail"));
+
+// Admin is lazy-loaded: it is ~23 screens that no shopper ever opens,
+// and bundling it with the storefront made every visitor download it.
+const AdminHome = React.lazy(() => import("./admin/AdminHome"));
+const AdminLayout = React.lazy(() => import("./component/admin/AdminLayout"));
+const AdminSubcategories = React.lazy(() => import("./admin/AdminSubcategories"));
+const AdminFilterTypes = React.lazy(() => import("./admin/AdminFilterTypes"));
+const AdminCategoryFilterTypes = React.lazy(() => import("./admin/AdminCategoryFilterTypes"));
+const AdminTags = React.lazy(() => import("./admin/AdminTags"));
+const AdminBrands = React.lazy(() => import("./admin/AdminBrands"));
+const AdminBrandForm = React.lazy(() => import("./admin/AdminBrandForm"));
+const AdminProducts = React.lazy(() => import("./admin/AdminProducts"));
+const AdminBulkUpload = React.lazy(() => import("./admin/AdminBulkUpload"));
+const AdminProductForm = React.lazy(() => import("./admin/AdminProductForm"));
+const AdminJournal = React.lazy(() => import("./admin/AdminJournal"));
+const AdminJournalForm = React.lazy(() => import("./admin/AdminJournalForm"));
+const AdminCustomers = React.lazy(() => import("./admin/AdminCustomers"));
+const AdminCustomerDetail = React.lazy(() => import("./admin/AdminCustomerDetail"));
+const AdminOrders = React.lazy(() => import("./admin/AdminOrders"));
+const AdminOrderDetail = React.lazy(() => import("./admin/AdminOrderDetail"));
+const AdminContactSubmissions = React.lazy(() => import("./admin/AdminContactSubmissions"));
+const AdminDiscounts = React.lazy(() => import("./admin/AdminDiscounts"));
+const AdminFirstOrderPromo = React.lazy(() => import("./admin/AdminFirstOrderPromo"));
+const AdminShippingFees = React.lazy(() => import("./admin/AdminShippingFees"));
+const AdminSiteImages = React.lazy(() => import("./admin/AdminSiteImages"));
+const AdminSections = React.lazy(() => import("./admin/AdminSections"));
+const AdminCampaigns = React.lazy(() => import("./admin/AdminCampaigns"));
+const AdminCampaignForm = React.lazy(() => import("./admin/AdminCampaignForm"));
+
+// Pages that end with <StoreSupport /> already carry a newsletter sign-up in
+// that block. This list is the remainder — pages that would otherwise finish
+// on the footer with no invitation to stay in touch.
+const newsletterPaths = new Set([
+  "/catalogues",
+  "/brands",
+  "/checkout",
+  "/contact",
+  "/journal",
+  "/wishlist",
+]);
 
 const shouldShowNewsletter = (pathname) =>
-  pathname === "/" ||
-  pathname === "/shop" ||
-  pathname === "/shop-by" ||
-  pathname === "/shop/new-arrivals" ||
-  pathname === "/catalogues" ||
-  pathname === "/brands" ||
-  pathname.startsWith("/brands/") ||
-  pathname.startsWith("/sections/") ||
-  pathname.startsWith("/product/") ||
-  pathname === "/checkout" ||
-  pathname === "/contact" ||
-  newsletterPathPattern.test(pathname);
+  newsletterPaths.has(pathname) || pathname.startsWith("/sections/");
+
+// Routing alone does not move the viewport, so following a product link from
+// halfway down a grid used to open the product page already scrolled past its
+// gallery. Restore the top of the page on every navigation, except when the
+// URL only gained query params (filtering and sorting a listing in place).
+const useScrollToTopOnNavigate = () => {
+  const { pathname } = useLocation();
+  React.useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [pathname]);
+};
 
 const AppLayout = () => {
   const location = useLocation();
   const hideNavbar = location.pathname === "/";
+  useScrollToTopOnNavigate();
 
   return (
     <>
-      {!hideNavbar && <Navbar />}
       <FirstOrderPromoBanner />
+      {!hideNavbar && <Navbar />}
+      <React.Suspense
+        fallback={
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <Spinner label="Loading" className="text-sm text-gray-500" />
+          </div>
+        }
+      >
+      <Motion.div
+        key={location.pathname}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      >
       <Routes>
         <Route path="/" element={<Hero />} />
 
@@ -101,6 +139,9 @@ const AppLayout = () => {
           element={<GenderCatalogue facet="lifestyle" />}
         />
         <Route path="/product/:id" element={<ProductDetail />} />
+        <Route path="/size-guide" element={<SizeGuide />} />
+        <Route path="/faq" element={<Faq />} />
+        <Route path="/unsubscribe" element={<Unsubscribe />} />
         <Route path="/sections/:slug" element={<SectionPage />} />
         <Route path="/catalogues" element={<Catalogues />} />
         <Route path="/brands" element={<Brands />} />
@@ -151,13 +192,21 @@ const AppLayout = () => {
         />
         <Route path="/account/orders/:id" element={<OrderDetail />} />
         <Route path="/wishlist" element={<Wishlist />} />
+        <Route path="/cart" element={<CartPage />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/checkout/complete" element={<CheckoutComplete />} />
         <Route
           path="/admin/*"
           element={
             <AdminRoute>
-              <Routes>
+              <React.Suspense
+                fallback={
+                  <div className="flex min-h-screen items-center justify-center">
+                    <Spinner label="Loading" className="text-sm text-gray-500" />
+                  </div>
+                }
+              >
+                <Routes>
                 <Route element={<AdminLayout />}>
                   <Route index element={<AdminHome />} />
                   <Route
@@ -209,12 +258,18 @@ const AppLayout = () => {
                     path="contact-submissions"
                     element={<AdminContactSubmissions />}
                   />
+                  <Route path="campaigns" element={<AdminCampaigns />} />
+                  <Route path="campaigns/new" element={<AdminCampaignForm />} />
+                  <Route path="campaigns/:id" element={<AdminCampaignForm />} />
                 </Route>
-              </Routes>
+                </Routes>
+              </React.Suspense>
             </AdminRoute>
           }
         />
       </Routes>
+      </Motion.div>
+      </React.Suspense>
 
       {shouldShowNewsletter(location.pathname) && <NewsletterBanner />}
       <Footer />

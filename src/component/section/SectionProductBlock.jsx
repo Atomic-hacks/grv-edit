@@ -3,26 +3,55 @@ import { useNavigate } from "react-router-dom";
 import { useCart } from "../../context/CartContext";
 import { getProductImages } from "../../lib/productHelpers";
 import Card from "../ui/Card";
+import ProductRail from "./ProductRail";
 
 const SectionProductBlock = ({ section, standalone = false }) => {
   const navigate = useNavigate();
   const { addToCart } = useCart();
 
+  const addProductToCart = (product, images) =>
+    addToCart(
+      {
+        ...product,
+        price: product.basePrice,
+        image: images[0],
+        hoverImage: images[1] || images[0],
+      },
+      1,
+    );
+
+  // A homepage teaser scrolls horizontally, exactly like every other
+  // recommendation rail on the storefront (equal-height cards, one row,
+  // "View section" leading to the real thing). The dedicated section page —
+  // what that link leads to — is an actual browsing destination, so it stays
+  // a full grid instead.
+  if (!standalone) {
+    return (
+      <div className="page-shell">
+        <ProductRail
+          eyebrow="Curated section"
+          title={section.title}
+          description={section.description}
+          products={section.products}
+          viewAllTo={`/sections/${section.slug}`}
+          viewAllLabel="View section"
+          onQuickAdd={addProductToCart}
+        />
+      </div>
+    );
+  }
+
   return (
-    <section className="px-1.5 py-16 md:py-24">
-      <div className="mb-8 max-w-2xl md:mb-10">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-          Curated section
-        </p>
-        <h1 className="mt-2 text-3xl font-semibold md:text-5xl">
-          {section.title}
-        </h1>
-        <p className="mt-4 text-base leading-relaxed text-gray-600 md:text-lg">
-          {section.description}
-        </p>
+    <section className="page-shell py-16 md:py-20">
+      <div className="mb-6 max-w-2xl md:mb-8">
+        <p className="eyebrow">Curated section</p>
+        <h2 className="section-title mt-1.5">{section.title}</h2>
+        {section.description && (
+          <p className="body-text mt-2 text-sm">{section.description}</p>
+        )}
       </div>
       {section.products.length === 0 ? (
-        <p className="py-12 text-sm text-gray-500">
+        <p className="py-12 text-sm text-[var(--ink-500)]">
           No products in this section yet.
         </p>
       ) : (
@@ -44,31 +73,12 @@ const SectionProductBlock = ({ section, standalone = false }) => {
                   category={product.subcategory}
                   details={product.gender}
                   badge={product.isNew ? "NEW" : undefined}
-                  onQuickAdd={() =>
-                    addToCart(
-                      {
-                        ...product,
-                        price: product.basePrice,
-                        image: images[0],
-                        hoverImage: images[1] || images[0],
-                      },
-                      1,
-                    )
-                  }
+                  onQuickAdd={() => addProductToCart(product, images)}
                 />
               </div>
             );
           })}
         </div>
-      )}
-      {!standalone && (
-        <button
-          type="button"
-          onClick={() => navigate(`/sections/${section.slug}`)}
-          className="mt-8 border-b border-black pb-1 text-sm font-semibold uppercase tracking-[0.12em]"
-        >
-          View section
-        </button>
       )}
     </section>
   );

@@ -9,22 +9,29 @@ datasource db {
 }
 
 model User {
-  id              String          @id @db.Uuid
-  email           String          @unique
-  name            String?
-  role            Role            @default(CUSTOMER)
-  active          Boolean         @default(true)
-  createdAt       DateTime        @default(now())
-  orders          Order[]
-  wishlists       Wishlist[]
-  waitlistEntries WaitlistEntry[]
-  notifications   Notification[]
-  savedAddresses  SavedAddress[]
-  carts           Cart[]
-  emailVerified   Boolean              @default(false)
-  hasSeenFirstOrderBanner Boolean       @default(false)
-  firstOrderPromoUsed     Boolean       @default(false)
-  verificationCodes EmailVerificationCode[]
+  id                      String                  @id @db.Uuid
+  email                   String                  @unique
+  name                    String?
+  role                    Role                    @default(CUSTOMER)
+  active                  Boolean                 @default(true)
+  createdAt               DateTime                @default(now())
+  orders                  Order[]
+  wishlists               Wishlist[]
+  waitlistEntries         WaitlistEntry[]
+  notifications           Notification[]
+  savedAddresses          SavedAddress[]
+  carts                   Cart[]
+  emailVerified           Boolean                 @default(false)
+  hasSeenFirstOrderBanner Boolean                 @default(false)
+  firstOrderPromoUsed     Boolean                 @default(false)
+  verificationCodes       EmailVerificationCode[]
+
+  // Promotional consent. Separate from transactional email, which is always
+  // sent when an order or support thread requires it.
+  marketingOptIn   Boolean   @default(false)
+  marketingOptInAt DateTime?
+  // Stable per-user secret used by one-click unsubscribe links.
+  unsubscribeToken String?   @unique
 }
 
 model FirstOrderPromo {
@@ -43,12 +50,16 @@ model ShippingFee {
 }
 
 model EmailVerificationCode {
-  id        String   @id @default(cuid())
-  userId    String   @db.Uuid
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String    @id @default(cuid())
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   code      String
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
   expiresAt DateTime
   usedAt    DateTime?
+
+  @@index([userId])
 }
 
 model SavedAddress {
@@ -86,30 +97,60 @@ model CartItem {
 }
 
 model Order {
-  id                String      @id @default(cuid())
-  userId            String      @db.Uuid
-  user              User        @relation(fields: [userId], references: [id])
-  status            OrderStatus @default(PENDING)
-  total             Float
-  discountId        String?
-  discountAmount    Float       @default(0)
+  id                        String            @id @default(cuid())
+  userId                    String            @db.Uuid
+  user                      User              @relation(fields: [userId], references: [id])
+  status                    OrderStatus       @default(PENDING)
+  total                     Float
+  discountId                String?
+  discountAmount            Float             @default(0)
   firstOrderDiscountPercent Float?
-  firstOrderDiscountAmount  Float       @default(0)
-  firstOrderFreeShipping    Boolean     @default(false)
-  shippingFee                Float       @default(0)
-  shippingAmount             Float       @default(0)
-  discount          Discount?   @relation(fields: [discountId], references: [id], onDelete: SetNull)
-  paystackReference String      @unique
-  fullName          String
-  country           String      @default("")
-  phone             String
-  address           String
-  city              String
-  state             String
-  postalCode        String      @default("")
-  items             OrderItem[]
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  firstOrderDiscountAmount  Float             @default(0)
+  firstOrderFreeShipping    Boolean           @default(false)
+  shippingFee               Float             @default(0)
+  shippingAmount            Float             @default(0)
+  discount                  Discount?         @relation(fields: [discountId], references: [id], onDelete: SetNull)
+  paystackReference         String            @unique
+  fullName                  String
+  country                   String            @default("")
+  phone                     String
+  address                   String
+  city                      String
+  state                     String
+  postalCode                String            @default("")
+  items                     OrderItem[]
+  emailEvents               OrderEmailEvent[]
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+}
+
+// One row per (order, email type). The unique constraint is the dedupe
+// mechanism: an admin toggling a status back and forth, a webhook retry and
+// a client verification racing each other all try to insert the same row,
+// and only the first one wins. `sentAt` stays null until the provider
+// actually accepts the message, so a failed send can be retried by the cron
+// without ever sending twice.
+model OrderEmailEvent {
+  id        String         @id @default(cuid())
+  orderId   String
+  order     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type      OrderEmailType
+  sentAt    DateTime?
+  attempts  Int            @default(0)
+  lastError String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([orderId, type])
+  @@index([sentAt])
+}
+
+enum OrderEmailType {
+  ORDER_CREATED
+  ORDER_PAID
+  ORDER_SHIPPED
+  ORDER_DELIVERED
+  ORDER_CANCELLED
 }
 
 model Discount {
@@ -223,12 +264,63 @@ model ContactSubmission {
   message   String
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  // Reply state. `repliedAt` is only set once the provider has accepted the
+  // email, so the dashboard never shows "replied" for a message that failed
+  // to send.
+  replyBody String?
+  repliedAt DateTime?
+  repliedBy String?
 }
 
 model NewsletterSubscriber {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  createdAt DateTime @default(now())
+  id               String    @id @default(cuid())
+  email            String    @unique
+  createdAt        DateTime  @default(now())
+  unsubscribedAt   DateTime?
+  unsubscribeToken String?   @unique
+}
+
+// Promotional email. Deliberately separate from the transactional order
+// emails above: different consent rules, different sending path, and a
+// campaign that fails must never be able to report itself as sent.
+model Campaign {
+  id                 String           @id @default(cuid())
+  subject            String
+  preheader          String?
+  body               String
+  imageUrl           String?
+  ctaLabel           String?
+  ctaUrl             String?
+  featuredProductIds String[]         @default([])
+  audience           CampaignAudience @default(CUSTOMERS)
+  status             CampaignStatus   @default(DRAFT)
+  scheduledFor       DateTime?
+  startedAt          DateTime?
+  sentAt             DateTime?
+  recipientCount     Int              @default(0)
+  sentCount          Int              @default(0)
+  failedCount        Int              @default(0)
+  lastError          String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([status, scheduledFor])
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum CampaignAudience {
+  CUSTOMERS
+  NEWSLETTER
+  ALL
 }
 
 model Brand {
@@ -304,14 +396,14 @@ model ProductTag {
 }
 
 model Section {
-  id              String           @id @default(cuid())
-  title           String
-  slug            String           @unique
-  description     String
-  showOnHomepage  Boolean          @default(false)
-  homepageOrder   Int?
-  products        ProductSection[]
-  createdAt       DateTime         @default(now())
+  id             String           @id @default(cuid())
+  title          String
+  slug           String           @unique
+  description    String
+  showOnHomepage Boolean          @default(false)
+  homepageOrder  Int?
+  products       ProductSection[]
+  createdAt      DateTime         @default(now())
 }
 
 model ProductSection {
@@ -324,29 +416,29 @@ model ProductSection {
 }
 
 model Product {
-  id             String             @id
-  name           String
-  gender         Gender
-  categoryId     String
-  subcategory    String
-  subcategoryId  String?
-  description    String
-  basePrice      Float
+  id              String             @id
+  name            String
+  gender          Gender
+  categoryId      String
+  subcategory     String
+  subcategoryId   String?
+  description     String
+  basePrice       Float
   discountPercent Float?
-  status         ProductStatus      @default(ACTIVE)
-  createdAt      DateTime           @default(now())
-  imageUrl       String?
-  isNew          Boolean            @default(false)
+  status          ProductStatus      @default(ACTIVE)
+  createdAt       DateTime           @default(now())
+  imageUrl        String?
+  isNew           Boolean            @default(false)
   archived        Boolean            @default(false)
-  brandId        String
-  brand          Brand              @relation(fields: [brandId], references: [id])
-  category       Category           @relation(fields: [categoryId], references: [id])
-  subcategoryRef Subcategory?       @relation(fields: [subcategoryId], references: [id])
-  variants       Variant[]
-  tags           ProductTag[]
-  sections       ProductSection[]
-  wishlists      Wishlist[]
-  styleTags      CategoryStyleTag[] @relation("CategoryStyleTagToProduct")
+  brandId         String
+  brand           Brand              @relation(fields: [brandId], references: [id])
+  category        Category           @relation(fields: [categoryId], references: [id])
+  subcategoryRef  Subcategory?       @relation(fields: [subcategoryId], references: [id])
+  variants        Variant[]
+  tags            ProductTag[]
+  sections        ProductSection[]
+  wishlists       Wishlist[]
+  styleTags       CategoryStyleTag[] @relation("CategoryStyleTagToProduct")
 
   @@index([gender])
   @@index([categoryId])

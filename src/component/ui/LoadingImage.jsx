@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useLayoutEffect, useRef, useState } from "react";
 import { getOptimizedImageUrl } from "../../lib/imageHelpers";
 
 const LoadingImage = ({
@@ -13,7 +13,11 @@ const LoadingImage = ({
   const imageRef = useRef(null);
   const isLoaded = loadedSrc === src;
 
-  useEffect(() => {
+  // Checked synchronously before paint, not after: an already-cached image
+  // (revisiting a page, a remounted list item) should never flash a
+  // skeleton it doesn't need — useEffect runs after the first paint, so
+  // that flash was guaranteed every time; useLayoutEffect runs before it.
+  useLayoutEffect(() => {
     setLoadedSrc(null);
     const image = imageRef.current;
     if (image?.complete && image.naturalWidth > 0) setLoadedSrc(src);

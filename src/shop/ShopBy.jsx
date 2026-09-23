@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import Card from "../component/ui/Card";
 import { ProductGridSkeleton } from "../component/ui/LoadingSkeletons";
+import Breadcrumbs from "../component/ui/Breadcrumbs";
+import ErrorState from "../component/ui/ErrorState";
+import RecentlyViewedRail from "../component/section/RecentlyViewedRail";
+import StoreSupport from "../component/section/StoreSupport";
 import { formatPrice, getProductImages } from "../lib/productHelpers";
 import { fetchProducts } from "../lib/apiClient";
 import { useCart } from "../context/CartContext";
@@ -41,6 +45,15 @@ const ShopBy = () => {
     productsQuery.isPending;
   const error =
     tagsQuery.error || filterTypesQuery.error || productsQuery.error;
+  const retryAll = () => {
+    tagsQuery.refetch();
+    filterTypesQuery.refetch();
+    productsQuery.refetch();
+  };
+  const isRetrying =
+    tagsQuery.isRefetching ||
+    filterTypesQuery.isRefetching ||
+    productsQuery.isRefetching;
 
   const tagsByType = useMemo(
     () =>
@@ -72,38 +85,37 @@ const ShopBy = () => {
   };
 
   return (
-    <main className="min-h-screen bg-white px-4 pb-20 pt-12 md:px-16 md:pt-20">
-      <header className="border-b border-black pb-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500">
-          Curated discovery
-        </p>
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight md:text-6xl">
-          Shop by
-        </h1>
-        <p className="mt-4 max-w-xl text-base leading-relaxed text-gray-600">
+    <main className="min-h-screen bg-white">
+      <div className="page-shell pb-24">
+      <Breadcrumbs
+        className="pt-4"
+        items={[{ label: "Home", to: "/" }, { label: "Shop by" }]}
+      />
+      <header className="pt-6 md:pt-8">
+        <p className="eyebrow">Curated discovery</p>
+        <h1 className="display-title mt-2">Shop by</h1>
+        <p className="body-text mt-4">
           Find pieces that meet every part of the brief.
         </p>
       </header>
 
-      <section className="grid gap-8 border-b border-gray-200 py-8 md:grid-cols-4 md:gap-6">
+      <section className="mt-10 grid gap-8 border-y border-[var(--line)] py-8 sm:grid-cols-2 md:grid-cols-4 md:gap-6">
         {filterTypes.map((type) => (
           <fieldset key={type.slug}>
-            <legend className="text-sm font-semibold uppercase tracking-[0.16em]">
-              {type.label}
-            </legend>
-            <div className="mt-4 space-y-3">
+            <legend className="eyebrow">{type.label}</legend>
+            <div className="mt-3 space-y-0.5">
               {tagsByType[type.slug]?.map((tag) => (
                 <label
                   key={tag.id}
-                  className="flex cursor-pointer items-center gap-3 text-sm text-gray-700"
+                  className="flex min-h-10 cursor-pointer items-center gap-2.5 text-[13px] text-[var(--ink-700)] transition-colors hover:text-[var(--ink-900)]"
                 >
                   <input
                     type="checkbox"
                     checked={selectedTagIds.includes(tag.id)}
                     onChange={() => toggleTag(tag.id)}
-                    className="h-4 w-4 accent-black"
+                    className="h-4 w-4 shrink-0 accent-(--color-accent-orange)"
                   />
-                  <span>{tag.name}</span>
+                  <span className="min-w-0 truncate">{tag.name}</span>
                 </label>
               ))}
             </div>
@@ -111,17 +123,19 @@ const ShopBy = () => {
         ))}
       </section>
 
-      <div className="flex items-center justify-between py-8">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.16em]">
+      <div className="flex flex-wrap items-center justify-between gap-3 py-6">
+        <h2 className="meta-text">
           {selectedTagIds.length
-            ? `${visibleProducts.length} matching products`
-            : "All products"}
+            ? `${visibleProducts.length} matching ${
+                visibleProducts.length === 1 ? "product" : "products"
+              }`
+            : `${visibleProducts.length} products`}
         </h2>
         {selectedTagIds.length > 0 && (
           <button
             type="button"
             onClick={() => setSelectedTagIds([])}
-            className="border-b border-black text-sm font-medium"
+            className="text-[11px] uppercase tracking-[0.1em] text-[var(--ink-500)] underline underline-offset-4 transition-colors hover:text-[var(--ink-900)]"
           >
             Clear filters
           </button>
@@ -131,7 +145,12 @@ const ShopBy = () => {
       {loading ? (
         <ProductGridSkeleton />
       ) : error ? (
-        <p className="py-16 text-sm text-red-600">{error}</p>
+        <ErrorState
+          title="Couldn't load this page"
+          message={error.message || "Something went wrong loading products and filters."}
+          onRetry={retryAll}
+          retryPending={isRetrying}
+        />
       ) : visibleProducts.length ? (
         <div className="product-grid">
           {visibleProducts.map((product) => {
@@ -169,10 +188,16 @@ const ShopBy = () => {
           })}
         </div>
       ) : (
-        <p className="py-16 text-sm text-gray-600">
-          No products match every selected tag.
-        </p>
+        <div className="flex flex-col items-center gap-4 py-24 text-center">
+          <p className="section-title">No products match every selected tag</p>
+          <p className="meta-text max-w-sm">
+            Clearing one or two tags usually widens the results.
+          </p>
+        </div>
       )}
+      <RecentlyViewedRail />
+      </div>
+      <StoreSupport promises={false} help={false} />
     </main>
   );
 };

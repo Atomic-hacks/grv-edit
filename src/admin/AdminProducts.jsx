@@ -3,12 +3,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
-import Spinner from "../component/ui/Spinner";
+import AdminPageHeader from "../component/admin/AdminPageHeader";
+import AdminSearch from "../component/admin/AdminSearch";
+import AdminList from "../component/admin/AdminList";
 
 const AdminProducts = () => {
   const { session } = useAuth();
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
 
   const request = useMemo(() => createAuthenticatedRequest(session), [session]);
   const queryClient = useQueryClient();
@@ -21,7 +24,17 @@ const AdminProducts = () => {
   const loading = productsQuery.isPending;
   const displayError = error || productsQuery.error?.message;
 
-  const deleteProduct = async (id) => {
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleProducts = normalizedQuery
+    ? products.filter((product) =>
+        [product.name, product.brandName, product.subcategoryName]
+          .filter(Boolean)
+          .some((value) => value.toLowerCase().includes(normalizedQuery)),
+      )
+    : products;
+
+  const deleteProduct = async (id, name) => {
+    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
     setError("");
     setDeletingId(id);
     try {
@@ -48,112 +61,131 @@ const AdminProducts = () => {
         : "Men";
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-12 md:px-12 md:py-20">
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
-        <div>
+    <main className="max-w-7xl py-12 md:py-16">
+      <AdminPageHeader
+        title="Products"
+        count={loading ? undefined : `${products.length} total`}
+        actions={
           <Link
-            to="/admin"
-            className="text-xs uppercase tracking-[0.2em] text-gray-500"
+            to="/admin/products/new"
+            className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-2.5 text-[12px] font-semibold text-white transition-colors hover:border-(--color-accent-orange) hover:bg-(--color-accent-orange)"
           >
-            Admin
+            New product
           </Link>
-          <h1 className="mt-3 text-3xl font-semibold">Products</h1>
-        </div>
-        <Link
-          to="/admin/products/new"
-          className="border border-black bg-black px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black"
-        >
-          New Product
-        </Link>
+        }
+      />
+
+
+      <div className="mt-6">
+        <AdminSearch
+          value={query}
+          onSearch={setQuery}
+          placeholder="Search by name, brand, or subcategory"
+          className="sm:max-w-sm"
+        />
       </div>
 
-      {displayError && (
-        <div
-          role="alert"
-          className="mt-6 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
-        >
-          {displayError}
-        </div>
-      )}
-
-      <div className="mt-8 overflow-x-auto border-t border-black">
-        <table className="w-full min-w-200 text-left text-sm">
-          <thead className="border-b border-gray-200 text-xs uppercase tracking-[0.15em] text-gray-500">
-            <tr>
-              <th className="px-3 py-4 font-medium">Image</th>
-              <th className="px-3 py-4 font-medium">Name</th>
-              <th className="px-3 py-4 font-medium">Brand</th>
-              <th className="px-3 py-4 font-medium">Department</th>
-              <th className="px-3 py-4 font-medium">Subcategory</th>
-              <th className="px-3 py-4 text-right font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td colSpan="6" className="px-3 py-8 text-gray-500">
-                  <Spinner label="Loading products" />
-                </td>
-              </tr>
-            )}
-            {!loading && products.length === 0 && (
-              <tr>
-                <td colSpan="6" className="px-3 py-8 text-gray-500">
-                  No products yet.
-                </td>
-              </tr>
-            )}
-            {products.map((product) => {
-              const image = getImage(product);
-              return (
-                <tr
-                  key={product.id}
-                  className="border-b border-gray-200 align-middle"
-                >
-                  <td className="px-3 py-3">
-                    {image ? (
-                      <img
-                        src={image}
-                        alt=""
-                        className="h-14 w-12 object-cover"
-                      />
-                    ) : (
-                      <span className="text-xs text-gray-400">No image</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 font-medium">{product.name}</td>
-                  <td className="px-3 py-3">{product.brandName || "—"}</td>
-                  <td className="px-3 py-3">{getDepartment(product)}</td>
-                  <td className="px-3 py-3">
-                    {product.subcategoryName || product.subcategory || "—"}
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex justify-end gap-4">
-                      <Link
-                        to={`/admin/products/${product.id}/edit`}
-                        className="text-sm underline"
-                      >
-                        Edit
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => deleteProduct(product.id)}
-                        disabled={deletingId === product.id}
-                        className="text-sm text-red-700 underline"
-                      >
-                        {deletingId === product.id ? (
-                          <Spinner label="Deleting" />
-                        ) : (
-                          "Delete"
-                        )}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="mt-6">
+        <AdminList
+          columns={[
+            {
+              key: "product",
+              label: "Product",
+              mobile: "title",
+              render: (product) => (
+                <span className="flex items-center gap-3">
+                  {getImage(product) ? (
+                    <img
+                      src={getImage(product)}
+                      alt=""
+                      className="h-12 w-9 shrink-0 object-cover md:h-14 md:w-11"
+                    />
+                  ) : (
+                    <span className="h-12 w-9 shrink-0 bg-[var(--surface-muted)] md:h-14 md:w-11" />
+                  )}
+                  <span className="min-w-0">
+                    <span className="block font-medium text-[var(--ink-900)]">
+                      {product.name}
+                    </span>
+                    <span className="mt-0.5 block text-[12px] text-[var(--ink-500)]">
+                      {product.brandName || "No brand"}
+                    </span>
+                  </span>
+                </span>
+              ),
+            },
+            {
+              key: "department",
+              label: "Department",
+              render: (product) => (
+                <span className="text-[var(--ink-700)]">{getDepartment(product)}</span>
+              ),
+            },
+            {
+              key: "subcategory",
+              label: "Subcategory",
+              render: (product) => (
+                <span className="text-[var(--ink-700)]">
+                  {product.subcategoryName || product.subcategory || "—"}
+                </span>
+              ),
+            },
+            {
+              key: "stock",
+              label: "Stock",
+              render: (product) => {
+                const total = (product.variants || []).reduce(
+                  (sum, variant) => sum + (variant.stock ?? 0),
+                  0,
+                );
+                if (!product.variants?.length) {
+                  return <span className="text-[var(--ink-300)]">No variants</span>;
+                }
+                return (
+                  <span
+                    className={
+                      total <= 0
+                        ? "font-semibold text-red-700"
+                        : total <= 3
+                          ? "font-semibold text-(--color-accent-orange)"
+                          : "text-[var(--ink-700)]"
+                    }
+                  >
+                    {total <= 0 ? "Out of stock" : `${total} in stock`}
+                  </span>
+                );
+              },
+            },
+          ]}
+          rows={visibleProducts}
+          loading={loading}
+          error={displayError}
+          onRetry={() => productsQuery.refetch()}
+          emptyTitle={normalizedQuery ? "No products match" : "No products yet"}
+          emptyMessage={
+            normalizedQuery
+              ? `Nothing matches "${query.trim()}".`
+              : "Add your first product to get started."
+          }
+          actions={(product) => (
+            <>
+              <Link
+                to={`/admin/products/${product.id}/edit`}
+                className="text-[12px] font-semibold text-[var(--ink-700)] underline underline-offset-4 transition-colors hover:text-[var(--ink-900)]"
+              >
+                Edit
+              </Link>
+              <button
+                type="button"
+                onClick={() => deleteProduct(product.id, product.name)}
+                disabled={deletingId === product.id}
+                className="ml-4 text-[12px] font-semibold text-red-700 underline underline-offset-4 transition-colors hover:text-red-900 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deletingId === product.id ? "Deleting…" : "Delete"}
+              </button>
+            </>
+          )}
+        />
       </div>
     </main>
   );

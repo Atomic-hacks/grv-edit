@@ -3,42 +3,53 @@ import { Link } from "react-router-dom";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
 import LoadingImage from "../component/ui/LoadingImage";
 import { BrandGridSkeleton } from "../component/ui/LoadingSkeletons";
+import ErrorState from "../component/ui/ErrorState";
 import { fetchBrands } from "../lib/apiClient";
 import { useAsync } from "../lib/useAsync";
 
 const Brands = () => {
-  const { data: brands, loading, error } = useAsync(() => fetchBrands(), []);
+  const {
+    data: brands,
+    loading,
+    error,
+    refetch,
+  } = useAsync(() => fetchBrands(), []);
 
   return (
-    <div className="min-h-screen bg-white px-4 md:px-32">
-      <div className="relative py-16">
-        <AnimatedPageTitle title="Brands" />
-        <p className="mt-6 max-w-lg text-lg leading-relaxed tracking-wide text-gray-900">
-          Explore the labels behind our curated collection.
-        </p>
+    <div className="page-shell min-h-screen bg-white pb-24">
+      <div className="relative pb-8 pt-10 md:pb-12 md:pt-14">
+        <AnimatedPageTitle
+          title="Brands"
+          subtitle="Explore the labels behind our curated collection."
+        />
       </div>
 
-      {error && <p className="text-sm text-red-600">Couldn't load brands.</p>}
-      {loading ? (
+      {error ? (
+        <ErrorState
+          title="Couldn't load brands"
+          message="Something went wrong on our end — your connection is fine."
+          onRetry={refetch}
+        />
+      ) : loading ? (
         <BrandGridSkeleton />
       ) : (
-        <div className="grid grid-cols-1 gap-x-4 gap-y-12 pb-20 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-3 md:gap-x-4 md:gap-y-14 lg:grid-cols-4">
           {(brands || []).map((brand) => (
             <Link key={brand.id} to={`/brands/${brand.id}`} className="group">
-              <div className="aspect-3/4 overflow-hidden bg-[#f0f0f0]">
+              <div className="aspect-3/4 overflow-hidden bg-[var(--surface-muted)]">
                 <LoadingImage
                   src={brand.logo}
                   alt={brand.name}
                   width={800}
-                  className="h-full w-full object-cover group-hover:opacity-80"
+                  className="h-full w-full object-cover transition-transform duration-[600ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.03]"
                   wrapperClassName="h-full w-full"
                 />
               </div>
-              <div className="pt-4">
-                <h2 className="text-xl font-semibold text-neutral-800">
+              <div className="pt-3">
+                <h2 className="text-[13px] font-semibold text-[var(--ink-900)]">
                   {brand.name}
                 </h2>
-                <p className="mt-2 max-w-sm text-sm leading-relaxed text-gray-600">
+                <p className="mt-1 line-clamp-2 text-xs leading-snug text-[var(--ink-500)]">
                   {brand.description}
                 </p>
               </div>

@@ -3,12 +3,32 @@ import { getCurrentUser } from "../server/getCurrentUser.js";
 import { requireAdmin } from "../server/requireAdmin.js";
 import { getSupabaseAdmin } from "../server/supabaseAdmin.js";
 import { sendEmail } from "../server/sendEmail.js";
+import {
+  queueOrderEmail,
+  EMAIL_TYPE_FOR_STATUS,
+} from "../server/orderEmails.js";
+import {
+  sendCampaign,
+  countAudience,
+  loadFeaturedProducts,
+  unsubscribeByToken,
+} from "../server/campaigns.js";
 import { runReminderChecks } from "../server/runReminderChecks.js";
+import {
+  verificationCodeEmail,
+  notificationEmail,
+  adminOrderAlertEmail,
+} from "../server/emailTemplates.js";
+import { supportReplyEmail } from "../server/orderEmailTemplates.js";
+import {
+  verifyPaystackSignature,
+  claimOrderForPayment,
+} from "../server/paystack.js";
 import { formatPrice } from "../lib/productHelpers.js";
 import { getRegionForState, NIGERIAN_REGIONS } from "../lib/nigeriaRegions.js";
 import { v2 as cloudinary } from "cloudinary";
 import { parse } from "csv-parse/sync";
-import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
+import { randomInt, timingSafeEqual } from "node:crypto";
 
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -17,6 +37,8 @@ const jsonResponse = (body, status = 200) =>
   });
 
 const VERIFICATION_CODE_TTL_MS = 15 * 60 * 1000;
+const VERIFICATION_CODE_RESEND_COOLDOWN_MS = 45 * 1000;
+const VERIFICATION_CODE_MAX_ATTEMPTS = 5;
 const FIRST_ORDER_PROMO_ID = "first-order-promo";
 const SHIPPING_FEE_REGIONS = [...NIGERIAN_REGIONS, "DEFAULT"];
 
@@ -111,6 +133,22 @@ const sendVerificationCode = async (request) => {
     };
   }
 
+  const recentCode = await prisma.emailVerificationCode.findFirst({
+    where: { userId: user.id, usedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  if (
+    recentCode &&
+    Date.now() - recentCode.createdAt.getTime() <
+      VERIFICATION_CODE_RESEND_COOLDOWN_MS
+  ) {
+    return jsonResponse(
+      { error: "Please wait a moment before requesting another code" },
+      429,
+    );
+  }
+
   const code = String(randomInt(100000, 1000000));
   const expiresAt = new Date(Date.now() + VERIFICATION_CODE_TTL_MS);
   await prisma.$transaction(async (transaction) => {
@@ -125,7 +163,7 @@ const sendVerificationCode = async (request) => {
   const sent = await sendEmail({
     to: user.email,
     subject: "Confirm your GRV email",
-    html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#111"><p style="font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:#666">GRV</p><h1 style="font-size:28px;margin:24px 0 12px">Confirm your email</h1><p>Enter this code to verify your GRV account:</p><p style="font-size:36px;letter-spacing:0.28em;font-weight:700;margin:28px 0">${code}</p><p style="color:#666">This code expires in 15 minutes.</p></div>`,
+    html: verificationCodeEmail(code),
   });
   if (!sent.sent) {
     const status = sent.statusCode === 429 ? 429 : 502;
@@ -153,21 +191,41 @@ const verifyEmail = async (request) => {
   }
 
   const now = new Date();
-  const verificationCode = await prisma.emailVerificationCode.findFirst({
-    where: { userId: user.id, code, usedAt: null, expiresAt: { gt: now } },
-    select: { id: true },
+  const invalidResponse = () =>
+    jsonResponse({ error: "That verification code is invalid or expired" }, 400);
+
+  // Look up the caller's one active (unused, unexpired) code regardless of
+  // what they submitted, so a wrong guess still counts against the same
+  // row's attempt limit instead of silently costing nothing.
+  const activeCode = await prisma.emailVerificationCode.findFirst({
+    where: { userId: user.id, usedAt: null, expiresAt: { gt: now } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, code: true, attempts: true },
   });
-  if (!verificationCode) {
+  if (!activeCode) return invalidResponse();
+  if (activeCode.attempts >= VERIFICATION_CODE_MAX_ATTEMPTS) {
+    await prisma.emailVerificationCode.update({
+      where: { id: activeCode.id },
+      data: { usedAt: now },
+    });
     return jsonResponse(
-      { error: "That verification code is invalid or expired" },
-      400,
+      { error: "Too many attempts. Request a new verification code." },
+      429,
     );
+  }
+
+  if (activeCode.code !== code) {
+    await prisma.emailVerificationCode.update({
+      where: { id: activeCode.id },
+      data: { attempts: { increment: 1 } },
+    });
+    return invalidResponse();
   }
 
   await prisma.$transaction(async (transaction) => {
     const claimed = await transaction.emailVerificationCode.updateMany({
       where: {
-        id: verificationCode.id,
+        id: activeCode.id,
         usedAt: null,
         expiresAt: { gt: now },
       },
@@ -219,7 +277,10 @@ const sendNotificationEmail = async (
     const emailSent = await sendEmail({
       to: user.email,
       subject: content.subject,
-      html: `<p>${content.message(productName)}</p><p><a href="${productUrl}">View product</a></p>`,
+      html: notificationEmail({
+        message: content.message(productName),
+        productUrl,
+      }),
     });
 
     if (emailSent.sent) {
@@ -349,14 +410,99 @@ const subscribeToNewsletter = async (request) => {
   return jsonResponse({ success: true });
 };
 
-const listAdminContactSubmissions = async (request) => {
+// Search and status filtering run in the database, not in the browser: a
+// filter that only narrows the rows already downloaded stops being useful
+// the moment there is more than one page of messages.
+const listAdminContactSubmissions = async (request, url) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
+  const query = (url?.searchParams.get("q") || "").trim();
+  const status = url?.searchParams.get("status") || "";
+
+  const where = {};
+  if (query) {
+    where.OR = [
+      { name: { contains: query, mode: "insensitive" } },
+      { email: { contains: query, mode: "insensitive" } },
+      { subject: { contains: query, mode: "insensitive" } },
+      { message: { contains: query, mode: "insensitive" } },
+    ];
+  }
+  if (status === "unread") where.read = false;
+  if (status === "unanswered") where.repliedAt = null;
+  if (status === "replied") where.repliedAt = { not: null };
+
   const submissions = await prisma.contactSubmission.findMany({
+    where,
     orderBy: { createdAt: "desc" },
+    take: 200,
   });
   return jsonResponse(submissions);
+};
+
+/**
+ * Replies to a customer message by email.
+ *
+ * The recipient comes from the stored submission, never from the request
+ * body — an admin cannot be tricked into mailing an arbitrary address, and
+ * nobody has to copy and paste anything. `repliedAt` is only written after
+ * the provider accepts the message, so the dashboard never shows "replied"
+ * for an email that never left.
+ */
+const replyToAdminContactSubmission = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const body = await request.json();
+  const replyBody = typeof body.reply === "string" ? body.reply.trim() : "";
+  if (!replyBody) {
+    return jsonResponse({ error: "A reply message is required" }, 400);
+  }
+
+  const submission = await prisma.contactSubmission.findUnique({
+    where: { id },
+  });
+  if (!submission) {
+    return jsonResponse({ error: "Contact submission not found" }, 404);
+  }
+
+  const result = await sendEmail({
+    to: submission.email,
+    subject: `Re: ${submission.subject}`,
+    html: supportReplyEmail({
+      customerName: submission.name,
+      subject: submission.subject,
+      originalMessage: submission.message,
+      replyBody,
+    }),
+  });
+
+  if (!result?.sent) {
+    console.error("Support reply failed", {
+      submissionId: id,
+      message: result?.message,
+    });
+    return jsonResponse(
+      {
+        error:
+          result?.message ||
+          "The reply could not be sent. Nothing was delivered to the customer.",
+      },
+      502,
+    );
+  }
+
+  const updated = await prisma.contactSubmission.update({
+    where: { id },
+    data: {
+      replyBody,
+      repliedAt: new Date(),
+      repliedBy: guard.user?.email || null,
+      read: true,
+    },
+  });
+  return jsonResponse(updated);
 };
 
 const markAdminContactSubmissionRead = async (request, id) => {
@@ -375,6 +521,219 @@ const markAdminContactSubmissionRead = async (request, id) => {
     where: { id },
   });
   return jsonResponse(submission);
+};
+
+// --- Promotional campaigns ---------------------------------------------
+// Deliberately separate from the order emails above: different consent
+// rules, a different template, and a send path that can never be triggered
+// by a customer action.
+
+const CAMPAIGN_AUDIENCES = ["CUSTOMERS", "NEWSLETTER", "ALL"];
+
+const campaignInputFrom = (body) => {
+  const text = (value) => (typeof value === "string" ? value.trim() : "");
+  const subject = text(body.subject);
+  const content = text(body.body);
+  if (!subject) return { error: "A subject is required" };
+  if (!content) return { error: "Email content is required" };
+
+  const audience = text(body.audience) || "CUSTOMERS";
+  if (!CAMPAIGN_AUDIENCES.includes(audience)) {
+    return { error: `audience must be one of ${CAMPAIGN_AUDIENCES.join(", ")}` };
+  }
+
+  let scheduledFor = null;
+  if (body.scheduledFor) {
+    const parsed = new Date(body.scheduledFor);
+    if (Number.isNaN(parsed.getTime())) {
+      return { error: "scheduledFor must be a valid date" };
+    }
+    scheduledFor = parsed;
+  }
+
+  return {
+    data: {
+      subject,
+      body: content,
+      preheader: text(body.preheader) || null,
+      imageUrl: text(body.imageUrl) || null,
+      ctaLabel: text(body.ctaLabel) || null,
+      ctaUrl: text(body.ctaUrl) || null,
+      featuredProductIds: Array.isArray(body.featuredProductIds)
+        ? body.featuredProductIds.filter((id) => typeof id === "string").slice(0, 3)
+        : [],
+      audience,
+      scheduledFor,
+    },
+  };
+};
+
+const listAdminCampaigns = async (request, url) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const query = (url?.searchParams.get("q") || "").trim();
+  const status = url?.searchParams.get("status") || "";
+  const where = {};
+  if (query) where.subject = { contains: query, mode: "insensitive" };
+  if (status) where.status = status;
+
+  const campaigns = await prisma.campaign.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  return jsonResponse(campaigns);
+};
+
+// The detail view needs to state exactly how many inboxes a send would
+// reach, counted live rather than from a stale column.
+const getAdminCampaign = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const campaign = await prisma.campaign.findUnique({ where: { id } });
+  if (!campaign) return jsonResponse({ error: "Campaign not found" }, 404);
+
+  const audienceSize = await countAudience(campaign.audience);
+  const featuredProducts = await loadFeaturedProducts(
+    prisma,
+    campaign.featuredProductIds,
+  );
+  return jsonResponse({ ...campaign, audienceSize, featuredProducts });
+};
+
+const createAdminCampaign = async (request) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const input = campaignInputFrom(await request.json());
+  if (input.error) return jsonResponse({ error: input.error }, 400);
+
+  const campaign = await prisma.campaign.create({
+    data: {
+      ...input.data,
+      status: input.data.scheduledFor ? "SCHEDULED" : "DRAFT",
+    },
+  });
+  return jsonResponse(campaign, 201);
+};
+
+const updateAdminCampaign = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const existing = await prisma.campaign.findUnique({
+    where: { id },
+    select: { status: true },
+  });
+  if (!existing) return jsonResponse({ error: "Campaign not found" }, 404);
+  // A campaign that has gone out is a record of what was sent, not a draft.
+  if (!["DRAFT", "SCHEDULED", "CANCELLED", "FAILED"].includes(existing.status)) {
+    return jsonResponse(
+      { error: `A campaign that is ${existing.status} can no longer be edited` },
+      409,
+    );
+  }
+
+  const input = campaignInputFrom(await request.json());
+  if (input.error) return jsonResponse({ error: input.error }, 400);
+
+  const campaign = await prisma.campaign.update({
+    where: { id },
+    data: {
+      ...input.data,
+      status: input.data.scheduledFor ? "SCHEDULED" : "DRAFT",
+      lastError: null,
+    },
+  });
+  return jsonResponse(campaign);
+};
+
+const cancelAdminCampaign = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const result = await prisma.campaign.updateMany({
+    where: { id, status: { in: ["DRAFT", "SCHEDULED"] } },
+    data: { status: "CANCELLED" },
+  });
+  if (result.count === 0) {
+    return jsonResponse(
+      { error: "Only a draft or scheduled campaign can be cancelled" },
+      409,
+    );
+  }
+  return jsonResponse(await prisma.campaign.findUnique({ where: { id } }));
+};
+
+const sendAdminCampaignNow = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const result = await sendCampaign(id);
+  if (!result.sent) {
+    return jsonResponse(
+      {
+        error:
+          result.reason === "not-found"
+            ? "Campaign not found"
+            : result.reason?.startsWith("already-")
+              ? `This campaign is already ${result.reason.replace("already-", "")}`
+              : "The campaign could not be sent. Nothing was delivered.",
+        reason: result.reason,
+      },
+      result.reason === "not-found" ? 404 : 409,
+    );
+  }
+  return jsonResponse({
+    ...(await prisma.campaign.findUnique({ where: { id } })),
+    result,
+  });
+};
+
+// Lets the composer state how many inboxes a send would reach before the
+// campaign exists, without creating throwaway records to find out.
+const getAdminCampaignAudienceSize = async (request, url) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const audience = url.searchParams.get("audience") || "CUSTOMERS";
+  if (!CAMPAIGN_AUDIENCES.includes(audience)) {
+    return jsonResponse({ error: "Unknown audience" }, 400);
+  }
+  return jsonResponse({ audience, size: await countAudience(audience) });
+};
+
+const handleAdminCampaignRequest = async (request, segments, url) => {
+  const id = segments[3] ? decodeURIComponent(segments[3]) : null;
+  const action = segments[4];
+
+  if (request.method === "GET" && id === "audience") {
+    return getAdminCampaignAudienceSize(request, url);
+  }
+  if (request.method === "GET" && !id) return listAdminCampaigns(request, url);
+  if (request.method === "GET" && id) return getAdminCampaign(request, id);
+  if (request.method === "POST" && !id) return createAdminCampaign(request);
+  if (request.method === "POST" && id && action === "send") {
+    return sendAdminCampaignNow(request, id);
+  }
+  if (request.method === "POST" && id && action === "cancel") {
+    return cancelAdminCampaign(request, id);
+  }
+  if (request.method === "PUT" && id) return updateAdminCampaign(request, id);
+  return jsonResponse({ error: "Method not allowed" }, 405);
+};
+
+// Public, token-authenticated, and deliberately not behind a login: an
+// unsubscribe link that demands a password is not an unsubscribe link.
+const handleUnsubscribe = async (request, url) => {
+  const token = url.searchParams.get("token");
+  const result = await unsubscribeByToken(token);
+  if (!result.ok) {
+    return jsonResponse({ error: "This unsubscribe link is not valid" }, 404);
+  }
+  return jsonResponse({ success: true, email: result.email });
 };
 
 const initializeCloudinary = () => {
@@ -458,36 +817,145 @@ const serializeCategory = (category) => ({
   id: category.id,
   name: category.name,
   styleTags: category.styleTags.map((tag) => tag.name),
+  // Exposed publicly so storefront navigation and filters reflect the
+  // taxonomy an admin actually manages, instead of a hardcoded copy.
+  subcategories: (category.subcategories || []).map((subcategory) => ({
+    id: subcategory.id,
+    name: subcategory.name,
+    slug: subcategory.slug,
+  })),
 });
 
-const buildProductsWhere = (url) => {
-  const gender = url.searchParams.get("gender");
-  const categoryId = url.searchParams.get("category");
-  const subcategory = url.searchParams.get("subcategory");
-  const styleTag = url.searchParams.get("style");
-  const brandId = url.searchParams.get("brand");
-  const query = url.searchParams.get("q");
-  const archived = url.searchParams.get("archived") === "true";
+// Filters are multi-value: every key accepts repeated params
+// (?size=S&size=M) or a comma list (?size=S,M). Values within one filter
+// are OR'd, separate filters are AND'd — the behaviour shoppers expect
+// from a faceted catalogue.
+const filterValues = (params, key) =>
+  params
+    .getAll(key)
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
 
-  const where = { archived };
-  if (gender) where.gender = gender;
-  if (categoryId) where.categoryId = categoryId;
-  if (subcategory)
-    where.subcategory = { equals: subcategory, mode: "insensitive" };
-  if (brandId) where.brandId = brandId;
-  if (styleTag)
-    where.styleTags = {
-      some: { name: { equals: styleTag, mode: "insensitive" } },
-    };
-  if (query) {
-    where.OR = [
-      { name: { contains: query, mode: "insensitive" } },
-      { brand: { name: { contains: query, mode: "insensitive" } } },
-      { variants: { some: { sku: { contains: query, mode: "insensitive" } } } },
-    ];
+const buildProductsWhere = (url) => {
+  const params = url.searchParams;
+  const where = { archived: params.get("archived") === "true" };
+  // Each entry here is AND'd together. Anything needing case-insensitive
+  // matching or a relation lookup goes here rather than on `where`
+  // directly, since Prisma's `in` has no insensitive mode.
+  const and = [];
+
+  const genders = filterValues(params, "gender");
+  if (genders.length) where.gender = { in: genders };
+
+  const categories = filterValues(params, "category");
+  if (categories.length) where.categoryId = { in: categories };
+
+  const brands = filterValues(params, "brand");
+  if (brands.length) where.brandId = { in: brands };
+
+  const subcategories = filterValues(params, "subcategory");
+  if (subcategories.length) {
+    and.push({
+      OR: subcategories.map((value) => ({
+        subcategory: { equals: value, mode: "insensitive" },
+      })),
+    });
   }
+
+  const styleTags = filterValues(params, "style");
+  if (styleTags.length) {
+    and.push({
+      OR: styleTags.map((value) => ({
+        styleTags: { some: { name: { equals: value, mode: "insensitive" } } },
+      })),
+    });
+  }
+
+  // Admin-managed tags (see /api/admin/tags) are matched by slug so the
+  // taxonomy an admin builds is filterable on the storefront.
+  const tags = filterValues(params, "tag");
+  if (tags.length) {
+    and.push({
+      OR: tags.map((value) => ({
+        tags: { some: { tag: { slug: { equals: value, mode: "insensitive" } } } },
+      })),
+    });
+  }
+
+  const sizes = filterValues(params, "size");
+  if (sizes.length) {
+    and.push({
+      OR: sizes.map((value) => ({
+        variants: { some: { size: { equals: value, mode: "insensitive" } } },
+      })),
+    });
+  }
+
+  const colors = filterValues(params, "color");
+  if (colors.length) {
+    and.push({
+      OR: colors.map((value) => ({
+        variants: { some: { color: { equals: value, mode: "insensitive" } } },
+      })),
+    });
+  }
+
+  if (params.get("inStock") === "true") {
+    and.push({ variants: { some: { stock: { gt: 0 } } } });
+  }
+
+  // Price bounds run against basePrice. Note this ignores discountPercent,
+  // so a discounted product is filtered on its pre-discount price.
+  const price = {};
+  const minPrice = Number(params.get("minPrice"));
+  const maxPrice = Number(params.get("maxPrice"));
+  if (params.get("minPrice") && Number.isFinite(minPrice)) price.gte = minPrice;
+  if (params.get("maxPrice") && Number.isFinite(maxPrice)) price.lte = maxPrice;
+  if (Object.keys(price).length) where.basePrice = price;
+
+  const query = params.get("q");
+  if (query) {
+    and.push({
+      OR: [
+        { name: { contains: query, mode: "insensitive" } },
+        { brand: { name: { contains: query, mode: "insensitive" } } },
+        { subcategory: { contains: query, mode: "insensitive" } },
+        { description: { contains: query, mode: "insensitive" } },
+        { styleTags: { some: { name: { contains: query, mode: "insensitive" } } } },
+        { tags: { some: { tag: { name: { contains: query, mode: "insensitive" } } } } },
+        {
+          variants: {
+            some: {
+              OR: [
+                { sku: { contains: query, mode: "insensitive" } },
+                { color: { contains: query, mode: "insensitive" } },
+              ],
+            },
+          },
+        },
+      ],
+    });
+  }
+
+  if (and.length) where.AND = and;
   return where;
 };
+
+// Sort options offered to shoppers. Every entry ends with a stable `id`
+// tiebreak so pagination can't drop or repeat a product between pages.
+const PRODUCT_SORT_ORDERS = {
+  newest: [{ createdAt: "desc" }, { id: "asc" }],
+  oldest: [{ createdAt: "asc" }, { id: "asc" }],
+  "price-asc": [{ basePrice: "asc" }, { id: "asc" }],
+  "price-desc": [{ basePrice: "desc" }, { id: "asc" }],
+  "name-asc": [{ name: "asc" }, { id: "asc" }],
+};
+
+export const PRODUCT_SORT_KEYS = Object.keys(PRODUCT_SORT_ORDERS);
+
+const getProductOrderBy = (url) =>
+  PRODUCT_SORT_ORDERS[url.searchParams.get("sort")] || [{ id: "asc" }];
 
 const listProducts = async (url) => {
   const where = buildProductsWhere(url);
@@ -506,7 +974,7 @@ const listProducts = async (url) => {
       include: productInclude,
       skip: (page - 1) * pageSize,
       take: pageSize,
-      orderBy: { id: "asc" },
+      orderBy: getProductOrderBy(url),
     }),
     prisma.product.count({ where }),
   ]);
@@ -516,6 +984,149 @@ const listProducts = async (url) => {
     total,
     page,
     pageSize,
+  });
+};
+
+// Facets for the filter drawer, derived from the live catalogue rather
+// than a hardcoded list, so anything an admin creates becomes filterable
+// as soon as a product uses it. Counts respect every *other* active
+// filter but not the facet's own, which is what lets a shopper widen a
+// selection without the options disappearing underneath them.
+const CLOTHING_SIZE_ORDER = [
+  "XXS",
+  "XS",
+  "S",
+  "M",
+  "L",
+  "XL",
+  "XXL",
+  "XXXL",
+];
+
+const compareSizes = (a, b) => {
+  const numericA = Number(a);
+  const numericB = Number(b);
+  const aIsNumeric = Number.isFinite(numericA);
+  const bIsNumeric = Number.isFinite(numericB);
+  // Numeric (shoe) sizes sort numerically and sit before lettered sizes.
+  if (aIsNumeric && bIsNumeric) return numericA - numericB;
+  if (aIsNumeric) return -1;
+  if (bIsNumeric) return 1;
+
+  const indexA = CLOTHING_SIZE_ORDER.indexOf(a.toUpperCase());
+  const indexB = CLOTHING_SIZE_ORDER.indexOf(b.toUpperCase());
+  if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+  if (indexA !== -1) return -1;
+  if (indexB !== -1) return 1;
+  return a.localeCompare(b);
+};
+
+// "Red" and "red" are the same colour to a shopper even when they were
+// typed differently at product-entry time.
+const titleCase = (value) =>
+  value
+    .toLowerCase()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+
+const listProductFilters = async (url) => {
+  const where = buildProductsWhere(url);
+
+  const [products, priceBounds] = await Promise.all([
+    prisma.product.findMany({
+      where,
+      select: {
+        categoryId: true,
+        subcategory: true,
+        brandId: true,
+        brand: { select: { id: true, name: true } },
+        styleTags: { select: { name: true } },
+        tags: { select: { tag: { select: { name: true, slug: true } } } },
+        variants: { select: { size: true, color: true, stock: true } },
+      },
+    }),
+    prisma.product.aggregate({
+      where,
+      _min: { basePrice: true },
+      _max: { basePrice: true },
+    }),
+  ]);
+
+  const tally = (entries) => {
+    const counts = new Map();
+    for (const { value, label } of entries) {
+      if (!value) continue;
+      const existing = counts.get(value);
+      if (existing) existing.count += 1;
+      else counts.set(value, { value, label: label ?? value, count: 1 });
+    }
+    return [...counts.values()];
+  };
+
+  const brands = tally(
+    products.map((product) => ({
+      value: product.brandId,
+      label: product.brand?.name,
+    })),
+  ).sort((a, b) => a.label.localeCompare(b.label));
+
+  const categories = tally(
+    products.map((product) => ({ value: product.categoryId })),
+  ).sort((a, b) => a.label.localeCompare(b.label));
+
+  const subcategories = tally(
+    products.map((product) => ({
+      value: product.subcategory,
+      label: product.subcategory,
+    })),
+  ).sort((a, b) => a.label.localeCompare(b.label));
+
+  const styles = tally(
+    products.flatMap((product) =>
+      product.styleTags.map((tag) => ({ value: tag.name })),
+    ),
+  ).sort((a, b) => a.label.localeCompare(b.label));
+
+  const tags = tally(
+    products.flatMap((product) =>
+      product.tags.map(({ tag }) => ({ value: tag.slug, label: tag.name })),
+    ),
+  ).sort((a, b) => a.label.localeCompare(b.label));
+
+  // Variant facets are per-product, not per-variant: a product with three
+  // black variants counts once against "Black".
+  const sizes = tally(
+    products.flatMap((product) => [
+      ...new Set(product.variants.map((variant) => variant.size)),
+    ].map((size) => ({ value: size }))),
+  ).sort((a, b) => compareSizes(a.value, b.value));
+
+  const colors = tally(
+    products.flatMap((product) => [
+      ...new Set(
+        product.variants.map((variant) => titleCase(variant.color || "")),
+      ),
+    ].map((color) => ({ value: color }))),
+  ).sort((a, b) => a.label.localeCompare(b.label));
+
+  const inStockCount = products.filter((product) =>
+    product.variants.some((variant) => variant.stock > 0),
+  ).length;
+
+  return jsonResponse({
+    total: products.length,
+    brands,
+    categories,
+    subcategories,
+    styles,
+    tags,
+    sizes,
+    colors,
+    inStockCount,
+    price: {
+      min: priceBounds._min.basePrice ?? 0,
+      max: priceBounds._max.basePrice ?? 0,
+    },
+    sorts: PRODUCT_SORT_KEYS,
   });
 };
 
@@ -543,11 +1154,57 @@ const getProductById = async (id) => {
 };
 
 const listCategories = async () => {
-  const categories = await prisma.category.findMany({
-    include: { styleTags: true },
-    orderBy: { id: "asc" },
-  });
-  return jsonResponse(categories.map(serializeCategory));
+  const [categories, inUse] = await Promise.all([
+    prisma.category.findMany({
+      include: {
+        styleTags: true,
+        subcategories: { orderBy: { name: "asc" } },
+      },
+      orderBy: { id: "asc" },
+    }),
+    // Products carry a free-text `subcategory` alongside the managed
+    // Subcategory table, and the two have drifted apart. Merging both
+    // keeps storefront navigation complete without silently linking to a
+    // subcategory that has nothing to show.
+    prisma.product.groupBy({
+      by: ["categoryId", "subcategory"],
+      where: { archived: false, status: "ACTIVE" },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const inUseByCategory = new Map();
+  for (const row of inUse) {
+    if (!row.subcategory) continue;
+    const list = inUseByCategory.get(row.categoryId) || [];
+    list.push({ name: row.subcategory, count: row._count._all });
+    inUseByCategory.set(row.categoryId, list);
+  }
+
+  return jsonResponse(
+    categories.map((category) => {
+      const serialized = serializeCategory(category);
+      const used = inUseByCategory.get(category.id) || [];
+      const byName = new Map(
+        serialized.subcategories.map((subcategory) => [
+          subcategory.name.toLowerCase(),
+          { ...subcategory, productCount: 0 },
+        ]),
+      );
+      for (const { name, count } of used) {
+        const key = name.toLowerCase();
+        const existing = byName.get(key);
+        if (existing) existing.productCount = count;
+        else byName.set(key, { id: null, name, slug: null, productCount: count });
+      }
+      return {
+        ...serialized,
+        subcategories: [...byName.values()].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        ),
+      };
+    }),
+  );
 };
 
 const listBrands = async () => {
@@ -1817,6 +2474,14 @@ const updateAdminOrderStatus = async (request, id) => {
   });
 
   if (result.error) return jsonResponse({ error: result.error }, result.status);
+
+  // The status change is committed at this point, so the customer is owed
+  // the matching email. sendOrderEmail dedupes on (order, type), which is
+  // what stops an admin flipping a status back and forth from sending the
+  // same notification twice.
+  const emailType = EMAIL_TYPE_FOR_STATUS[body.status];
+  if (emailType) queueOrderEmail(id, emailType);
+
   if (body.status === "CANCELLED" && restockedVariants.length > 0) {
     void processRestockNotificationsBestEffort(restockedVariants).catch(
       (error) => {
@@ -1840,20 +2505,32 @@ const handleAdminOrderRequest = async (request, segments, url) => {
   return jsonResponse({ error: "Method not allowed" }, 405);
 };
 
-const listAdminCustomers = async (request) => {
+const listAdminCustomers = async (request, url) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
+  const query = (url?.searchParams.get("q") || "").trim();
+  const where = { role: "CUSTOMER" };
+  if (query) {
+    where.OR = [
+      { name: { contains: query, mode: "insensitive" } },
+      { email: { contains: query, mode: "insensitive" } },
+    ];
+  }
+
   const [customers, orderTotals] = await Promise.all([
     prisma.user.findMany({
-      where: { role: "CUSTOMER" },
+      where,
       orderBy: { createdAt: "desc" },
+      take: 200,
       select: {
         id: true,
         name: true,
         email: true,
         active: true,
         createdAt: true,
+        emailVerified: true,
+        marketingOptIn: true,
         _count: { select: { orders: true } },
       },
     }),
@@ -1930,9 +2607,9 @@ const updateAdminCustomer = async (request, id) => {
   return jsonResponse(updatedCustomer);
 };
 
-const handleAdminCustomerRequest = async (request, segments) => {
+const handleAdminCustomerRequest = async (request, segments, url) => {
   const id = segments[3] ? decodeURIComponent(segments[3]) : null;
-  if (request.method === "GET" && !id) return listAdminCustomers(request);
+  if (request.method === "GET" && !id) return listAdminCustomers(request, url);
   if (request.method === "GET" && id) return getAdminCustomer(request, id);
   if (request.method === "PUT" && id) return updateAdminCustomer(request, id);
   return jsonResponse({ error: "Method not allowed" }, 405);
@@ -2797,6 +3474,21 @@ const initializeCheckout = async (request) => {
   const user = await getCurrentUser(request);
   if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
 
+  // Orders are tied to a reachable inbox: every confirmation, shipping and
+  // delivery email below depends on it, and an unverified address means a
+  // paying customer silently hears nothing. `code` lets the checkout page
+  // offer the fix inline instead of dead-ending on an error string.
+  if (!user.emailVerified) {
+    return jsonResponse(
+      {
+        error:
+          "Please verify your email address before placing an order. We send order updates there.",
+        code: "EMAIL_NOT_VERIFIED",
+      },
+      403,
+    );
+  }
+
   if (!process.env.PAYSTACK_SECRET_KEY) {
     return jsonResponse({ error: "Payment processing is not configured" }, 500);
   }
@@ -3017,6 +3709,7 @@ const initializeCheckout = async (request) => {
     if (!updatedOrder) {
       return jsonResponse({ error: "Unable to save payment reference" }, 500);
     }
+    queueOrderEmail(order.id, "ORDER_CREATED");
     return jsonResponse({
       authorization_url: paystackBody.data.authorization_url,
       orderId: order.id,
@@ -3044,7 +3737,13 @@ const sendAdminOrderAlert = async (order) => {
     const emailSent = await sendEmail({
       to: process.env.ADMIN_ALERT_EMAIL,
       subject: `New order #${order.id}`,
-      html: `<p>New order <strong>#${order.id}</strong> has been paid.</p><p>Customer: ${order.fullName} (${order.user.email})</p><p>Total: ${formatPrice(order.total)}</p><p>Item count: ${itemCount}</p>`,
+      html: adminOrderAlertEmail({
+        orderId: order.id,
+        fullName: order.fullName,
+        email: order.user.email,
+        total: formatPrice(order.total),
+        itemCount,
+      }),
     });
 
     if (!emailSent.sent) console.error("Admin order alert failed", order.id);
@@ -3149,11 +3848,8 @@ const markOrderAsPaid = async (reference) => {
 
     // Claim the order before changing stock so webhook retries and verification
     // requests cannot both finalize the same payment.
-    const claim = await transaction.order.updateMany({
-      where: { id: order.id, status: "PENDING" },
-      data: { status: "PAID" },
-    });
-    if (claim.count === 0) {
+    const claimed = await claimOrderForPayment(transaction, order.id);
+    if (!claimed) {
       return transaction.order.findUnique({
         where: { id: order.id },
         include: { items: true },
@@ -3249,6 +3945,7 @@ const markOrderAsPaid = async (reference) => {
 
   if (transitionedToPaid && paidOrder) {
     // Fire and forget so order completion never depends on email providers.
+    queueOrderEmail(paidOrder.id, "ORDER_PAID");
     void sendAdminOrderAlert(paidOrder).catch((error) => {
       console.error("Admin order alert failed", {
         orderId: paidOrder.id,
@@ -3471,18 +4168,45 @@ const updateAccountProfile = async (request) => {
   if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
 
   const body = await request.json();
+  const allowedFields = ["name", "marketingOptIn"];
+  const providedFields = Object.keys(body);
   if (
-    !Object.prototype.hasOwnProperty.call(body, "name") ||
-    Object.keys(body).some((key) => key !== "name") ||
-    (body.name !== null && typeof body.name !== "string")
+    providedFields.length === 0 ||
+    providedFields.some((key) => !allowedFields.includes(key)) ||
+    (Object.prototype.hasOwnProperty.call(body, "name") &&
+      body.name !== null &&
+      typeof body.name !== "string") ||
+    (Object.prototype.hasOwnProperty.call(body, "marketingOptIn") &&
+      typeof body.marketingOptIn !== "boolean")
   ) {
-    return jsonResponse({ error: "Only name can be updated" }, 400);
+    return jsonResponse(
+      { error: "Only name and marketingOptIn can be updated" },
+      400,
+    );
+  }
+
+  const data = {};
+  if (Object.prototype.hasOwnProperty.call(body, "name")) {
+    data.name = body.name?.trim() || null;
+  }
+  // Consent is recorded with a timestamp: "they ticked a box at some point"
+  // is not an audit trail.
+  if (Object.prototype.hasOwnProperty.call(body, "marketingOptIn")) {
+    data.marketingOptIn = body.marketingOptIn;
+    data.marketingOptInAt = body.marketingOptIn ? new Date() : null;
   }
 
   const updatedUser = await prisma.user.update({
     where: { id: user.id },
-    data: { name: body.name?.trim() || null },
-    select: { id: true, name: true, email: true, role: true, active: true },
+    data,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      active: true,
+      marketingOptIn: true,
+    },
   });
   return jsonResponse({ user: updatedUser });
 };
@@ -4076,12 +4800,6 @@ const addToWaitlist = async (request) => {
 const removeFromWaitlist = async (request, id) => {
   const user = await getCurrentUser(request);
   if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
-  if (!user.emailVerified) {
-    return jsonResponse(
-      { error: "Verify your email before placing an order" },
-      403,
-    );
-  }
 
   await prisma.waitlistEntry.deleteMany({ where: { id, userId: user.id } });
   return jsonResponse({ success: true, id });
@@ -4093,19 +4811,6 @@ const handleWaitlistRequest = async (request, segments) => {
   if (request.method === "POST" && !id) return addToWaitlist(request);
   if (request.method === "DELETE" && id) return removeFromWaitlist(request, id);
   return jsonResponse({ error: "Method not allowed" }, 405);
-};
-
-const verifyPaystackSignature = (rawBody, signature) => {
-  const secret = process.env.PAYSTACK_SECRET_KEY;
-  if (!secret || !signature) return false;
-
-  const expected = createHmac("sha512", secret).update(rawBody).digest("hex");
-  const expectedBuffer = Buffer.from(expected, "utf8");
-  const signatureBuffer = Buffer.from(signature, "utf8");
-  return (
-    expectedBuffer.length === signatureBuffer.length &&
-    timingSafeEqual(expectedBuffer, signatureBuffer)
-  );
 };
 
 const handlePaystackWebhook = async (request) => {
@@ -4136,273 +4841,208 @@ const handlePaystackWebhook = async (request) => {
   return jsonResponse({ ok: true });
 };
 
-const isVercelCronRequest = (request) =>
-  request.method === "GET" &&
-  Boolean(process.env.CRON_SECRET) &&
-  request.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`;
+const isVercelCronRequest = (request) => {
+  if (request.method !== "GET" || !process.env.CRON_SECRET) return false;
 
-export const handleApiRequest = async (request) => {
-  const url = new URL(request.url);
-  const segments = url.pathname.split("/").filter(Boolean); // e.g. ["api","products",":id"]
+  const expected = Buffer.from(`Bearer ${process.env.CRON_SECRET}`, "utf8");
+  const actual = Buffer.from(request.headers.get("authorization") || "", "utf8");
+  return (
+    expected.length === actual.length && timingSafeEqual(expected, actual)
+  );
+};
 
-  if (
-    request.method === "POST" &&
-    segments[0] === "api" &&
-    segments[1] === "auth" &&
-    segments[2] === "send-verification"
-  ) {
-    try {
-      return await sendVerificationCode(request);
-    } catch (error) {
-      console.error("Verification email send failed", error);
-      return jsonResponse(
-        { error: "Could not send your verification email" },
-        500,
-      );
-    }
-  }
-
-  if (
-    request.method === "POST" &&
-    segments[0] === "api" &&
-    segments[1] === "auth" &&
-    segments[2] === "verify-email"
-  ) {
-    try {
-      return await verifyEmail(request);
-    } catch (error) {
-      console.error("Email verification failed", error);
-      return jsonResponse({ error: "Could not verify your email" }, 500);
-    }
-  }
-
-  if (
-    request.method === "POST" &&
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "upload-image"
-  ) {
-    try {
-      return await uploadImage(request);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Image upload failed" }, 500);
-    }
-  }
-
-  if (
-    request.method === "GET" &&
-    segments[0] === "api" &&
-    segments[1] === "checkout" &&
-    segments[2] === "verify"
-  ) {
-    try {
-      return await verifyCheckout(request, url);
-    } catch (error) {
-      console.error("Checkout verification failed", error);
-      return jsonResponse({ error: "Unable to verify payment" }, 502);
-    }
-  }
-
-  if (segments[0] === "api" && segments[1] === "cart") {
-    try {
-      if (request.method === "GET" && !segments[2]) {
-        return await getCartItems(request);
+// --- Route table -----------------------------------------------------
+// Each entry matches a path (optionally with `:param` segments) and,
+// unless `method` is omitted, a single HTTP method. Entries whose method
+// is omitted delegate their own method handling (and 405s) to the
+// handler, exactly as the sub-dispatchers below already do — this table
+// only replaces the old if-chain, it does not change how any individual
+// endpoint authorizes or validates a request. Order matters: the first
+// matching entry wins, same as the if-chain it replaces.
+//
+// `path()` builds a matcher for the common case (literal segments plus
+// `:param` placeholders); a handful of routes with OR'd path segments or
+// bespoke method logic (account, admin/reminders/run) pass a `match`
+// function instead.
+const path = (...segments) => ({
+  match: (requestSegments) => {
+    if (requestSegments.length !== segments.length) return null;
+    const params = {};
+    for (let i = 0; i < segments.length; i++) {
+      const token = segments[i];
+      if (token.startsWith(":")) {
+        params[token.slice(1)] = decodeURIComponent(requestSegments[i]);
+      } else if (token !== requestSegments[i]) {
+        return null;
       }
-      if (request.method === "POST" && segments[2] === "sync") {
-        return await syncCart(request);
-      }
+    }
+    return params;
+  },
+});
+
+const prefix = (...segments) => ({
+  match: (requestSegments) => {
+    if (requestSegments.length < segments.length) return null;
+    for (let i = 0; i < segments.length; i++) {
+      if (segments[i] !== requestSegments[i]) return null;
+    }
+    return {};
+  },
+});
+
+const ROUTES = [
+  {
+    method: "POST",
+    ...path("api", "auth", "send-verification"),
+    handler: ({ request }) => sendVerificationCode(request),
+    errorLog: "Verification email send failed",
+    errorMessage: "Could not send your verification email",
+  },
+  {
+    method: "POST",
+    ...path("api", "auth", "verify-email"),
+    handler: ({ request }) => verifyEmail(request),
+    errorLog: "Email verification failed",
+    errorMessage: "Could not verify your email",
+  },
+  {
+    method: "POST",
+    ...path("api", "admin", "upload-image"),
+    handler: ({ request }) => uploadImage(request),
+    errorMessage: "Image upload failed",
+  },
+  {
+    method: "GET",
+    ...path("api", "checkout", "verify"),
+    handler: ({ request, url }) => verifyCheckout(request, url),
+    errorLog: "Checkout verification failed",
+    errorMessage: "Unable to verify payment",
+    errorStatus: 502,
+  },
+  {
+    ...prefix("api", "cart"),
+    handler: async ({ request, segments }) => {
+      if (request.method === "GET" && !segments[2]) return getCartItems(request);
+      if (request.method === "POST" && segments[2] === "sync")
+        return syncCart(request);
       return jsonResponse({ error: "Method not allowed" }, 405);
-    } catch (error) {
-      console.error("Cart request failed", error);
-      return jsonResponse({ error: "Goody Bag request failed" }, 500);
-    }
-  }
-
-  if (segments[0] === "api" && segments[1] === "wishlist") {
-    try {
-      if (request.method === "GET" && !segments[2]) {
-        return await listWishlist(request);
-      }
-      if (request.method === "POST" && !segments[2]) {
-        return await addToWishlist(request);
-      }
-      if (request.method === "DELETE" && segments[2]) {
-        return await removeFromWishlist(
-          request,
-          decodeURIComponent(segments[2]),
-        );
-      }
+    },
+    errorLog: "Cart request failed",
+    errorMessage: "Goody Bag request failed",
+  },
+  {
+    ...prefix("api", "wishlist"),
+    handler: async ({ request, segments }) => {
+      if (request.method === "GET" && !segments[2]) return listWishlist(request);
+      if (request.method === "POST" && !segments[2])
+        return addToWishlist(request);
+      if (request.method === "DELETE" && segments[2])
+        return removeFromWishlist(request, decodeURIComponent(segments[2]));
       return jsonResponse({ error: "Method not allowed" }, 405);
-    } catch (error) {
-      console.error("Wishlist request failed", error);
-      return jsonResponse({ error: "Wishlist request failed" }, 500);
-    }
-  }
-
-  if (segments[0] === "api" && segments[1] === "waitlist") {
-    try {
-      return await handleWaitlistRequest(request, segments);
-    } catch (error) {
-      console.error("Waitlist request failed", error);
-      return jsonResponse({ error: "Waitlist request failed" }, 500);
-    }
-  }
-
-  if (
-    request.method === "POST" &&
-    segments[0] === "api" &&
-    segments[1] === "contact"
-  ) {
-    try {
-      return await createContactSubmission(request);
-    } catch (error) {
-      console.error("Contact submission failed", error);
-      return jsonResponse({ error: "Unable to save contact submission" }, 500);
-    }
-  }
-
-  if (
-    request.method === "POST" &&
-    segments[0] === "api" &&
-    segments[1] === "newsletter" &&
-    segments[2] === "subscribe"
-  ) {
-    try {
-      return await subscribeToNewsletter(request);
-    } catch (error) {
-      console.error("Newsletter subscription failed", error);
-      return jsonResponse({ error: "Unable to subscribe right now." }, 500);
-    }
-  }
-
-  if (
-    request.method === "GET" &&
-    segments[0] === "api" &&
-    segments[1] === "orders"
-  ) {
-    try {
+    },
+    errorLog: "Wishlist request failed",
+    errorMessage: "Wishlist request failed",
+  },
+  {
+    ...prefix("api", "waitlist"),
+    handler: ({ request, segments }) => handleWaitlistRequest(request, segments),
+    errorLog: "Waitlist request failed",
+    errorMessage: "Waitlist request failed",
+  },
+  {
+    method: "POST",
+    ...path("api", "contact"),
+    handler: ({ request }) => createContactSubmission(request),
+    errorLog: "Contact submission failed",
+    errorMessage: "Unable to save contact submission",
+  },
+  {
+    method: "POST",
+    ...path("api", "newsletter", "subscribe"),
+    handler: ({ request }) => subscribeToNewsletter(request),
+    errorLog: "Newsletter subscription failed",
+    errorMessage: "Unable to subscribe right now.",
+  },
+  {
+    method: "GET",
+    ...prefix("api", "orders"),
+    handler: ({ request, segments }) => {
       const id = segments[2] ? decodeURIComponent(segments[2]) : null;
-      return id ? await getOrder(request, id) : await listOrders(request);
-    } catch (error) {
-      console.error("Orders request failed", error);
-      return jsonResponse({ error: "Unable to load orders" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "account" &&
-    (segments[2] === "profile" ||
-      segments[2] === "change-password" ||
-      segments[2] === "addresses" ||
-      segments[2] === "first-order-promo")
-  ) {
-    try {
-      if (request.method === "GET" && segments[2] === "first-order-promo") {
-        return await getFirstOrderPromoForUser(request);
-      }
-      if (request.method === "POST" && segments[2] === "first-order-promo") {
-        return await markFirstOrderBannerSeen(request);
-      }
-      return await handleAccountRequest(request, segments);
-    } catch (error) {
-      console.error("Account request failed", error);
-      return jsonResponse({ error: "Account request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "first-order-promo"
-  ) {
-    try {
-      if (request.method === "GET")
-        return await getAdminFirstOrderPromo(request);
-      if (request.method === "PUT")
-        return await updateAdminFirstOrderPromo(request);
+      return id ? getOrder(request, id) : listOrders(request);
+    },
+    errorLog: "Orders request failed",
+    errorMessage: "Unable to load orders",
+  },
+  {
+    match: (segments) =>
+      segments.length >= 3 &&
+      segments[0] === "api" &&
+      segments[1] === "account" &&
+      ["profile", "change-password", "addresses", "first-order-promo"].includes(
+        segments[2],
+      )
+        ? {}
+        : null,
+    handler: ({ request, segments }) => {
+      if (request.method === "GET" && segments[2] === "first-order-promo")
+        return getFirstOrderPromoForUser(request);
+      if (request.method === "POST" && segments[2] === "first-order-promo")
+        return markFirstOrderBannerSeen(request);
+      return handleAccountRequest(request, segments);
+    },
+    errorLog: "Account request failed",
+    errorMessage: "Account request failed",
+  },
+  {
+    ...path("api", "admin", "first-order-promo"),
+    handler: ({ request }) => {
+      if (request.method === "GET") return getAdminFirstOrderPromo(request);
+      if (request.method === "PUT") return updateAdminFirstOrderPromo(request);
       return jsonResponse({ error: "Method not allowed" }, 405);
-    } catch (error) {
-      console.error("First-order promo request failed", error);
-      return jsonResponse({ error: "First-order promo request failed" }, 500);
-    }
-  }
-
-  if (
-    request.method === "GET" &&
-    segments[0] === "api" &&
-    segments[1] === "checkout" &&
-    segments[2] === "shipping-fee"
-  ) {
-    try {
-      return await getCheckoutShippingFee(request, url);
-    } catch (error) {
-      console.error("Checkout shipping fee request failed", error);
-      return jsonResponse({ error: "Unable to load shipping fee" }, 500);
-    }
-  }
-
-  if (
-    request.method === "POST" &&
-    segments[0] === "api" &&
-    segments[1] === "checkout" &&
-    segments[2] === "discount"
-  ) {
-    try {
-      return await previewCheckoutDiscount(request);
-    } catch (error) {
-      console.error("Checkout discount request failed", error);
-      return jsonResponse({ error: "Unable to apply promo code" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "shipping-fees"
-  ) {
-    try {
-      if (request.method === "GET" && !segments[3]) {
-        return await listAdminShippingFees(request);
-      }
-      if (request.method === "PUT" && segments[3]) {
-        return await updateAdminShippingFee(
-          request,
-          decodeURIComponent(segments[3]),
-        );
-      }
+    },
+    errorLog: "First-order promo request failed",
+    errorMessage: "First-order promo request failed",
+  },
+  {
+    method: "GET",
+    ...path("api", "checkout", "shipping-fee"),
+    handler: ({ request, url }) => getCheckoutShippingFee(request, url),
+    errorLog: "Checkout shipping fee request failed",
+    errorMessage: "Unable to load shipping fee",
+  },
+  {
+    method: "POST",
+    ...path("api", "checkout", "discount"),
+    handler: ({ request }) => previewCheckoutDiscount(request),
+    errorLog: "Checkout discount request failed",
+    errorMessage: "Unable to apply promo code",
+  },
+  {
+    ...prefix("api", "admin", "shipping-fees"),
+    handler: ({ request, segments }) => {
+      if (request.method === "GET" && !segments[3])
+        return listAdminShippingFees(request);
+      if (request.method === "PUT" && segments[3])
+        return updateAdminShippingFee(request, decodeURIComponent(segments[3]));
       return jsonResponse({ error: "Method not allowed" }, 405);
-    } catch (error) {
-      console.error("Shipping fee request failed", error);
-      return jsonResponse({ error: "Shipping fee request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "notifications" &&
-    segments[3] === "process"
-  ) {
-    try {
-      if (request.method !== "POST") {
-        return jsonResponse({ error: "Method not allowed" }, 405);
-      }
-      return await processUnsentNotifications(request);
-    } catch (error) {
-      console.error("Notification processing request failed", error);
-      return jsonResponse({ error: "Notification processing failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "reminders" &&
-    segments[3] === "run"
-  ) {
-    try {
+    },
+    errorLog: "Shipping fee request failed",
+    errorMessage: "Shipping fee request failed",
+  },
+  {
+    method: "POST",
+    ...path("api", "admin", "notifications", "process"),
+    handler: ({ request }) => processUnsentNotifications(request),
+    errorLog: "Notification processing request failed",
+    errorMessage: "Notification processing failed",
+  },
+  {
+    // Reachable either by Vercel Cron (GET + CRON_SECRET bearer token) or
+    // by an authenticated admin (POST). Kept self-contained rather than
+    // expressed through the generic `method` field because of that dual
+    // entry path.
+    ...path("api", "admin", "reminders", "run"),
+    handler: async ({ request }) => {
       const cronRequest = isVercelCronRequest(request);
       if (request.method !== "POST" && !cronRequest) {
         return jsonResponse({ error: "Method not allowed" }, 405);
@@ -4412,288 +5052,239 @@ export const handleApiRequest = async (request) => {
         if (!guard.ok) return jsonResponse(guard.body, guard.status);
       }
       return jsonResponse(await runReminderChecks());
-    } catch (error) {
-      console.error("Reminder check request failed", error);
-      return jsonResponse({ error: "Reminder check failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "site-images"
-  ) {
-    try {
+    },
+    errorLog: "Reminder check request failed",
+    errorMessage: "Reminder check failed",
+  },
+  {
+    ...prefix("api", "admin", "site-images"),
+    handler: ({ request, segments }) => {
       const key = segments[3] ? decodeURIComponent(segments[3]) : null;
-      if (request.method === "PUT" && key) {
-        return await updateAdminSiteImage(request, key);
-      }
+      if (request.method === "PUT" && key)
+        return updateAdminSiteImage(request, key);
       return jsonResponse({ error: "Method not allowed" }, 405);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Site image update failed" }, 500);
-    }
-  }
-
-  if (
-    request.method === "GET" &&
-    segments[0] === "api" &&
-    segments[1] === "site-images" &&
-    !segments[2]
-  ) {
-    try {
-      return await listSiteImages();
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Site images request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "discounts"
-  ) {
-    try {
-      return await handleAdminDiscountRequest(request, segments);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Discount request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "contact-submissions"
-  ) {
-    try {
+    },
+    errorMessage: "Site image update failed",
+  },
+  {
+    method: "GET",
+    ...path("api", "site-images"),
+    handler: () => listSiteImages(),
+    errorMessage: "Site images request failed",
+  },
+  {
+    ...prefix("api", "admin", "discounts"),
+    handler: ({ request, segments }) => handleAdminDiscountRequest(request, segments),
+    errorMessage: "Discount request failed",
+  },
+  {
+    ...prefix("api", "admin", "contact-submissions"),
+    handler: ({ request, segments, url }) => {
       const id = segments[3] ? decodeURIComponent(segments[3]) : null;
-      if (request.method === "GET" && !id) {
-        return await listAdminContactSubmissions(request);
-      }
-      if (request.method === "PUT" && id) {
-        return await markAdminContactSubmissionRead(request, id);
-      }
+      if (request.method === "GET" && !id)
+        return listAdminContactSubmissions(request, url);
+      if (request.method === "POST" && id && segments[4] === "reply")
+        return replyToAdminContactSubmission(request, id);
+      if (request.method === "PUT" && id)
+        return markAdminContactSubmissionRead(request, id);
       return jsonResponse({ error: "Method not allowed" }, 405);
-    } catch (error) {
-      console.error("Contact submissions request failed", error);
-      return jsonResponse({ error: "Contact submissions request failed" }, 500);
-    }
-  }
+    },
+    errorLog: "Contact submissions request failed",
+    errorMessage: "Contact submissions request failed",
+  },
+  {
+    ...prefix("api", "admin", "campaigns"),
+    handler: ({ request, segments, url }) =>
+      handleAdminCampaignRequest(request, segments, url),
+    errorLog: "Admin campaign request failed",
+    errorMessage: "Campaign request failed",
+  },
+  {
+    method: "GET",
+    ...path("api", "unsubscribe"),
+    handler: ({ request, url }) => handleUnsubscribe(request, url),
+    errorLog: "Unsubscribe failed",
+    errorMessage: "Unable to process this unsubscribe link",
+  },
+  {
+    ...prefix("api", "admin", "brands"),
+    handler: ({ request, segments }) => handleAdminBrandRequest(request, segments),
+    errorMessage: "Brand request failed",
+  },
+  {
+    ...prefix("api", "admin", "subcategories"),
+    handler: ({ request, segments }) =>
+      handleAdminSubcategoryRequest(request, segments),
+    errorMessage: "Subcategory request failed",
+  },
+  {
+    ...path("api", "admin", "categories", ":categoryId", "filter-types"),
+    handler: ({ request, segments }) =>
+      handleAdminCategoryFilterTypeRequest(request, segments),
+    errorMessage: "Category filter type request failed",
+  },
+  {
+    ...prefix("api", "admin", "filter-types"),
+    handler: ({ request, segments }) =>
+      handleAdminFilterTypeRequest(request, segments),
+    errorMessage: "Filter type request failed",
+  },
+  {
+    ...prefix("api", "admin", "tags"),
+    handler: ({ request, segments }) => handleAdminTagRequest(request, segments),
+    errorMessage: "Tag request failed",
+  },
+  {
+    ...prefix("api", "admin", "sections"),
+    handler: ({ request, segments }) => handleAdminSectionRequest(request, segments),
+    errorMessage: "Section request failed",
+  },
+  {
+    ...prefix("api", "admin", "journal"),
+    handler: ({ request, segments }) => handleAdminJournalRequest(request, segments),
+    errorMessage: "Journal request failed",
+  },
+  {
+    ...prefix("api", "admin", "orders"),
+    handler: ({ request, segments, url }) =>
+      handleAdminOrderRequest(request, segments, url),
+    errorMessage: "Order request failed",
+  },
+  {
+    ...prefix("api", "admin", "customers"),
+    handler: ({ request, segments, url }) =>
+      handleAdminCustomerRequest(request, segments, url),
+    errorMessage: "Customer request failed",
+  },
+  {
+    ...prefix("api", "admin", "products"),
+    handler: ({ request, segments }) => handleAdminProductRequest(request, segments),
+    errorMessage: "Product request failed",
+  },
+  {
+    ...prefix("api", "admin", "variants"),
+    handler: ({ request, segments }) => handleAdminVariantRequest(request, segments),
+    errorMessage: "Variant request failed",
+  },
+  {
+    method: "POST",
+    ...path("api", "checkout", "initialize"),
+    handler: ({ request }) => initializeCheckout(request),
+    errorMessage: "Checkout initialization failed",
+  },
+  {
+    method: "POST",
+    ...path("api", "webhooks", "paystack"),
+    handler: ({ request }) => handlePaystackWebhook(request),
+    errorLog: "Paystack webhook failed",
+    errorMessage: "Webhook processing failed",
+  },
 
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "brands"
-  ) {
-    try {
-      return await handleAdminBrandRequest(request, segments);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Brand request failed" }, 500);
-    }
-  }
+  // --- Public reads -----------------------------------------------
+  {
+    method: "GET",
+    ...path("api", "products", "new-arrivals"),
+    handler: () => listNewArrivals(),
+  },
+  {
+    // Must stay ahead of `api/products/:id`, which would otherwise treat
+    // "filters" as a product id.
+    method: "GET",
+    ...path("api", "products", "filters"),
+    handler: ({ url }) => listProductFilters(url),
+    errorMessage: "Unable to load filters",
+  },
+  {
+    method: "GET",
+    ...path("api", "products"),
+    handler: ({ url }) => listProducts(url),
+  },
+  {
+    method: "GET",
+    ...path("api", "products", ":id"),
+    handler: ({ params }) => getProductById(params.id),
+  },
+  {
+    method: "GET",
+    ...path("api", "categories"),
+    handler: () => listCategories(),
+  },
+  {
+    method: "GET",
+    ...path("api", "brands"),
+    handler: () => listBrands(),
+  },
+  {
+    method: "GET",
+    ...path("api", "filter-types"),
+    handler: () => listFilterTypes(),
+  },
+  {
+    method: "GET",
+    ...path("api", "tags"),
+    handler: () => listTags(),
+  },
+  {
+    method: "GET",
+    ...path("api", "sections", "homepage"),
+    handler: () => listHomepageSections(),
+  },
+  {
+    method: "GET",
+    ...path("api", "sections", ":slug"),
+    handler: ({ params }) => getPublicSection(params.slug),
+  },
+  {
+    method: "GET",
+    ...path("api", "brands", ":slug"),
+    handler: ({ params }) => getBrandBySlug(params.slug),
+  },
+  {
+    method: "GET",
+    ...path("api", "journal"),
+    handler: () => listPublishedJournalPosts(),
+  },
+  {
+    method: "GET",
+    ...path("api", "journal", ":slug"),
+    handler: ({ params }) => getPublishedJournalPost(params.slug),
+  },
+  {
+    method: "GET",
+    ...path("api", "me"),
+    handler: async ({ request }) => {
+      const user = await getCurrentUser(request);
+      if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+      return jsonResponse({ user });
+    },
+    errorMessage: "Internal server error",
+  },
+];
 
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "subcategories"
-  ) {
-    try {
-      return await handleAdminSubcategoryRequest(request, segments);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Subcategory request failed" }, 500);
-    }
-  }
+export const handleApiRequest = async (request) => {
+  const url = new URL(request.url);
+  const segments = url.pathname.split("/").filter(Boolean); // e.g. ["api","products",":id"]
 
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "categories" &&
-    segments[3] &&
-    segments[4] === "filter-types"
-  ) {
+  let pathMatched = false;
+  for (const route of ROUTES) {
+    const params = route.match(segments);
+    if (!params) continue;
+    pathMatched = true;
+    if (route.method && route.method !== request.method) continue;
+
     try {
-      return await handleAdminCategoryFilterTypeRequest(request, segments);
+      return await route.handler({ request, url, segments, params });
     } catch (error) {
-      console.error(error);
+      console.error(route.errorLog || route.errorMessage, error);
       return jsonResponse(
-        { error: "Category filter type request failed" },
-        500,
+        { error: route.errorMessage || "Request failed" },
+        route.errorStatus || 500,
       );
     }
   }
 
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "filter-types"
-  ) {
-    try {
-      return await handleAdminFilterTypeRequest(request, segments);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Filter type request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "tags"
-  ) {
-    try {
-      return await handleAdminTagRequest(request, segments);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Tag request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "sections"
-  ) {
-    try {
-      return await handleAdminSectionRequest(request, segments);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Section request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "journal"
-  ) {
-    try {
-      return await handleAdminJournalRequest(request, segments);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Journal request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "orders"
-  ) {
-    try {
-      return await handleAdminOrderRequest(request, segments, url);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Order request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "customers"
-  ) {
-    try {
-      return await handleAdminCustomerRequest(request, segments);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Customer request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "products"
-  ) {
-    try {
-      return await handleAdminProductRequest(request, segments);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Product request failed" }, 500);
-    }
-  }
-
-  if (
-    segments[0] === "api" &&
-    segments[1] === "admin" &&
-    segments[2] === "variants"
-  ) {
-    try {
-      return await handleAdminVariantRequest(request, segments);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Variant request failed" }, 500);
-    }
-  }
-
-  if (
-    request.method === "POST" &&
-    segments[0] === "api" &&
-    segments[1] === "checkout" &&
-    segments[2] === "initialize"
-  ) {
-    try {
-      return await initializeCheckout(request);
-    } catch (error) {
-      console.error(error);
-      return jsonResponse({ error: "Checkout initialization failed" }, 500);
-    }
-  }
-
-  if (
-    request.method === "POST" &&
-    segments[0] === "api" &&
-    segments[1] === "webhooks" &&
-    segments[2] === "paystack"
-  ) {
-    try {
-      return await handlePaystackWebhook(request);
-    } catch (error) {
-      console.error("Paystack webhook failed", error);
-      return jsonResponse({ error: "Webhook processing failed" }, 500);
-    }
-  }
-
-  if (request.method !== "GET")
-    return jsonResponse({ error: "Method not allowed" }, 405);
-
-  try {
-    if (segments[0] !== "api") return jsonResponse({ error: "Not found" }, 404);
-
-    if (segments[1] === "products" && segments[2] === "new-arrivals")
-      return listNewArrivals();
-    if (segments[1] === "products" && !segments[2]) return listProducts(url);
-    if (segments[1] === "products" && segments[2])
-      return getProductById(decodeURIComponent(segments[2]));
-    if (segments[1] === "categories" && !segments[2]) return listCategories();
-    if (segments[1] === "brands" && !segments[2]) return listBrands();
-    if (segments[1] === "filter-types" && !segments[2])
-      return listFilterTypes();
-    if (segments[1] === "tags" && !segments[2]) return listTags();
-    if (segments[1] === "sections" && segments[2] === "homepage")
-      return listHomepageSections();
-    if (segments[1] === "sections" && segments[2])
-      return getPublicSection(decodeURIComponent(segments[2]));
-    if (segments[1] === "brands" && segments[2])
-      return getBrandBySlug(decodeURIComponent(segments[2]));
-    if (segments[1] === "journal" && !segments[2])
-      return listPublishedJournalPosts();
-    if (segments[1] === "journal" && segments[2])
-      return getPublishedJournalPost(decodeURIComponent(segments[2]));
-
-    if (segments[1] === "me") {
-      const user = await getCurrentUser(request);
-      if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
-      return jsonResponse({ user });
-    }
-  } catch (error) {
-    console.error(error);
-    return jsonResponse({ error: "Internal server error" }, 500);
-  }
-
-  return jsonResponse({ error: "Not found" }, 404);
+  return jsonResponse(
+    { error: pathMatched ? "Method not allowed" : "Not found" },
+    pathMatched ? 405 : 404,
+  );
 };

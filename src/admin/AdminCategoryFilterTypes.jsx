@@ -83,17 +83,17 @@ const AdminCategoryFilterTypes = () => {
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-12 md:px-12 md:py-20">
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
         <div>
           <Link
             to="/admin"
-            className="text-xs uppercase tracking-[0.2em] text-gray-500"
+            className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
           >
             Admin
           </Link>
           <h1 className="mt-3 text-3xl font-semibold">Category filters</h1>
         </div>
-        <p className="max-w-sm text-sm text-gray-500">
+        <p className="max-w-sm text-sm text-[var(--ink-500)]">
           Choose which FilterTypes are available for each department.
         </p>
       </div>
@@ -108,7 +108,7 @@ const AdminCategoryFilterTypes = () => {
       )}
 
       {loading ? (
-        <p className="mt-8 text-sm text-gray-500">
+        <p className="mt-8 text-sm text-[var(--ink-500)]">
           <Spinner label="Loading category filters" />
         </p>
       ) : (
@@ -119,7 +119,7 @@ const AdminCategoryFilterTypes = () => {
             return (
               <section
                 key={department.id}
-                className="border-t border-black px-1 py-5"
+                className="border-t border-[var(--ink-900)] px-1 py-5"
               >
                 <h2 className="text-lg font-semibold">{department.label}</h2>
                 <div className="mt-5 space-y-3">
@@ -143,7 +143,7 @@ const AdminCategoryFilterTypes = () => {
                   type="button"
                   onClick={() => saveAssignments(department.categoryId)}
                   disabled={isSaving}
-                  className="mt-6 border border-black bg-black px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-6 border border-[var(--ink-900)] bg-[var(--ink-900)] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSaving ? <Spinner label="Saving" /> : "Save"}
                 </button>

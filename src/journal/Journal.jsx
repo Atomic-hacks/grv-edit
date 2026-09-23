@@ -4,6 +4,7 @@ import { motion as Motion } from "framer-motion";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
 import LoadingImage from "../component/ui/LoadingImage";
 import Spinner from "../component/ui/Spinner";
+import ErrorState from "../component/ui/ErrorState";
 
 const formatDate = (date) =>
   date ? new Date(date).toLocaleDateString() : "Unpublished";
@@ -90,9 +91,13 @@ const Journal = () => {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retryToken, setRetryToken] = useState(0);
+  const retry = () => setRetryToken((token) => token + 1);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError("");
 
     fetch("/api/journal")
       .then(async (response) => {
@@ -114,12 +119,15 @@ const Journal = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryToken]);
 
   return (
-    <section className="w-full bg-white py-16 px-4 md:px-32">
+    <section className="page-shell w-full bg-white pb-20 pt-10 md:pt-14">
       <div className="max-w-xl">
-        <AnimatedPageTitle title="Journal" />
+        <AnimatedPageTitle
+          title="Journal"
+          subtitle="Notes, conversations and the thinking behind the collections."
+        />
       </div>
 
       {loading && (
@@ -128,20 +136,24 @@ const Journal = () => {
           className="mt-8 text-sm text-gray-500"
         />
       )}
-      {error && (
-        <p role="alert" className="mt-8 text-sm text-red-700">
-          {error}
-        </p>
+      {error ? (
+        <ErrorState
+          title="Couldn't load the journal"
+          message="Something went wrong on our end. Give it another try."
+          onRetry={retry}
+        />
+      ) : (
+        <>
+          {!loading && posts.length === 0 && (
+            <p className="meta-text mt-8">No journal posts yet — check back soon.</p>
+          )}
+          <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+            {posts.map((post, index) => (
+              <JournalCard key={post.id} post={post} index={index} />
+            ))}
+          </div>
+        </>
       )}
-      {!loading && !error && posts.length === 0 && (
-        <p className="mt-8 text-sm text-gray-500">No journal posts yet.</p>
-      )}
-
-      <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
-        {posts.map((post, index) => (
-          <JournalCard key={post.id} post={post} index={index} />
-        ))}
-      </div>
     </section>
   );
 };

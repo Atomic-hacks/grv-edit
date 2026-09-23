@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import RequireAuth from "../component/auth/RequireAuth";
 import WishlistButton from "../component/ui/WishlistButton";
 import Spinner from "../component/ui/Spinner";
+import RecentlyViewedRail from "../component/section/RecentlyViewedRail";
+import StoreSupport from "../component/section/StoreSupport";
 import { useWishlist } from "../context/WishlistContext";
 import { useCart } from "../context/CartContext";
 import { getOptimizedImageUrl } from "../lib/imageHelpers";
@@ -27,9 +29,9 @@ const WishlistCard = ({ item }) => {
 
   return (
     <article className="group">
-      <div className="relative aspect-3/4 overflow-hidden bg-gray-100">
+      <div className="relative aspect-3/4 overflow-hidden bg-[var(--surface-muted)]">
         {!imageLoaded && image && (
-          <div className="absolute inset-0 z-10 animate-pulse bg-gray-200" />
+          <div className="skeleton absolute inset-0 z-10" />
         )}
         {image ? (
           <Link to={`/product/${item.productId}`}>
@@ -46,7 +48,7 @@ const WishlistCard = ({ item }) => {
         ) : (
           <Link
             to={`/product/${item.productId}`}
-            className="flex h-full items-center justify-center text-xs uppercase tracking-[0.16em] text-gray-400"
+            className="flex h-full items-center justify-center text-xs uppercase tracking-[0.14em] text-[var(--ink-300)]"
           >
             Image unavailable
           </Link>
@@ -54,29 +56,34 @@ const WishlistCard = ({ item }) => {
         <WishlistButton
           product={product}
           icon="close"
-          className="absolute right-3 top-3 z-20"
+          className="absolute right-1 top-1 z-20"
         />
       </div>
-      <div className="mt-4">
-        {product.isNew && <p className="text-xs text-gray-500">New Season</p>}
-        <p className="mt-1 font-semibold">{product.brand?.name}</p>
+      <div className="pt-3">
+        {product.isNew && <p className="eyebrow">New Season</p>}
+        {product.brand?.name && (
+          <p className="mt-1 truncate text-xs font-semibold sm:text-[13px]">
+            {product.brand.name}
+          </p>
+        )}
         <Link
           to={`/product/${item.productId}`}
-          className="mt-1 block text-sm text-gray-700"
+          className="mt-0.5 line-clamp-2 block text-xs leading-snug text-[var(--ink-500)] sm:text-[13px]"
         >
           {product.name}
         </Link>
         <DiscountPrice
           basePrice={product.basePrice}
           discountPercent={product.discountPercent}
-          className="mt-3 items-start font-semibold"
+          align="start"
+          className="mt-1.5 text-xs font-semibold sm:text-[13px]"
         />
-        <label className="mt-4 block text-xs text-gray-500">
+        <label className="mt-4 block text-[11px] uppercase tracking-[0.12em] text-[var(--ink-500)]">
           Variant
           <select
             value={selectedVariantId}
             onChange={(event) => setSelectedVariantId(event.target.value)}
-            className="mt-2 w-full border border-gray-300 bg-white px-3 py-3 text-sm text-black outline-none focus:border-black"
+            className="mt-2 w-full border border-[var(--line)] bg-white px-3 py-3 text-[13px] normal-case tracking-normal text-[var(--ink-900)] outline-none transition-colors focus:border-[var(--ink-900)]"
             disabled={!product.variants?.length}
           >
             {!product.variants?.length && (
@@ -107,9 +114,9 @@ const WishlistCard = ({ item }) => {
               1,
             )
           }
-          className="mt-4 w-full bg-black px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+          className="mt-3 w-full bg-[var(--ink-900)] px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-(--color-accent-orange) disabled:cursor-not-allowed disabled:bg-[var(--line)] disabled:text-[var(--ink-500)]"
         >
-          Add To Bag
+          Add to bag
         </button>
       </div>
     </article>
@@ -120,37 +127,38 @@ const WishlistContent = () => {
   const { items, loading } = useWishlist();
 
   return (
-    <main className="min-h-screen bg-white px-4 pb-20 pt-16 md:px-12 md:pt-24">
-      <div className="mx-auto max-w-6xl">
-        <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
-          Saved pieces
-        </p>
-        <h1 className="mt-4 text-4xl font-semibold">Wishlist</h1>
+    <main className="min-h-screen bg-white">
+      <div className="page-shell pb-16 pt-10 md:pt-14">
+        <p className="eyebrow">Saved pieces</p>
+        <h1 className="display-title mt-2">Wishlist</h1>
         {loading ? (
           <Spinner
             label="Loading wishlist"
             className="mt-12 text-sm text-gray-500"
           />
         ) : items.length === 0 ? (
-          <div className="mt-12 border-t border-gray-200 pt-8">
-            <p className="text-sm text-gray-600">
-              You have not saved anything yet.
+          <div className="mt-10 flex flex-col items-start gap-3 border-t border-[var(--line)] pt-10">
+            <p className="section-title">Nothing saved yet</p>
+            <p className="meta-text">
+              Tap the heart on any piece to keep it here.
             </p>
             <Link
               to="/shop"
-              className="mt-6 inline-flex bg-black px-6 py-3 text-sm font-medium text-white"
+              className="mt-3 inline-flex border border-[var(--ink-900)] px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
             >
               Explore the shop
             </Link>
           </div>
         ) : (
-          <div className="mt-12 grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-4 md:gap-x-5">
+          <div className="mt-10 product-grid">
             {items.map((item) => (
               <WishlistCard key={item.productId} item={item} />
             ))}
           </div>
         )}
+        <RecentlyViewedRail />
       </div>
+      <StoreSupport promises={false} help={false} newsletter={false} />
     </main>
   );
 };

@@ -148,17 +148,17 @@ const AdminSections = () => {
     const sections = sectionsQuery.data || [];
     return (
       <main className="mx-auto max-w-6xl px-6 py-12 md:px-12 md:py-20">
-        <div className="flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
+        <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
           <div>
             <Link
               to="/admin"
-              className="text-xs uppercase tracking-[0.2em] text-gray-500"
+              className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
             >
               Admin
             </Link>
             <h1 className="mt-3 text-3xl font-semibold">Sections</h1>
           </div>
-          <p className="max-w-sm text-sm text-gray-500">
+          <p className="max-w-sm text-sm text-[var(--ink-500)]">
             Create curated product groupings for their own pages and the
             homepage.
           </p>
@@ -170,7 +170,7 @@ const AdminSections = () => {
         )}
         <form
           onSubmit={saveSection}
-          className="mt-8 grid gap-4 border-b border-gray-200 pb-8 md:grid-cols-2"
+          className="mt-8 grid gap-4 border-b border-[var(--line)] pb-8 md:grid-cols-2"
         >
           <label className="text-sm">
             <span className="mb-2 block font-medium">Title</span>
@@ -179,7 +179,7 @@ const AdminSections = () => {
               name="title"
               value={form.title}
               onChange={updateField}
-              className="w-full border border-gray-300 px-3 py-2.5"
+              className="w-full border border-[var(--line)] px-3 py-2.5"
             />
           </label>
           <label className="text-sm">
@@ -189,7 +189,7 @@ const AdminSections = () => {
               name="slug"
               value={form.slug}
               onChange={updateField}
-              className="w-full border border-gray-300 px-3 py-2.5"
+              className="w-full border border-[var(--line)] px-3 py-2.5"
             />
           </label>
           <label className="text-sm md:col-span-2">
@@ -200,7 +200,7 @@ const AdminSections = () => {
               value={form.description}
               onChange={updateField}
               rows={3}
-              className="w-full border border-gray-300 px-3 py-2.5"
+              className="w-full border border-[var(--line)] px-3 py-2.5"
             />
           </label>
           <label className="flex items-center gap-3 text-sm">
@@ -222,13 +222,13 @@ const AdminSections = () => {
               name="homepageOrder"
               value={form.homepageOrder}
               onChange={updateField}
-              className="w-full border border-gray-300 px-3 py-2.5"
+              className="w-full border border-[var(--line)] px-3 py-2.5"
             />
           </label>
           <button
             type="submit"
             disabled={saving}
-            className="border border-black bg-black px-5 py-3 text-sm font-medium text-white disabled:opacity-50 md:col-span-2 md:justify-self-start"
+            className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white disabled:opacity-50 md:col-span-2 md:justify-self-start"
           >
             {saving ? <Spinner label="Saving" /> : "Create section"}
           </button>
@@ -236,7 +236,7 @@ const AdminSections = () => {
         {sectionsQuery.isPending ? (
           <Spinner label="Loading sections" className="mt-8" />
         ) : (
-          <div className="mt-8 divide-y divide-gray-200 border-y border-gray-200">
+          <div className="mt-8 divide-y divide-[var(--line)] border-y border-[var(--line)]">
             {sections.map((section) => (
               <div
                 key={section.id}
@@ -244,7 +244,7 @@ const AdminSections = () => {
               >
                 <div>
                   <h2 className="font-semibold">{section.title}</h2>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-[var(--ink-500)]">
                     /{section.slug} · {section.productCount} products
                   </p>
                 </div>
@@ -257,7 +257,7 @@ const AdminSections = () => {
               </div>
             ))}
             {!sections.length && (
-              <p className="py-6 text-sm text-gray-500">No sections yet.</p>
+              <p className="py-6 text-sm text-[var(--ink-500)]">No sections yet.</p>
             )}
           </div>
         )}
@@ -268,11 +268,11 @@ const AdminSections = () => {
   const products = productsQuery.data || [];
   return (
     <main className="mx-auto max-w-6xl px-6 py-12 md:px-12 md:py-20">
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
         <div>
           <Link
             to="/admin/sections"
-            className="text-xs uppercase tracking-[0.2em] text-gray-500"
+            className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
           >
             Sections
           </Link>
@@ -295,7 +295,7 @@ const AdminSections = () => {
       {notice && <p className="mt-6 text-sm text-green-700">{notice}</p>}
       <form
         onSubmit={saveSection}
-        className="mt-8 grid gap-4 border-b border-gray-200 pb-8 md:grid-cols-2"
+        className="mt-8 grid gap-4 border-b border-[var(--line)] pb-8 md:grid-cols-2"
       >
         <label className="text-sm">
           <span className="mb-2 block font-medium">Title</span>
@@ -304,7 +304,7 @@ const AdminSections = () => {
             name="title"
             value={form.title}
             onChange={updateField}
-            className="w-full border border-gray-300 px-3 py-2.5"
+            className="w-full border border-[var(--line)] px-3 py-2.5"
           />
         </label>
         <label className="text-sm">
@@ -314,7 +314,7 @@ const AdminSections = () => {
             name="slug"
             value={form.slug}
             onChange={updateField}
-            className="w-full border border-gray-300 px-3 py-2.5"
+            className="w-full border border-[var(--line)] px-3 py-2.5"
           />
         </label>
         <label className="text-sm md:col-span-2">
@@ -325,7 +325,7 @@ const AdminSections = () => {
             value={form.description}
             onChange={updateField}
             rows={3}
-            className="w-full border border-gray-300 px-3 py-2.5"
+            className="w-full border border-[var(--line)] px-3 py-2.5"
           />
         </label>
         <label className="flex items-center gap-3 text-sm">
@@ -347,21 +347,21 @@ const AdminSections = () => {
             name="homepageOrder"
             value={form.homepageOrder}
             onChange={updateField}
-            className="w-full border border-gray-300 px-3 py-2.5"
+            className="w-full border border-[var(--line)] px-3 py-2.5"
           />
         </label>
         <button
           type="submit"
           disabled={saving}
-          className="border border-black bg-black px-5 py-3 text-sm font-medium text-white disabled:opacity-50 md:col-span-2 md:justify-self-start"
+          className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white disabled:opacity-50 md:col-span-2 md:justify-self-start"
         >
           {saving ? <Spinner label="Saving" /> : "Save section"}
         </button>
       </form>
       <form onSubmit={saveProducts} className="mt-8">
-        <div className="flex items-baseline justify-between border-b border-black pb-4">
+        <div className="flex items-baseline justify-between border-b border-[var(--ink-900)] pb-4">
           <h2 className="text-xl font-semibold">Assign products</h2>
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-[var(--ink-500)]">
             {selectedProductIds.length} selected
           </span>
         </div>
@@ -369,7 +369,7 @@ const AdminSections = () => {
           {products.map((product) => (
             <label
               key={product.id}
-              className="flex cursor-pointer gap-3 border border-gray-200 p-4 hover:border-black"
+              className="flex cursor-pointer gap-3 border border-[var(--line)] p-4 hover:border-[var(--ink-900)]"
             >
               <input
                 type="checkbox"
@@ -381,7 +381,7 @@ const AdminSections = () => {
                 <span className="block text-sm font-medium">
                   {product.name}
                 </span>
-                <span className="mt-1 block text-xs text-gray-500">
+                <span className="mt-1 block text-xs text-[var(--ink-500)]">
                   {product.brandName || product.subcategory || "Product"}
                 </span>
               </span>
@@ -391,7 +391,7 @@ const AdminSections = () => {
         <button
           type="submit"
           disabled={savingProducts}
-          className="mt-6 border border-black bg-black px-5 py-3 text-sm font-medium text-white disabled:opacity-50"
+          className="mt-6 border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white disabled:opacity-50"
         >
           {savingProducts ? (
             <Spinner label="Saving" />

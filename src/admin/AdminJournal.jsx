@@ -42,11 +42,11 @@ const AdminJournal = () => {
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-12 md:px-12 md:py-20">
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
         <div>
           <Link
             to="/admin"
-            className="text-xs uppercase tracking-[0.2em] text-gray-500"
+            className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
           >
             Admin
           </Link>
@@ -54,7 +54,7 @@ const AdminJournal = () => {
         </div>
         <Link
           to="/admin/journal/new"
-          className="border border-black bg-black px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black"
+          className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)]"
         >
           New Post
         </Link>
@@ -69,9 +69,9 @@ const AdminJournal = () => {
         </div>
       )}
 
-      <div className="mt-8 overflow-x-auto border-t border-black">
+      <div className="mt-8 overflow-x-auto border-t border-[var(--ink-900)]">
         <table className="w-full min-w-175 text-left text-sm">
-          <thead className="border-b border-gray-200 text-xs uppercase tracking-[0.15em] text-gray-500">
+          <thead className="border-b border-[var(--line)] text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
             <tr>
               <th className="px-3 py-4 font-medium">Title</th>
               <th className="px-3 py-4 font-medium">Status</th>
@@ -82,14 +82,14 @@ const AdminJournal = () => {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan="4" className="px-3 py-8 text-gray-500">
+                <td colSpan="4" className="px-3 py-8 text-[var(--ink-500)]">
                   <Spinner label="Loading journal posts" />
                 </td>
               </tr>
             )}
             {!loading && posts.length === 0 && (
               <tr>
-                <td colSpan="4" className="px-3 py-8 text-gray-500">
+                <td colSpan="4" className="px-3 py-8 text-[var(--ink-500)]">
                   No journal posts yet.
                 </td>
               </tr>
@@ -97,13 +97,13 @@ const AdminJournal = () => {
             {posts.map((post) => (
               <tr
                 key={post.id}
-                className="border-b border-gray-200 align-middle"
+                className="border-b border-[var(--line)] align-middle"
               >
                 <td className="px-3 py-4 font-medium">{post.title}</td>
                 <td className="px-3 py-4">
                   <span
                     className={
-                      post.published ? "text-green-700" : "text-gray-500"
+                      post.published ? "text-green-700" : "text-[var(--ink-500)]"
                     }
                   >
                     {post.published ? "Published" : "Draft"}

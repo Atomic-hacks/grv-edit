@@ -4,6 +4,7 @@ import { motion as Motion } from "framer-motion";
 import LoadingImage from "../component/ui/LoadingImage";
 import Spinner from "../component/ui/Spinner";
 import FadeIn from "../component/ui/FadeIn";
+import ErrorState from "../component/ui/ErrorState";
 
 const formatDate = (date) =>
   date ? new Date(date).toLocaleDateString() : "Unpublished";
@@ -14,6 +15,8 @@ const JournalArticle = () => {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
+  const [retryToken, setRetryToken] = useState(0);
+  const retry = () => setRetryToken((token) => token + 1);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +48,7 @@ const JournalArticle = () => {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, retryToken]);
 
   if (loading) {
     return (
@@ -60,28 +63,28 @@ const JournalArticle = () => {
 
   if (notFound) {
     return (
-      <main className="w-full bg-white px-6 py-24 text-center">
-        <h1 className="text-3xl font-semibold">Journal post not found</h1>
-        <p className="mt-3 text-sm text-gray-600">
-          This post may have been unpublished or removed.
-        </p>
-        <Link to="/journal" className="mt-6 inline-block text-sm underline">
-          Back to Journal
-        </Link>
+      <main className="page-shell w-full bg-white">
+        <ErrorState
+          tone="not-found"
+          title="Journal post not found"
+          message="This post may have been unpublished or removed."
+          secondaryTo="/journal"
+          secondaryLabel="Back to Journal"
+        />
       </main>
     );
   }
 
   if (error) {
     return (
-      <main className="w-full bg-white px-6 py-24 text-center">
-        <h1 className="text-3xl font-semibold">Unable to load journal post</h1>
-        <p role="alert" className="mt-3 text-sm text-red-700">
-          {error}
-        </p>
-        <Link to="/journal" className="mt-6 inline-block text-sm underline">
-          Back to Journal
-        </Link>
+      <main className="page-shell w-full bg-white">
+        <ErrorState
+          title="Couldn't load this post"
+          message="Something went wrong on our end. Give it another try."
+          onRetry={retry}
+          secondaryTo="/journal"
+          secondaryLabel="Back to Journal"
+        />
       </main>
     );
   }

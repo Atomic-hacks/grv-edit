@@ -39,11 +39,11 @@ const AdminBrands = () => {
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-12 md:px-12 md:py-20">
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
         <div>
           <Link
             to="/admin"
-            className="text-xs uppercase tracking-[0.2em] text-gray-500"
+            className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
           >
             Admin
           </Link>
@@ -51,7 +51,7 @@ const AdminBrands = () => {
         </div>
         <Link
           to="/admin/brands/new"
-          className="border border-black bg-black px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black"
+          className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)]"
         >
           New Brand
         </Link>
@@ -66,9 +66,9 @@ const AdminBrands = () => {
         </div>
       )}
 
-      <div className="mt-8 overflow-x-auto border-t border-black">
+      <div className="mt-8 overflow-x-auto border-t border-[var(--ink-900)]">
         <table className="w-full min-w-[620px] text-left text-sm">
-          <thead className="border-b border-gray-200 text-xs uppercase tracking-[0.15em] text-gray-500">
+          <thead className="border-b border-[var(--line)] text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
             <tr>
               <th className="px-3 py-4 font-medium">Logo</th>
               <th className="px-3 py-4 font-medium">Name</th>
@@ -79,14 +79,14 @@ const AdminBrands = () => {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan="4" className="px-3 py-8 text-gray-500">
+                <td colSpan="4" className="px-3 py-8 text-[var(--ink-500)]">
                   <Spinner label="Loading brands" />
                 </td>
               </tr>
             )}
             {!loading && brands.length === 0 && (
               <tr>
-                <td colSpan="4" className="px-3 py-8 text-gray-500">
+                <td colSpan="4" className="px-3 py-8 text-[var(--ink-500)]">
                   No brands yet.
                 </td>
               </tr>
@@ -94,7 +94,7 @@ const AdminBrands = () => {
             {brands.map((brand) => (
               <tr
                 key={brand.id}
-                className="border-b border-gray-200 align-middle"
+                className="border-b border-[var(--line)] align-middle"
               >
                 <td className="px-3 py-3">
                   {brand.logo ? (
@@ -104,7 +104,7 @@ const AdminBrands = () => {
                       className="h-14 w-14 object-contain"
                     />
                   ) : (
-                    <span className="text-xs text-gray-400">No logo</span>
+                    <span className="text-xs text-[var(--ink-300)]">No logo</span>
                   )}
                 </td>
                 <td className="px-3 py-3 font-medium">{brand.name}</td>

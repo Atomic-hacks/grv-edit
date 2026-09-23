@@ -129,7 +129,7 @@ const AdminJournalForm = () => {
       <main className="mx-auto max-w-4xl px-6 py-20">
         <Spinner
           label="Loading journal post"
-          className="text-sm text-gray-500"
+          className="text-sm text-[var(--ink-500)]"
         />
       </main>
     );
@@ -137,10 +137,10 @@ const AdminJournalForm = () => {
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-12 md:px-12 md:py-20">
-      <div className="border-b border-black pb-6">
+      <div className="border-b border-[var(--ink-900)] pb-6">
         <Link
           to="/admin/journal"
-          className="text-xs uppercase tracking-[0.2em] text-gray-500"
+          className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
         >
           Journal
         </Link>
@@ -167,7 +167,7 @@ const AdminJournalForm = () => {
               name="title"
               value={form.title}
               onChange={updateField}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <label className="text-sm">
@@ -177,7 +177,7 @@ const AdminJournalForm = () => {
               name="slug"
               value={form.slug}
               onChange={updateSlug}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <label className="text-sm md:col-span-2">
@@ -188,7 +188,7 @@ const AdminJournalForm = () => {
               value={form.excerpt}
               onChange={updateField}
               rows={3}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <label className="text-sm md:col-span-2">
@@ -199,7 +199,7 @@ const AdminJournalForm = () => {
               value={form.content}
               onChange={updateField}
               rows={14}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <label className="text-sm md:col-span-2">
@@ -209,13 +209,13 @@ const AdminJournalForm = () => {
               accept="image/*"
               onChange={uploadCoverImage}
               disabled={imageUploading}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
             {imageUploading && (
-              <span className="mt-2 block text-xs text-gray-500">
+              <span className="mt-2 block text-xs text-[var(--ink-500)]">
                 <Spinner
                   label="Uploading image"
-                  className="text-xs text-gray-500"
+                  className="text-xs text-[var(--ink-500)]"
                 />
               </span>
             )}
@@ -243,11 +243,11 @@ const AdminJournalForm = () => {
           Published
         </label>
 
-        <div className="flex gap-4 border-t border-gray-200 pt-6">
+        <div className="flex gap-4 border-t border-[var(--line)] pt-6">
           <button
             type="submit"
             disabled={saving || imageUploading}
-            className="border border-black bg-black px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+            className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? <Spinner label="Saving" /> : "Save post"}
           </button>

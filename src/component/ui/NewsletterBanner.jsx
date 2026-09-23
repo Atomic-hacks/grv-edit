@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import Spinner from "./Spinner";
+import InlineNotice from "./InlineNotice";
 
 const NewsletterBanner = ({ compact = false }) => {
   const [email, setEmail] = useState("");
@@ -30,19 +31,19 @@ const NewsletterBanner = ({ compact = false }) => {
 
   return (
     <section
-      className={`border-y border-black bg-white px-6 py-10 md:px-12 ${compact ? "px-5 py-6" : ""}`}
+      className={`border-y border-[var(--line)] bg-white ${
+        compact ? "px-6 py-6" : "px-[var(--gutter)] py-12 md:py-16"
+      }`}
     >
       <div className="mx-auto flex max-w-6xl flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-            Stay close
-          </p>
-          <h2 className="mt-2 text-xl font-semibold">
+          <p className="eyebrow">Stay close</p>
+          <h2 className="section-title mt-1.5">
             {compact
               ? "A little more GRV."
               : "New collections, when they arrive."}
           </h2>
-          <p className="mt-2 max-w-md text-sm leading-relaxed text-gray-600">
+          <p className="body-text mt-2 max-w-md text-sm">
             {subscribed
               ? "Thanks, you're subscribed!"
               : "Quiet discoveries and the occasional reason to look twice."}
@@ -51,7 +52,7 @@ const NewsletterBanner = ({ compact = false }) => {
 
         {!subscribed && (
           <form onSubmit={handleSubmit} className="w-full md:max-w-md">
-            <div className="flex border-b border-black pb-2">
+            <div className="flex items-center border-b border-[var(--ink-900)] pb-2">
               <input
                 type="email"
                 required
@@ -60,20 +61,20 @@ const NewsletterBanner = ({ compact = false }) => {
                 placeholder="Email address"
                 aria-label="Email address"
                 disabled={submitting}
-                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400 disabled:opacity-60"
+                className="min-w-0 flex-1 bg-transparent py-1 text-sm outline-none placeholder:text-[var(--ink-300)] disabled:opacity-60"
               />
               <button
                 type="submit"
                 disabled={submitting}
-                className="ml-4 text-sm font-semibold transition-colors hover:text-(--color-accent-orange) disabled:cursor-wait disabled:opacity-50"
+                className="ml-4 shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:text-(--color-accent-orange) disabled:cursor-wait disabled:opacity-50"
               >
-                {submitting ? <Spinner label="Joining" /> : "JOIN"}
+                {submitting ? <Spinner label="Joining" /> : "Join"}
               </button>
             </div>
             {error && (
-              <p role="alert" className="mt-2 text-xs text-red-700">
+              <InlineNotice tone="error" className="mt-2 text-xs">
                 {error}
-              </p>
+              </InlineNotice>
             )}
           </form>
         )}

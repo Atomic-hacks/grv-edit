@@ -5,8 +5,16 @@ import { ProductGridSkeleton } from "../component/ui/LoadingSkeletons";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
 import FilterDrawer from "../component/ui/FilterDrawer";
 import ListingToolbar from "../component/ui/ListingToolbar";
+import Breadcrumbs from "../component/ui/Breadcrumbs";
+import ErrorState from "../component/ui/ErrorState";
+import RecentlyViewedRail from "../component/section/RecentlyViewedRail";
+import StoreSupport from "../component/section/StoreSupport";
 import { formatPrice, getProductImages } from "../lib/productHelpers";
-import { fetchCategories, fetchProducts } from "../lib/apiClient";
+import {
+  fetchCategories,
+  fetchProducts,
+  fetchProductPage,
+} from "../lib/apiClient";
 import { useQuery } from "@tanstack/react-query";
 import { emptyFilters } from "../data/listing";
 import { useCart } from "../context/CartContext";
@@ -28,10 +36,20 @@ const GenderCatalogue = ({ facet }) => {
   const { addToCart } = useCart();
   const navigate = useNavigate();
   const [appliedFilters, setAppliedFilters] = useState(emptyFilters);
-  const categoryId = searchParams.get("category") || "";
-  const subcategory = searchParams.get("subcategory") || "";
-  const styleTag = searchParams.get("style") || "";
-  const gender = searchParams.get("gender") || "";
+  // Read every value for each key: the drawer allows multi-select, so
+  // "?subcategory=tops&subcategory=shorts" has to survive a round trip.
+  const categoryIds = searchParams.getAll("category");
+  const subcategories = searchParams.getAll("subcategory");
+  const styleTags = searchParams.getAll("style");
+  const genders = searchParams.getAll("gender");
+  const brandIds = searchParams.getAll("brand");
+  const sort = searchParams.get("sort") || "";
+  // Single-value views (breadcrumbs, labels, facet highlighting) still want
+  // the first value.
+  const categoryId = categoryIds[0] || "";
+  const subcategory = subcategories[0] || "";
+  const styleTag = styleTags[0] || "";
+  const gender = genders[0] || "";
   const { data: categories } = useQuery({
     queryKey: ["categories"],
     queryFn: () => fetchCategories(),
@@ -46,23 +64,46 @@ const GenderCatalogue = ({ facet }) => {
   );
   const effectiveCategoryId = config.fixed.categoryId || categoryId;
   const effectiveGender = config.fixed.gender || gender;
-  const effectiveStyleTag = config.fixed.styleTag || styleTag;
-  const visibleProductFilters = {
-    ...config.fixed,
-    categoryId: effectiveCategoryId || undefined,
-    subcategory: subcategory || undefined,
-    styleTag: effectiveStyleTag || undefined,
-    gender: effectiveGender || undefined,
-  };
+  const orEmpty = (fixed, values) => (fixed ? [fixed] : values);
+  // Joined keys so the memo compares by value, not by array identity.
+  const categoryKey = categoryIds.join(",");
+  const subcategoryKey = subcategories.join(",");
+  const styleKey = styleTags.join(",");
+  const genderKey = genders.join(",");
+  const brandKey = brandIds.join(",");
+  const visibleProductFilters = useMemo(
+    () => ({
+      ...config.fixed,
+      categoryId: orEmpty(config.fixed.categoryId, categoryKey ? categoryKey.split(",") : []),
+      subcategory: subcategoryKey ? subcategoryKey.split(",") : [],
+      styleTag: orEmpty(config.fixed.styleTag, styleKey ? styleKey.split(",") : []),
+      gender: orEmpty(config.fixed.gender, genderKey ? genderKey.split(",") : []),
+      brandId: brandKey ? brandKey.split(",") : [],
+      sort: sort || undefined,
+    }),
+    [
+      config.fixed,
+      categoryKey,
+      subcategoryKey,
+      styleKey,
+      genderKey,
+      brandKey,
+      sort,
+    ],
+  );
   const {
     data: visibleProductsData,
     isPending: visibleLoading,
     error: visibleError,
+    refetch: refetchVisibleProducts,
+    isRefetching: isRetryingProducts,
   } = useQuery({
     queryKey: ["products", visibleProductFilters],
-    queryFn: () => fetchProducts(visibleProductFilters),
+    queryFn: () => fetchProductPage(visibleProductFilters),
   });
-  const visibleProducts = visibleProductsData || [];
+  const visibleProducts = visibleProductsData?.items || [];
+  // Server-side total, not the length of this page of results.
+  const totalProducts = visibleProductsData?.total ?? 0;
   const category = (categories || []).find(
     (item) => item.id === effectiveCategoryId,
   );
@@ -173,47 +214,128 @@ const GenderCatalogue = ({ facet }) => {
     setIsFilterOpen(false);
   };
 
+  // Every selected value is written to the URL. Previously only
+  // single-selections were applied, so checking two subcategories silently
+  // dropped the filter entirely while the drawer still previewed a count
+  // for it.
   const applyFilters = (filters) => {
-    const params = {};
-    if (filters.categoryId.length === 1 && !config.fixed.categoryId)
-      params.category = filters.categoryId[0];
-    if (filters.subcategory.length === 1)
-      params.subcategory = filters.subcategory[0].toLowerCase();
-    if (filters.styleTags.length === 1)
-      params.style = filters.styleTags[0].toLowerCase();
-    if (filters.gender.length === 1 && !config.fixed.gender)
-      params.gender = filters.gender[0];
+    const params = new URLSearchParams();
+    const appendAll = (key, values, lowercase = false) => {
+      (values || []).forEach((value) =>
+        params.append(key, lowercase ? String(value).toLowerCase() : value),
+      );
+    };
+    if (!config.fixed.categoryId) appendAll("category", filters.categoryId);
+    appendAll("subcategory", filters.subcategory, true);
+    if (!config.fixed.styleTag) appendAll("style", filters.styleTags, true);
+    if (!config.fixed.gender) appendAll("gender", filters.gender);
+    appendAll("brand", filters.brandId);
+    if (sort) params.set("sort", sort);
     setSearchParams(params);
     setIsFilterOpen(false);
   };
 
+  const applySort = (nextSort) => {
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+      if (nextSort) nextParams.set("sort", nextSort);
+      else nextParams.delete("sort");
+      return nextParams;
+    });
+  };
+
+  const clearFilters = () => {
+    setSearchParams(sort ? { sort } : {});
+  };
+
+  // Chips mirror the URL exactly, so what a shopper sees listed is what the
+  // grid is filtered by. Values the facet itself fixes (e.g. gender on /men)
+  // are not shown: they are the page, not a filter you can drop.
+  const removeParam = (key, value) => {
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+      const kept = nextParams.getAll(key).filter((item) => item !== value);
+      nextParams.delete(key);
+      kept.forEach((item) => nextParams.append(key, item));
+      return nextParams;
+    });
+  };
+  const chipLabel = (key, value) => {
+    if (key === "category")
+      return (categories || []).find((item) => item.id === value)?.name || value;
+    if (key === "brand")
+      return (
+        baseProducts.find((item) => item.brandId === value)?.brandName || value
+      );
+    return String(value).replace(/\b\w/g, (character) =>
+      character.toUpperCase(),
+    );
+  };
+  const chips = [
+    ...(config.fixed.categoryId ? [] : categoryIds.map((v) => ["category", v])),
+    ...subcategories.map((v) => ["subcategory", v]),
+    ...(config.fixed.styleTag ? [] : styleTags.map((v) => ["style", v])),
+    ...(config.fixed.gender ? [] : genders.map((v) => ["gender", v])),
+    ...brandIds.map((v) => ["brand", v]),
+  ].map(([key, value]) => ({
+    id: `${key}:${value}`,
+    label: chipLabel(key, value),
+    onRemove: () => removeParam(key, value),
+  }));
+
+  // Count what is actually applied in the URL, so the badge can never
+  // disagree with the products on screen.
+  const activeFilterCount =
+    (config.fixed.categoryId ? 0 : categoryIds.length) +
+    subcategories.length +
+    (config.fixed.styleTag ? 0 : styleTags.length) +
+    (config.fixed.gender ? 0 : genders.length) +
+    brandIds.length;
+
   if (!config) return null;
 
   return (
-    <main className="min-h-screen max-w-360 mx-auto bg-white px-1.5 pb-20 sm:px-4 lg:px-1.5">
-      <div className="relative py-16">
-        <AnimatedPageTitle title={config.title} />
-        <p className="mt-6 max-w-lg text-lg leading-relaxed text-gray-700">
-          Explore the complete {config.title.toLowerCase()} catalogue.
-        </p>
+    <main className="min-h-screen bg-white">
+      <div className="page-shell pb-24">
+      <Breadcrumbs
+        className="pt-4"
+        items={[
+          { label: "Home", to: "/" },
+          { label: config.title, to: `/${facet}` },
+          ...(category ? [{ label: category.name }] : []),
+          ...(subcategory ? [{ label: subcategory }] : []),
+        ]}
+      />
+      <div className="relative pb-8 pt-6 md:pb-10 md:pt-8">
+        <AnimatedPageTitle
+          title={config.title}
+          subtitle={`Explore the complete ${config.title.toLowerCase()} catalogue.`}
+        />
       </div>
       <ListingToolbar
         label={activeLabel.toUpperCase()}
         onViewAll={() => setIsFilterOpen(true)}
         leftContent={
           <span className="text-sm font-semibold text-gray-500">
-            {visibleProducts.length} PRODUCTS
+            {totalProducts} {totalProducts === 1 ? "PRODUCT" : "PRODUCTS"}
           </span>
         }
         onFilter={() => setIsFilterOpen(true)}
-        activeFilterCount={
-          Object.values(appliedFilters).flat().filter(Boolean).length
-        }
+        sort={sort}
+        onSortChange={applySort}
+        onClearFilters={clearFilters}
+        activeFilterCount={activeFilterCount}
+        chips={chips}
       />
       {visibleLoading || baseLoading ? (
         <ProductGridSkeleton />
       ) : visibleError ? (
-        <p className="py-16 text-sm text-red-600">Couldn't load products.</p>
+        <ErrorState
+          title="Couldn't load these products"
+          message="Something went wrong fetching this page. Your filters are still applied — retrying picks up right here."
+          onRetry={refetchVisibleProducts}
+          retryPending={isRetryingProducts}
+        />
       ) : visibleProducts.length ? (
         <div className="product-grid">
           {visibleProducts.map((item) => {
@@ -251,9 +373,22 @@ const GenderCatalogue = ({ facet }) => {
           })}
         </div>
       ) : (
-        <p className="py-16 text-sm text-gray-600">
-          No products match these filters.
-        </p>
+        <div className="flex flex-col items-center gap-4 py-24 text-center">
+          <p className="section-title">No products match these filters</p>
+          <p className="meta-text max-w-sm">
+            Try removing a filter, or browse the full {config.title.toLowerCase()}{" "}
+            catalogue.
+          </p>
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="mt-2 border border-[var(--ink-900)] px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
+            >
+              Clear all filters
+            </button>
+          )}
+        </div>
       )}
       <FilterDrawer
         isOpen={isFilterOpen}
@@ -266,6 +401,9 @@ const GenderCatalogue = ({ facet }) => {
         onFacetSelect={handleFacetSelect}
         onApply={applyFilters}
       />
+      <RecentlyViewedRail />
+      </div>
+      <StoreSupport promises={false} help={false} />
     </main>
   );
 };

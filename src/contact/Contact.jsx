@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
 import RevealImage from "../component/ui/RevealImage";
 import Spinner from "../component/ui/Spinner";
+import InlineNotice from "../component/ui/InlineNotice";
 
 const Contact = () => {
   const [formData, setFormData] = useState({
@@ -131,12 +132,12 @@ const Contact = () => {
             </button>
           </form>
           {submissionStatus && (
-            <p
-              role={submissionStatus.type === "error" ? "alert" : "status"}
-              className={`mt-4 text-sm ${submissionStatus.type === "error" ? "text-red-700" : "text-emerald-700"}`}
+            <InlineNotice
+              tone={submissionStatus.type === "error" ? "error" : "success"}
+              className="mt-4"
             >
               {submissionStatus.message}
-            </p>
+            </InlineNotice>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12 md:mt-20">
             <div>

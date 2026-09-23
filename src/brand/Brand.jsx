@@ -164,6 +164,7 @@ const Brand = () => {
                   alt={name}
                   className="aspect-3/4 w-full transition-opacity group-hover:opacity-75"
                   revealDuration={0.8}
+                  width={500}
                 />
                 <span className="absolute inset-x-3 bottom-3 text-xs font-semibold uppercase tracking-wide text-white">
                   {name}

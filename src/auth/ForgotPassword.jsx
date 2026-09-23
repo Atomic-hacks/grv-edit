@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import InlineNotice from "../component/ui/InlineNotice";
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState("");
@@ -50,7 +51,7 @@ const ForgotPassword = () => {
             className="border border-gray-300 px-3 py-2"
           />
         </label>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        <InlineNotice tone="error">{error}</InlineNotice>
         {submitted && (
           <p className="text-sm leading-6 text-emerald-700" role="status">
             If an account exists for that email, a reset link has been sent.

@@ -2,6 +2,45 @@
 
 :root {
   --color-accent-orange: #c45a18;
+
+  /* Ink scale — one ramp for every piece of text on the storefront, so a
+     "muted" label means the same grey everywhere. */
+  --ink-900: #111111;
+  --ink-700: #3d3d3d;
+  --ink-500: #6b6b6b;
+  --ink-300: #a3a3a3;
+  --line: #e5e5e5;
+  --line-strong: #111111;
+  --surface-muted: #f4f4f4;
+
+  /* Page gutter and content width, matched across every listing and
+     editorial page rather than re-picked per file. */
+  --gutter: 16px;
+  --content-max: 1600px;
+  /* Header height, published as a variable so sticky elements below the
+     navbar (the listing toolbar, the product page's detail column) can park
+     against it without each guessing a number. */
+  --nav-h: 60px;
+
+  /* Motion. Two durations and one easing curve — anything that moves on the
+     storefront uses these, so interactions feel like one product. */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 200ms;
+  --dur-base: 320ms;
+  --dur-slow: 600ms;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --gutter: 24px;
+    --nav-h: 68px;
+  }
+}
+
+@media (min-width: 1280px) {
+  :root {
+    --gutter: 40px;
+  }
 }
 
 @font-face {
@@ -32,28 +71,95 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  color: black;
+  color: var(--ink-900);
 }
 
-.product-grid {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 8px;
-  row-gap: 32px;
-}
-
-@media (min-width: 768px) {
-  .product-grid {
-    column-gap: 12px;
-  }
-}
-
-@media (min-width: 1024px) {
-  .product-grid {
-    width: min(100%, 1440px);
+@layer components {
+  /* Page shell: the single source of the storefront's horizontal rhythm.
+     Listing pages, editorial pages and the product page all sit on it, so
+     grids line up with headers and toolbars down the whole scroll. */
+  .page-shell {
+    width: 100%;
+    max-width: var(--content-max);
     margin-inline: auto;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding-inline: var(--gutter);
+  }
+
+  /* Type roles. Named by job, not by size, so a section heading stays a
+     section heading when the scale is tuned. */
+  .eyebrow {
+    font-size: 11px;
+    line-height: 1.3;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-500);
+  }
+
+  .section-title {
+    font-size: 1rem;
+    line-height: 1.35;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: var(--ink-900);
+  }
+
+  @media (min-width: 768px) {
+    .section-title {
+      font-size: 1.125rem;
+    }
+  }
+
+  .display-title {
+    font-size: clamp(2.25rem, 7vw, 4rem);
+    line-height: 1.02;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .meta-text {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ink-500);
+  }
+
+  .body-text {
+    font-size: 0.9375rem;
+    line-height: 1.65;
+    color: var(--ink-700);
+    max-width: 62ch;
+  }
+
+  /* Product grid. Tight columns, generous rows — density close to the
+     reference while staying readable at 2-up on phones. */
+  .product-grid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 8px;
+    row-gap: 40px;
+  }
+
+  @media (min-width: 640px) {
+    .product-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      column-gap: 12px;
+      row-gap: 48px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .product-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      column-gap: 16px;
+      row-gap: 56px;
+    }
+  }
+
+  @media (min-width: 1536px) {
+    .product-grid {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
   }
 }
 
@@ -61,7 +167,6 @@ button {
   cursor: pointer;
 }
 
-/* 6. Headings consistency */
 h1,
 h2,
 h3,
@@ -71,8 +176,62 @@ h6 {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
-/* 7. Remove default list styles */
 ul,
 li {
   cursor: pointer;
+}
+
+/* One visible focus treatment for the whole storefront. Keyboard users get
+   a consistent, high-contrast ring; pointer users see nothing extra. */
+:focus-visible {
+  outline: 2px solid var(--ink-900);
+  outline-offset: 2px;
+}
+
+/* Skeletons shimmer rather than blink, which reads as loading instead of
+   broken. */
+@keyframes grv-shimmer {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+
+.skeleton {
+  background-color: var(--surface-muted);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.85) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 180% 100%;
+  background-repeat: no-repeat;
+  animation: grv-shimmer 1.4s var(--ease-out-soft) infinite;
+}
+
+/* Horizontal rails hide their scrollbar but stay scrollable and snappable. */
+.rail-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.rail-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

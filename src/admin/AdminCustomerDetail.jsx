@@ -65,7 +65,7 @@ const AdminCustomerDetail = () => {
   if (loading) {
     return (
       <main className="mx-auto max-w-5xl px-6 py-20">
-        <Spinner label="Loading customer" className="text-sm text-gray-500" />
+        <Spinner label="Loading customer" className="text-sm text-[var(--ink-500)]" />
       </main>
     );
   }
@@ -74,7 +74,7 @@ const AdminCustomerDetail = () => {
     <main className="mx-auto max-w-5xl px-6 py-12 md:px-12 md:py-20">
       <Link
         to="/admin/customers"
-        className="text-xs uppercase tracking-[0.2em] text-gray-500"
+        className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
       >
         Customers
       </Link>
@@ -89,23 +89,23 @@ const AdminCustomerDetail = () => {
       )}
 
       {!customer && !error && (
-        <p className="mt-8 text-sm text-gray-500">Customer not found.</p>
+        <p className="mt-8 text-sm text-[var(--ink-500)]">Customer not found.</p>
       )}
 
       {customer && (
         <>
-          <div className="mt-3 flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
+          <div className="mt-3 flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
             <div>
               <h1 className="text-3xl font-semibold">
                 {customer.name || "Unnamed customer"}
               </h1>
-              <p className="mt-2 text-sm text-gray-600">{customer.email}</p>
+              <p className="mt-2 text-sm text-[var(--ink-700)]">{customer.email}</p>
             </div>
             <button
               type="button"
               onClick={toggleActive}
               disabled={saving}
-              className="border border-black px-5 py-3 text-sm font-medium transition-colors hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="border border-[var(--ink-900)] px-5 py-3 text-sm font-medium transition-colors hover:bg-[var(--ink-900)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? (
                 <Spinner label="Saving" />
@@ -117,10 +117,10 @@ const AdminCustomerDetail = () => {
             </button>
           </div>
 
-          <section className="mt-8 border border-gray-200 p-6">
+          <section className="mt-8 border border-[var(--line)] p-6">
             <div className="flex flex-wrap gap-x-12 gap-y-5 text-sm">
               <div>
-                <p className="text-xs uppercase tracking-[0.15em] text-gray-500">
+                <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                   Status
                 </p>
                 <p className="mt-2 font-medium">
@@ -128,7 +128,7 @@ const AdminCustomerDetail = () => {
                 </p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.15em] text-gray-500">
+                <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                   Joined
                 </p>
                 <p className="mt-2 font-medium">
@@ -136,7 +136,7 @@ const AdminCustomerDetail = () => {
                 </p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.15em] text-gray-500">
+                <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                   Orders
                 </p>
                 <p className="mt-2 font-medium">{customer.orders.length}</p>
@@ -145,34 +145,34 @@ const AdminCustomerDetail = () => {
           </section>
 
           <section className="mt-10">
-            <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-black pb-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-[var(--ink-900)] pb-4">
               <h2 className="text-2xl font-semibold">Order history</h2>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-[var(--ink-500)]">
                 {customer.orders.length} order
                 {customer.orders.length === 1 ? "" : "s"}
               </p>
             </div>
 
             {customer.orders.length === 0 ? (
-              <p className="py-8 text-sm text-gray-500">No orders yet.</p>
+              <p className="py-8 text-sm text-[var(--ink-500)]">No orders yet.</p>
             ) : (
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-[var(--line)]">
                 {customer.orders.map((order) => (
                   <article key={order.id} className="py-6">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
-                        <p className="text-xs uppercase tracking-[0.15em] text-gray-500">
+                        <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                           Order
                         </p>
                         <h3 className="mt-2 text-lg font-semibold">
                           #{order.id}
                         </h3>
-                        <p className="mt-1 text-sm text-gray-500">
+                        <p className="mt-1 text-sm text-[var(--ink-500)]">
                           {formatDate(order.createdAt)}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="border border-gray-300 px-3 py-2 text-sm font-semibold">
+                        <p className="border border-[var(--line)] px-3 py-2 text-sm font-semibold">
                           {order.status}
                         </p>
                         <p className="mt-2 font-medium">
@@ -181,11 +181,11 @@ const AdminCustomerDetail = () => {
                       </div>
                     </div>
 
-                    <div className="mt-5 border border-gray-200 p-5">
-                      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <div className="mt-5 border border-[var(--line)] p-5">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-500)]">
                         Items
                       </h4>
-                      <div className="mt-3 divide-y divide-gray-200">
+                      <div className="mt-3 divide-y divide-[var(--line)]">
                         {order.items.map((item) => (
                           <div
                             key={item.id}
@@ -195,7 +195,7 @@ const AdminCustomerDetail = () => {
                               <p className="font-medium">
                                 Product {item.productId}
                               </p>
-                              <p className="mt-1 text-gray-500">
+                              <p className="mt-1 text-[var(--ink-500)]">
                                 Variant {item.variantId} · Qty {item.quantity}
                               </p>
                             </div>
@@ -209,7 +209,7 @@ const AdminCustomerDetail = () => {
                       </div>
                     </div>
 
-                    <p className="mt-4 text-sm leading-6 text-gray-600">
+                    <p className="mt-4 text-sm leading-6 text-[var(--ink-700)]">
                       {order.fullName}
                       <br />
                       {order.phone}

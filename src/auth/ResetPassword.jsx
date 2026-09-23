@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import PasswordInput from "../component/ui/PasswordInput";
+import InlineNotice from "../component/ui/InlineNotice";
 
 const ResetPassword = () => {
   const navigate = useNavigate();
@@ -110,7 +111,7 @@ const ResetPassword = () => {
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          <InlineNotice tone="error">{error}</InlineNotice>
           <button
             type="submit"
             disabled={submitting}

@@ -126,3 +126,44 @@ export const formatNavigationLabel = (value) =>
   value
     ?.replaceAll("-", " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+
+// The department structure above is deliberately curated editorial IA and
+// stays hand-authored. The style lists inside each section, however, are
+// merged with the live taxonomy so a subcategory an admin creates shows up
+// in the menu without a code change. Anything still hardcoded but no longer
+// backed by products is dropped, so the menu can't link to an empty page.
+export const mergeSectionsWithCategories = (sections, categories) => {
+  if (!categories?.length) return sections;
+
+  const subcategoriesByCategory = new Map(
+    categories.map((category) => [
+      category.id,
+      (category.subcategories || []).filter(
+        (subcategory) => (subcategory.productCount ?? 0) > 0,
+      ),
+    ]),
+  );
+
+  return sections.map((section) => {
+    const live = subcategoriesByCategory.get(section.categoryId);
+    if (!live?.length) return section;
+
+    const liveNames = live.map((subcategory) => subcategory.name);
+    // A section pinned to one subcategory (e.g. Accessories > Bags) keeps
+    // its curated styles; only open sections adopt the full live list.
+    if (section.subcategory) return section;
+
+    const merged = [
+      ...section.styles.filter((style) =>
+        liveNames.some((name) => name.toLowerCase() === style.toLowerCase()),
+      ),
+      ...liveNames.filter(
+        (name) =>
+          !section.styles.some(
+            (style) => style.toLowerCase() === name.toLowerCase(),
+          ),
+      ),
+    ];
+    return { ...section, styles: merged };
+  });
+};

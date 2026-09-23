@@ -44,11 +44,11 @@ const AdminBulkUpload = () => {
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-12 md:px-12 md:py-20 lg:px-0">
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
         <div>
           <Link
             to="/admin/products"
-            className="text-xs uppercase tracking-[0.2em] text-gray-500"
+            className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
           >
             Catalog
           </Link>
@@ -56,7 +56,7 @@ const AdminBulkUpload = () => {
         </div>
         <a
           href="/api/admin/products/bulk-upload/template"
-          className="border border-gray-300 px-5 py-3 text-sm font-medium transition-colors hover:border-black"
+          className="border border-[var(--line)] px-5 py-3 text-sm font-medium transition-colors hover:border-[var(--ink-900)]"
         >
           Download Template
         </a>
@@ -79,9 +79,9 @@ const AdminBulkUpload = () => {
             accept=".csv,text/csv"
             onChange={(event) => setFile(event.target.files?.[0] || null)}
             disabled={uploading}
-            className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+            className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
           />
-          <span className="mt-2 block text-xs text-gray-500">
+          <span className="mt-2 block text-xs text-[var(--ink-500)]">
             Columns: name, description, price, brandSlug, department,
             subcategorySlug, designCode, color, size, stock, tagSlugs
           </span>
@@ -89,7 +89,7 @@ const AdminBulkUpload = () => {
         <button
           type="submit"
           disabled={uploading}
-          className="border border-black bg-black px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+          className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {uploading ? <Spinner label="Uploading" /> : "Upload Products"}
         </button>
@@ -98,20 +98,20 @@ const AdminBulkUpload = () => {
       {result && (
         <section className="mt-10 space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="border border-gray-300 p-4">
-              <p className="text-xs uppercase tracking-[0.15em] text-gray-500">
+            <div className="border border-[var(--line)] p-4">
+              <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                 Total rows
               </p>
               <p className="mt-2 text-2xl font-semibold">{result.totalRows}</p>
             </div>
-            <div className="border border-gray-300 p-4">
-              <p className="text-xs uppercase tracking-[0.15em] text-gray-500">
+            <div className="border border-[var(--line)] p-4">
+              <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                 Created
               </p>
               <p className="mt-2 text-2xl font-semibold">{result.created}</p>
             </div>
-            <div className="border border-gray-300 p-4">
-              <p className="text-xs uppercase tracking-[0.15em] text-gray-500">
+            <div className="border border-[var(--line)] p-4">
+              <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                 Failed
               </p>
               <p className="mt-2 text-2xl font-semibold">
@@ -121,9 +121,9 @@ const AdminBulkUpload = () => {
           </div>
 
           {result.failed.length > 0 && (
-            <div className="overflow-x-auto border-t border-black">
+            <div className="overflow-x-auto border-t border-[var(--ink-900)]">
               <table className="w-full min-w-120 text-left text-sm">
-                <thead className="border-b border-gray-200 text-xs uppercase tracking-[0.15em] text-gray-500">
+                <thead className="border-b border-[var(--line)] text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                   <tr>
                     <th className="px-3 py-4 font-medium">Row</th>
                     <th className="px-3 py-4 font-medium">Error</th>
@@ -131,7 +131,7 @@ const AdminBulkUpload = () => {
                 </thead>
                 <tbody>
                   {result.failed.map((failure) => (
-                    <tr key={failure.row} className="border-b border-gray-200">
+                    <tr key={failure.row} className="border-b border-[var(--line)]">
                       <td className="px-3 py-3 font-medium">{failure.row}</td>
                       <td className="px-3 py-3 text-red-700">
                         {failure.error}
@@ -144,9 +144,9 @@ const AdminBulkUpload = () => {
           )}
 
           {result.warnings.length > 0 && (
-            <div className="overflow-x-auto border-t border-black">
+            <div className="overflow-x-auto border-t border-[var(--ink-900)]">
               <table className="w-full min-w-120 text-left text-sm">
-                <thead className="border-b border-gray-200 text-xs uppercase tracking-[0.15em] text-gray-500">
+                <thead className="border-b border-[var(--line)] text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                   <tr>
                     <th className="px-3 py-4 font-medium">Row</th>
                     <th className="px-3 py-4 font-medium">Warning</th>
@@ -156,7 +156,7 @@ const AdminBulkUpload = () => {
                   {result.warnings.map((warning, index) => (
                     <tr
                       key={`${warning.row}-${index}`}
-                      className="border-b border-gray-200"
+                      className="border-b border-[var(--line)]"
                     >
                       <td className="px-3 py-3 font-medium">{warning.row}</td>
                       <td className="px-3 py-3">{warning.warning}</td>

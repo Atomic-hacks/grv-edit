@@ -68,22 +68,22 @@ const AdminFirstOrderPromo = () => {
   if (promoQuery.isPending) {
     return (
       <main className="mx-auto max-w-4xl px-6 py-20">
-        <Spinner label="Loading promotion" className="text-sm text-gray-500" />
+        <Spinner label="Loading promotion" className="text-sm text-[var(--ink-500)]" />
       </main>
     );
   }
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-12 md:px-12 md:py-20">
-      <div className="border-b border-black pb-6">
+      <div className="border-b border-[var(--ink-900)] pb-6">
         <Link
           to="/admin"
-          className="text-xs uppercase tracking-[0.2em] text-gray-500"
+          className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
         >
           Admin
         </Link>
         <h1 className="mt-3 text-3xl font-semibold">First-order promotion</h1>
-        <p className="mt-2 max-w-2xl text-sm text-gray-600">
+        <p className="mt-2 max-w-2xl text-sm text-[var(--ink-700)]">
           Configure the one-time promotion available to eligible customers.
         </p>
       </div>
@@ -108,7 +108,7 @@ const AdminFirstOrderPromo = () => {
               name="discountPercent"
               value={form.discountPercent}
               onChange={updateField}
-              className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
           <div className="space-y-4 pt-7 text-sm">
@@ -142,13 +142,13 @@ const AdminFirstOrderPromo = () => {
             value={form.bannerMessage}
             onChange={updateField}
             rows={4}
-            className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+            className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
           />
         </label>
         <button
           type="submit"
           disabled={saving}
-          className="border border-black bg-black px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+          className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? <Spinner label="Saving" /> : "Save promotion"}
         </button>

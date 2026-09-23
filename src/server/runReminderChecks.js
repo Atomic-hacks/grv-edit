@@ -1,16 +1,15 @@
 import { prisma } from "./prisma.js";
 import { sendEmail } from "./sendEmail.js";
+import {
+  abandonedCartEmail,
+  wishlistReminderEmail,
+  escapeHtml,
+} from "./emailTemplates.js";
+import { retryFailedOrderEmails } from "./orderEmails.js";
+import { processDueCampaigns } from "./campaigns.js";
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
-
-const escapeHtml = (value) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 
 const siteUrl = () => process.env.APP_URL || "http://localhost:5176";
 
@@ -20,22 +19,26 @@ const formatCartEmail = (cart, productsById) => {
       const product = productsById.get(item.productId);
       const name = product?.name || "Item from your Goody Bag";
       const image = product?.imageUrl
-        ? `<img src="${escapeHtml(product.imageUrl)}" alt="${escapeHtml(name)}" width="80" />`
+        ? `<img src="${escapeHtml(product.imageUrl)}" alt="${escapeHtml(name)}" width="80" style="display:block;margin-bottom:6px;" />`
         : "";
-      return `<li>${image}<strong>${escapeHtml(name)}</strong> &times; ${item.quantity}</li>`;
+      return `<li style="margin-bottom:14px;">${image}<strong>${escapeHtml(name)}</strong> &times; ${item.quantity}</li>`;
     })
     .join("");
 
-  return `<p>You left something in your Goody Bag.</p><ul>${lines}</ul><p><a href="${escapeHtml(`${siteUrl()}/shop`)}">Return to GRV</a></p>`;
+  return abandonedCartEmail(lines);
 };
 
 const formatWishlistEmail = (wishlist) => {
   const product = wishlist.product;
-  const image = product.imageUrl
-    ? `<p><img src="${escapeHtml(product.imageUrl)}" alt="${escapeHtml(product.name)}" width="240" /></p>`
+  const imageHtml = product.imageUrl
+    ? `<img src="${escapeHtml(product.imageUrl)}" alt="${escapeHtml(product.name)}" width="240" style="display:block;" />`
     : "";
   const productUrl = `${siteUrl()}/product/${encodeURIComponent(product.id)}`;
-  return `${image}<p>Still thinking about <strong>${escapeHtml(product.name)}</strong>?</p><p><a href="${escapeHtml(productUrl)}">Take another look</a></p>`;
+  return wishlistReminderEmail({
+    imageHtml,
+    productName: product.name,
+    productUrl,
+  });
 };
 
 const describeError = (kind, id, error) =>
@@ -101,7 +104,10 @@ export const runReminderChecks = async ({
         subject: "You left something in your Goody Bag",
         html: formatCartEmail(cart, productsById),
       });
-      if (!sent) throw new Error("Email provider did not accept the message");
+      if (!sent?.sent)
+        throw new Error(
+          sent?.message || "Email provider did not accept the message",
+        );
 
       await prismaClient.cart.update({
         where: { id: cart.id },
@@ -141,9 +147,9 @@ export const runReminderChecks = async ({
         subject: "Still thinking about it?",
         html: formatWishlistEmail(wishlist),
       });
-      if (!sent) {
+      if (!sent?.sent) {
         errors.push(
-          `Wishlist reminder ${wishlist.id}: Email provider did not accept the message`,
+          `Wishlist reminder ${wishlist.id}: ${sent?.message || "Email provider did not accept the message"}`,
         );
       }
     } catch (error) {
@@ -169,7 +175,42 @@ export const runReminderChecks = async ({
     }
   }
 
-  return { cartsReminded, wishlistsReminded, errors };
+  // Order emails that the provider rejected earlier get another chance
+  // here. Without this pass, a provider outage during a payment would
+  // silently cost a customer their confirmation email for good.
+  let orderEmailRetries = { retried: 0, recovered: 0 };
+  try {
+    orderEmailRetries = await retryFailedOrderEmails({
+      prisma: prismaClient,
+      sendEmail: emailSender,
+    });
+  } catch (error) {
+    const message = `Order email retry pass failed: ${error instanceof Error ? error.message : String(error)}`;
+    errors.push(message);
+    console.error(message);
+  }
+
+  // Scheduled promotional campaigns whose time has come.
+  let campaignsSent = [];
+  try {
+    campaignsSent = await processDueCampaigns({
+      prisma: prismaClient,
+      sendEmail: emailSender,
+      now,
+    });
+  } catch (error) {
+    const message = `Scheduled campaign pass failed: ${error instanceof Error ? error.message : String(error)}`;
+    errors.push(message);
+    console.error(message);
+  }
+
+  return {
+    cartsReminded,
+    wishlistsReminded,
+    orderEmailRetries,
+    campaignsSent: campaignsSent.length,
+    errors,
+  };
 };
 
 export default runReminderChecks;

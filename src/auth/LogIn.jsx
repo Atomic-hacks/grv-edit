@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import PasswordInput from "../component/ui/PasswordInput";
+import InlineNotice from "../component/ui/InlineNotice";
 
 const LogIn = () => {
   const { signIn } = useAuth();
@@ -61,7 +62,7 @@ const LogIn = () => {
         >
           Forgot password?
         </Link>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        <InlineNotice tone="error">{error}</InlineNotice>
         <button
           type="submit"
           disabled={submitting}

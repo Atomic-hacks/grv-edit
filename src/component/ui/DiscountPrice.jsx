@@ -1,6 +1,11 @@
 import React from "react";
 import { formatPrice, getDiscountedPrice } from "../../lib/productHelpers";
 
+const ALIGNMENT = {
+  end: { justify: "justify-end", text: "text-right" },
+  start: { justify: "justify-start", text: "text-left" },
+};
+
 const DiscountPrice = ({
   basePrice,
   discountPercent,
@@ -8,6 +13,7 @@ const DiscountPrice = ({
   normalPrice,
   light = false,
   discountTone = "default",
+  align = "end",
 }) => {
   const hasDiscount =
     discountPercent !== null &&
@@ -18,33 +24,32 @@ const DiscountPrice = ({
     return <p className={className}>{normalPrice || formatPrice(basePrice)}</p>;
   }
 
+  const alignment = ALIGNMENT[align] || ALIGNMENT.end;
+  const saleTone =
+    discountTone === "red"
+      ? "text-neutral-900"
+      : light
+        ? "text-white"
+        : "text-red-600";
+
+  // Was-price, now-price and the percentage read as one line at card sizes
+  // and wrap to two only when the container is genuinely narrow, instead of
+  // always stacking into a three-line block beside the product name.
   return (
-    <div className={`flex min-w-0 flex-col items-end gap-0.5 ${className}`}>
-      <span
-        className={`text-[10px] line-through sm:text-xs ${light ? "text-white/60" : "text-neutral-500"}`}
-      >
-        {formatPrice(basePrice)}
-      </span>
-      <span
-        className={`text-sm font-bold sm:text-base ${
-          discountTone === "red"
-            ? "text-red-600"
-            : light
-              ? "text-white"
-              : "text-neutral-900"
-        }`}
-      >
+    <div
+      className={`flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 ${alignment.justify} ${alignment.text} ${className}`}
+    >
+      <span className={saleTone}>
         {formatPrice(getDiscountedPrice(basePrice, discountPercent))}
       </span>
       <span
-        className={`text-[10px] sm:text-xs ${
-          discountTone === "red"
-            ? "text-red-600"
-            : light
-              ? "text-white/70"
-              : "text-neutral-500"
+        className={`text-[11px] font-normal line-through ${
+          light ? "text-white/60" : "text-red-600"
         }`}
       >
+        {formatPrice(basePrice)}
+      </span>
+      <span className={`text-[11px] font-semibold text-red-600`}>
         -{Number(discountPercent)}%
       </span>
     </div>

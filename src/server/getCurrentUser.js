@@ -29,5 +29,9 @@ export const getCurrentUser = async (request) => {
     emailVerified: user.emailVerified,
     hasSeenFirstOrderBanner: user.hasSeenFirstOrderBanner,
     firstOrderPromoUsed: user.firstOrderPromoUsed,
+    // Surfaced on the account settings page ("Member since"). No new
+    // column — createdAt already exists on every User row.
+    createdAt: user.createdAt,
+    marketingOptIn: user.marketingOptIn,
   };
 };

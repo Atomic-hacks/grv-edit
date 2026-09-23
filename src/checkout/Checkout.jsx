@@ -9,6 +9,7 @@ import { formatPrice } from "../lib/productHelpers";
 import Spinner from "../component/ui/Spinner";
 import FadeIn from "../component/ui/FadeIn";
 import AddressFields from "../component/address/AddressFields";
+import InlineNotice from "../component/ui/InlineNotice";
 
 const emptyForm = {
   firstName: "",
@@ -50,6 +51,7 @@ const CheckoutContent = () => {
   const [form, setForm] = useState(emptyForm);
   const [selectedAddressId, setSelectedAddressId] = useState(null);
   const [error, setError] = useState("");
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState(null);
@@ -139,6 +141,7 @@ const CheckoutContent = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setNeedsVerification(false);
     setSubmitting(true);
 
     try {
@@ -171,7 +174,13 @@ const CheckoutContent = () => {
       localStorage.setItem("grv_pending_order_id", orderId);
       window.location.href = authorizationUrl;
     } catch (requestError) {
-      setError(requestError.message || "Could not initialize payment.");
+      // An unverified email is a fixable problem, not a dead end — it gets
+      // its own notice with the way out rather than a bare error string.
+      if (requestError.code === "EMAIL_NOT_VERIFIED") {
+        setNeedsVerification(true);
+      } else {
+        setError(requestError.message || "Could not initialize payment.");
+      }
       setSubmitting(false);
     }
   };
@@ -269,7 +278,25 @@ const CheckoutContent = () => {
               onChange={setForm}
               idPrefix="checkout-address"
             />
-            {error && <p className="mt-5 text-sm text-red-600">{error}</p>}
+            <InlineNotice tone="error" className="mt-5">{error}</InlineNotice>
+            {needsVerification && (
+              <div className="mt-5 border border-[var(--line)] bg-[var(--surface-muted)] p-5">
+                <p className="text-[13px] font-semibold text-[var(--ink-900)]">
+                  Verify your email to place this order
+                </p>
+                <p className="meta-text mt-1.5">
+                  We send your order confirmation, payment receipt and delivery
+                  updates to your email, so it needs to be confirmed first. Your
+                  bag is saved — this takes a moment.
+                </p>
+                <Link
+                  to="/confirm-email"
+                  className="mt-4 inline-block border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:border-(--color-accent-orange) hover:bg-(--color-accent-orange)"
+                >
+                  Verify my email
+                </Link>
+              </div>
+            )}
             <button
               type="submit"
               disabled={submitting || !isAddressValid}
@@ -325,12 +352,12 @@ const CheckoutContent = () => {
               </div>
             </label>
             {discountError && (
-              <p role="alert" className="mt-2 text-sm text-red-600">
+              <InlineNotice tone="error" className="mt-2">
                 {discountError}
-              </p>
+              </InlineNotice>
             )}
             {appliedDiscount && (
-              <p className="mt-2 text-sm text-green-700">
+              <p className="mt-2 text-sm text-emerald-700">
                 {appliedDiscount.code} applied.
               </p>
             )}

@@ -69,7 +69,7 @@ const AdminOrderDetail = () => {
   if (loading) {
     return (
       <main className="mx-auto max-w-5xl px-6 py-20">
-        <Spinner label="Loading order" className="text-sm text-gray-500" />
+        <Spinner label="Loading order" className="text-sm text-[var(--ink-500)]" />
       </main>
     );
   }
@@ -78,7 +78,7 @@ const AdminOrderDetail = () => {
     <main className="mx-auto max-w-5xl px-6 py-12 md:px-12 md:py-20">
       <Link
         to="/admin/orders"
-        className="text-xs uppercase tracking-[0.2em] text-gray-500"
+        className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
       >
         Orders
       </Link>
@@ -93,23 +93,23 @@ const AdminOrderDetail = () => {
       )}
 
       {!order && !error && (
-        <p className="mt-8 text-sm text-gray-500">Order not found.</p>
+        <p className="mt-8 text-sm text-[var(--ink-500)]">Order not found.</p>
       )}
 
       {order && (
         <>
-          <div className="mt-3 flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
+          <div className="mt-3 flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]">
                 Order
               </p>
               <h1 className="mt-3 text-3xl font-semibold">#{order.id}</h1>
-              <p className="mt-2 text-sm text-gray-500">
+              <p className="mt-2 text-sm text-[var(--ink-500)]">
                 Created {formatDate(order.createdAt)}
               </p>
             </div>
             <div className="text-right">
-              <p className="border border-gray-300 px-3 py-2 text-sm font-semibold">
+              <p className="border border-[var(--line)] px-3 py-2 text-sm font-semibold">
                 {order.status}
               </p>
               {transitionsByStatus[order.status]?.length > 0 && (
@@ -120,10 +120,10 @@ const AdminOrderDetail = () => {
                       type="button"
                       onClick={() => updateStatus(status)}
                       disabled={savingStatus}
-                      className={`border px-3 py-2 text-sm font-medium transition-colors hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+                      className={`border px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--ink-900)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 ${
                         status === "CANCELLED"
                           ? "border-red-700 text-red-700 hover:bg-red-700"
-                          : "border-black"
+                          : "border-[var(--ink-900)]"
                       }`}
                     >
                       {savingStatus ? (
@@ -138,16 +138,16 @@ const AdminOrderDetail = () => {
             </div>
           </div>
 
-          <section className="mt-8 border border-gray-200 p-6">
+          <section className="mt-8 border border-[var(--line)] p-6">
             <div className="flex flex-wrap gap-x-12 gap-y-5 text-sm">
               <div>
-                <p className="text-xs uppercase tracking-[0.15em] text-gray-500">
+                <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                   Total
                 </p>
                 <p className="mt-2 font-medium">{formatPrice(order.total)}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.15em] text-gray-500">
+                <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                   Last updated
                 </p>
                 <p className="mt-2 font-medium">
@@ -157,8 +157,8 @@ const AdminOrderDetail = () => {
             </div>
           </section>
 
-          <section className="mt-8 border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          <section className="mt-8 border border-[var(--line)] p-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--ink-500)]">
               Customer
             </h2>
             <p className="mt-4 text-sm">
@@ -169,15 +169,15 @@ const AdminOrderDetail = () => {
                 {order.customer.name || "Unnamed customer"}
               </Link>
               <br />
-              <span className="text-gray-600">{order.customer.email}</span>
+              <span className="text-[var(--ink-700)]">{order.customer.email}</span>
             </p>
           </section>
 
-          <section className="mt-8 border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          <section className="mt-8 border border-[var(--line)] p-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--ink-500)]">
               Items
             </h2>
-            <div className="mt-4 divide-y divide-gray-200">
+            <div className="mt-4 divide-y divide-[var(--line)]">
               {order.items.map((item) => (
                 <div
                   key={item.id}
@@ -191,7 +191,7 @@ const AdminOrderDetail = () => {
                         className="h-16 w-12 shrink-0 object-cover"
                       />
                     ) : (
-                      <div className="flex h-16 w-12 shrink-0 items-center justify-center bg-gray-100 text-[10px] uppercase tracking-wide text-gray-400">
+                      <div className="flex h-16 w-12 shrink-0 items-center justify-center bg-[var(--surface-muted)] text-[10px] uppercase tracking-wide text-[var(--ink-300)]">
                         No image
                       </div>
                     )}
@@ -200,11 +200,11 @@ const AdminOrderDetail = () => {
                         {item.product?.name || "Unavailable product"}
                       </p>
                       {item.brandName && (
-                        <p className="mt-1 text-xs uppercase tracking-[0.12em] text-gray-500">
+                        <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[var(--ink-500)]">
                           {item.brandName}
                         </p>
                       )}
-                      <p className="mt-1 text-gray-500">
+                      <p className="mt-1 text-[var(--ink-500)]">
                         {item.variant
                           ? `${item.variant.color} / ${item.variant.size}`
                           : "Unavailable variant"}
@@ -221,8 +221,8 @@ const AdminOrderDetail = () => {
             </div>
           </section>
 
-          <section className="mt-8 border border-gray-200 p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          <section className="mt-8 border border-[var(--line)] p-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--ink-500)]">
               Shipping address
             </h2>
             <p className="mt-4 text-sm leading-6">

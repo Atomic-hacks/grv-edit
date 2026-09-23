@@ -6,10 +6,11 @@ import { HorizontalSkeleton } from "../component/ui/LoadingSkeletons";
 import CtaButton from "../component/ui/CtaButton";
 import HorizontalCarousel from "../component/ui/HorizontalCarousel";
 import { getProductImages } from "../lib/productHelpers";
-import DiscountPrice from "../component/ui/DiscountPrice";
 import { fetchNewArrivals } from "../lib/apiClient";
 import { useQuery } from "@tanstack/react-query";
-import WishlistButton from "../component/ui/WishlistButton";
+import Card from "../component/ui/Card";
+import RecentlyViewedRail from "../component/section/RecentlyViewedRail";
+import StoreSupport from "../component/section/StoreSupport";
 import { useSiteImages } from "../lib/useSiteImages";
 
 // Single spacing scale reused by every section on this page.
@@ -154,8 +155,8 @@ const LinkList = ({
         onClick={
           stopPropagation ? (event) => event.stopPropagation() : undefined
         }
-        className={`text-sm font-semibold hover:underline ${
-          light ? "text-white/90" : "text-black"
+        className={`text-[13px] font-semibold underline-offset-4 hover:underline ${
+          light ? "text-white/90" : "text-[var(--ink-900)]"
         }`}
       >
         {label}
@@ -171,6 +172,7 @@ const Shop = () => {
     data: products,
     isPending: loading,
     error,
+    refetch,
   } = useQuery({
     queryKey: ["products", { page: "home" }],
     queryFn: () => fetchNewArrivals(),
@@ -240,58 +242,50 @@ const Shop = () => {
         </div>
       </section>
 
-      <div className="px-1.5 max-w-360 mx-auto">
+      <div className="page-shell">
         {/* New Arrivals */}
         <section className={SECTION}>
           <div
             className={`flex items-end justify-between gap-6 ${SECTION_HEAD}`}
           >
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-                Just in
-              </p>
-              <h2 className="mt-2 text-3xl font-semibold md:text-4xl">
-                New Arrivals
+              <p className="eyebrow">Just in</p>
+              <h2 className="section-title mt-1.5">
+                New arrivals, handpicked as they land
               </h2>
             </div>
-            <CtaButton to="/shop/new-arrivals" title="VIEW ALL" />
+            <CtaButton to="/shop/new-arrivals" title="Shop now" />
           </div>
           {error && (
-            <p className="text-sm text-red-600">Couldn't load new arrivals.</p>
+            <p className="meta-text">
+              Couldn't load new arrivals.{" "}
+              <button
+                type="button"
+                onClick={() => refetch()}
+                className="font-semibold text-[var(--ink-900)] underline underline-offset-4 transition-colors hover:text-(--color-accent-orange)"
+              >
+                Try again
+              </button>
+            </p>
           )}
           {loading ? (
             <HorizontalSkeleton />
           ) : (
             <HorizontalCarousel>
               {newArrivals.map((product) => {
-                const image = getProductImages(product)[0];
+                const images = getProductImages(product);
                 return (
-                  <Link
-                    key={product.id}
-                    to={`/product/${product.id}`}
-                    className="group relative block"
-                  >
-                    <RevealImage
-                      src={image}
+                  <Link key={product.id} to={`/product/${product.id}`}>
+                    <Card
+                      img={images[0]}
+                      hoverImg={images[1] || images[0]}
                       alt={product.name}
-                      width={600}
-                      loading="lazy"
-                      className="aspect-3/4 w-full transition-opacity group-hover:opacity-80"
-                      revealDuration={0.8}
-                    />
-                    <WishlistButton
+                      title={product.name}
                       product={product}
-                      className="absolute right-3 top-3"
+                      category={product.subcategory}
+                      details={product.gender}
+                      badge="NEW"
                     />
-                    <div className="absolute inset-x-4 bottom-4 flex items-end justify-between text-sm font-semibold text-white">
-                      <span>{product.name}</span>
-                      <DiscountPrice
-                        basePrice={product.basePrice}
-                        discountPercent={product.discountPercent}
-                        className="text-right"
-                        light
-                      />
-                    </div>
                   </Link>
                 );
               })}
@@ -301,9 +295,7 @@ const Shop = () => {
 
         {/* Choose a department */}
         <section className={SECTION}>
-          <h2
-            className={`text-sm font-semibold uppercase tracking-[0.14em] ${SECTION_HEAD}`}
-          >
+          <h2 className={`section-title ${SECTION_HEAD}`}>
             Choose a department
           </h2>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-4">
@@ -318,9 +310,11 @@ const Shop = () => {
                   alt={department.name}
                   className="aspect-3/4 w-full transition-opacity group-hover:opacity-75"
                   revealDuration={0.8}
+                  width={600}
                 />
+                <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/55 via-black/10 to-transparent" />
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-                  <span className="text-xs md:text-xl font-semibold uppercase tracking-wide text-white">
+                  <span className="text-sm font-semibold uppercase tracking-[0.12em] text-white md:text-base">
                     {department.name}
                   </span>
                   <span className="inline-flex shrink-0 items-center justify-center border border-white bg-transparent px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white transition-colors duration-300 group-hover:bg-white group-hover:text-black">
@@ -372,10 +366,11 @@ const Shop = () => {
                   alt={name}
                   className="aspect-3/4 w-full transition-opacity group-hover:opacity-75"
                   revealDuration={0.8}
+                  width={500}
                 />
                 <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/65 via-black/10 to-transparent" />
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                  <span className="text-xs md:text-xl font-semibold uppercase tracking-wide text-white">
+                  <span className="text-sm font-semibold uppercase tracking-[0.12em] text-white md:text-base">
                     {name}
                   </span>
                   <span className="shrink-0 border border-white px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-white transition-colors group-hover:bg-white group-hover:text-black">
@@ -388,9 +383,7 @@ const Shop = () => {
         </section>
 
         <section className={SECTION}>
-          <h2
-            className={`text-sm font-semibold uppercase tracking-[0.14em] ${SECTION_HEAD}`}
-          >
+          <h2 className={`section-title ${SECTION_HEAD}`}>
             Shop the collections
           </h2>
           <div
@@ -466,7 +459,10 @@ const Shop = () => {
             })}
           </div>
         </section>
+        <RecentlyViewedRail />
       </div>
+
+      <StoreSupport promises={false} />
     </main>
   );
 };

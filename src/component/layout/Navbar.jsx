@@ -3,13 +3,15 @@ import { AnimatePresence, motion as Motion } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
-import { searchProducts } from "../../lib/apiClient";
+import { searchProducts, fetchCategories } from "../../lib/apiClient";
+import { useQuery } from "@tanstack/react-query";
 import { getProductImages } from "../../lib/productHelpers";
 import LoadingImage from "../ui/LoadingImage";
 import {
   getNavigationPath,
   getNavigationRootPath,
   getNavigationSectionsForDepartment,
+  mergeSectionsWithCategories,
   navigationDepartments,
 } from "../../data/navigation";
 
@@ -85,8 +87,8 @@ const SearchPanel = ({
   <div
     className={
       mobile
-        ? "border-t border-gray-200 bg-white p-4"
-        : "absolute right-0 top-full z-50 mt-3 w-80 border border-gray-200 bg-white p-3 shadow-lg"
+        ? "border-t border-[var(--line)] bg-white p-4"
+        : "absolute right-0 top-full z-50 mt-3 w-96 border border-[var(--line)] bg-white p-4 shadow-[0_18px_40px_rgba(0,0,0,0.08)]"
     }
   >
     <div className="flex items-center gap-3">
@@ -96,13 +98,13 @@ const SearchPanel = ({
         value={searchQuery}
         onChange={(event) => setSearchQuery(event.target.value)}
         placeholder="Search products, brands, SKU"
-        className="w-full border-b border-gray-300 px-1 py-2 text-sm outline-none focus:border-black"
+        className="w-full border-b border-[var(--line)] px-1 py-2 text-sm outline-none transition-colors placeholder:text-[var(--ink-300)] focus:border-[var(--ink-900)]"
       />
       <button
         type="button"
         onClick={onClose}
         aria-label="Close search"
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:text-black"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--line)] text-[var(--ink-500)] transition-colors hover:border-[var(--ink-900)] hover:text-[var(--ink-900)]"
       >
         <svg
           width="14"
@@ -119,14 +121,14 @@ const SearchPanel = ({
       </button>
     </div>
     {searchQuery && (
-      <div className="mt-2 max-h-80 overflow-y-auto">
+      <div className="mt-3 max-h-96 overflow-y-auto">
         {searchLoading ? (
           <div className="space-y-2 py-3" aria-hidden="true">
             <div className="flex items-center gap-3">
-              <div className="h-14 w-11 animate-pulse bg-gray-200" />
+              <div className="skeleton h-14 w-11" />
               <div className="flex-1 space-y-2">
-                <div className="h-3 w-2/3 animate-pulse bg-gray-200" />
-                <div className="h-3 w-1/3 animate-pulse bg-gray-200" />
+                <div className="skeleton h-3 w-2/3" />
+                <div className="skeleton h-3 w-1/3" />
               </div>
             </div>
           </div>
@@ -139,7 +141,7 @@ const SearchPanel = ({
                 navigate(`/product/${product.id}`);
                 onClose();
               }}
-              className="flex w-full gap-3 border-b border-gray-100 py-2 text-left last:border-0"
+              className="flex w-full items-center gap-3 border-b border-[var(--line)] py-2.5 text-left transition-colors last:border-0 hover:bg-[var(--surface-muted)]"
             >
               <LoadingImage
                 src={getProductImages(product)[0]}
@@ -149,13 +151,21 @@ const SearchPanel = ({
                 wrapperClassName="h-14 w-11 shrink-0"
               />
               <span className="min-w-0 text-xs">
-                <strong className="block truncate">{product.name}</strong>
-                <span className="text-gray-500">{product.brandName}</span>
+                {product.brandName && (
+                  <strong className="block truncate text-[var(--ink-900)]">
+                    {product.brandName}
+                  </strong>
+                )}
+                <span className="block truncate text-[var(--ink-500)]">
+                  {product.name}
+                </span>
               </span>
             </button>
           ))
         ) : (
-          <p className="py-3 text-xs text-gray-500">No matching products.</p>
+          <p className="py-6 text-center text-xs text-[var(--ink-500)]">
+            No products match &ldquo;{searchQuery}&rdquo;.
+          </p>
         )}
       </div>
     )}
@@ -196,12 +206,23 @@ const Navbar = () => {
     ["Details and security", "/account?section=details"],
   ];
 
+  // Live taxonomy, so menus reflect what an admin has actually published.
+  // Falls back to the curated lists while loading or if the request fails.
+  const { data: navCategories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => fetchCategories(),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const navLinks = [
     ...navigationDepartments.map((department) => ({
       name: department.label || department.name,
       departmentName: department.name,
       href: getNavigationRootPath(department.name),
-      sections: getNavigationSectionsForDepartment(department.name),
+      sections: mergeSectionsWithCategories(
+        getNavigationSectionsForDepartment(department.name),
+        navCategories,
+      ),
       megaMenu: true,
     })),
     { name: "Shop By", href: "/shop-by" },
@@ -307,8 +328,12 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="relative w-full border-b border-gray-200 bg-white">
-      <div className="relative mx-auto flex min-h-16 items-end justify-between px-4 py-2 lg:px-6 xl:px-16">
+    <nav className="sticky top-0 z-40 w-full border-b border-[var(--line)] bg-white/98">
+      {/* No backdrop-blur here: a sticky element re-blurs everything behind
+          it on every scroll frame, which is a well-known source of scroll
+          jank on mid-range devices. A near-solid background reads almost
+          identically and costs the browser nothing per frame. */}
+      <div className="relative mx-auto flex h-[var(--nav-h)] w-full max-w-[var(--content-max)] items-center justify-between px-[var(--gutter)]">
         {/* Left Navigation Links - Desktop */}
         <div className="hidden lg:flex items-center gap-3 xl:gap-8">
           {navLinks.map((link) => (
@@ -320,23 +345,23 @@ const Navbar = () => {
             >
               <Link
                 to={link.href}
-                className="group relative z-50 whitespace-nowrap text-sm xl:text-base font-medium text-black transition-colors hover:text-gray-600"
+                className="group relative z-50 block whitespace-nowrap py-2 text-[13px] font-medium tracking-[0.02em] text-[var(--ink-900)] transition-colors hover:text-[var(--ink-500)]"
               >
                 {link.name}
-                <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
+                <span className="absolute bottom-1 left-0 h-px w-full origin-left scale-x-0 bg-[var(--ink-900)] transition-transform duration-300 ease-out group-hover:scale-x-100" />
               </Link>
 
               {link.megaMenu && (
                 <AnimatePresence>
                   {openMegaMenu === link.name && (
                     <Motion.div
-                      initial={{ opacity: 0, x: -300 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -30 }}
-                      transition={{ duration: 0.5, ease: "easeOut" }}
-                      className="absolute left-0 top-full z-20 w-2xl pt-2 overflow-hidden"
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                      className="absolute left-0 top-full z-20 w-max max-w-[min(56rem,90vw)] pt-3"
                     >
-                      <div className="grid grid-cols-3 gap-8 rounded-sm border border-gray-200 bg-white p-6 shadow-lg">
+                      <div className="grid max-h-[70vh] grid-cols-3 gap-x-10 gap-y-8 overflow-y-auto border border-[var(--line)] bg-white p-7 shadow-[0_18px_40px_rgba(0,0,0,0.08)]">
                         {link.sections.map((section) => (
                           <div key={section.name}>
                             <Link
@@ -344,11 +369,11 @@ const Navbar = () => {
                                 link.departmentName || link.name,
                                 section.name,
                               )}
-                              className="text-sm font-semibold uppercase tracking-wide text-black"
+                              className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-900)] transition-colors hover:text-[var(--color-accent-orange)]"
                             >
                               {section.name}
                             </Link>
-                            <div className="mt-3 space-y-2">
+                            <div className="mt-3 space-y-1.5">
                               {section.styles.map((style) => (
                                 <Link
                                   key={style}
@@ -357,7 +382,7 @@ const Navbar = () => {
                                     section.name,
                                     style,
                                   )}
-                                  className="block text-sm text-gray-600 transition-colors hover:text-black"
+                                  className="block text-[13px] leading-6 text-[var(--ink-500)] transition-colors hover:text-[var(--ink-900)]"
                                 >
                                   {style}
                                 </Link>
@@ -466,17 +491,17 @@ const Navbar = () => {
           </div>
           <Link
             to="/contact"
-            className="group relative whitespace-nowrap text-sm font-medium text-black transition-colors hover:text-gray-600"
+            className="group relative whitespace-nowrap py-2 text-[13px] font-medium text-[var(--ink-900)] transition-colors hover:text-[var(--ink-500)]"
           >
             contact
-            <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
+            <span className="absolute bottom-1 left-0 h-px w-full origin-left scale-x-0 bg-[var(--ink-900)] transition-transform duration-300 ease-out group-hover:scale-x-100" />
           </Link>
           <Link
             to="/journal"
-            className="group relative hidden whitespace-nowrap text-sm font-medium text-black transition-colors hover:text-gray-600 xl:inline"
+            className="group relative hidden whitespace-nowrap py-2 text-[13px] font-medium text-[var(--ink-900)] transition-colors hover:text-[var(--ink-500)] xl:inline"
           >
             Journal
-            <span className="absolute left-0 bottom-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
+            <span className="absolute bottom-1 left-0 h-px w-full origin-left scale-x-0 bg-[var(--ink-900)] transition-transform duration-300 ease-out group-hover:scale-x-100" />
           </Link>
           {session ? (
             <div className="relative">
@@ -530,18 +555,18 @@ const Navbar = () => {
             <Link
               to={accountPath}
               aria-label={accountPath === "/login" ? "Log in" : "Sign up"}
-              className="group relative whitespace-nowrap text-sm font-medium text-black transition-colors hover:text-gray-600"
+              className="group relative whitespace-nowrap py-2 text-[13px] font-medium text-[var(--ink-900)] transition-colors hover:text-[var(--ink-500)]"
             >
               {accountPath === "/login" ? "Login" : "Sign Up"}
-              <span className="absolute bottom-0 left-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
+              <span className="absolute bottom-1 left-0 h-px w-full origin-left scale-x-0 bg-[var(--ink-900)] transition-transform duration-300 ease-out group-hover:scale-x-100" />
             </Link>
           )}
           <Link
             to="/wishlist"
-            className="group relative hidden whitespace-nowrap text-sm font-medium text-black transition-colors hover:text-gray-600 xl:inline"
+            className="group relative hidden whitespace-nowrap py-2 text-[13px] font-medium text-[var(--ink-900)] transition-colors hover:text-[var(--ink-500)] xl:inline"
           >
             Wishlist
-            <span className="absolute bottom-0 left-0 h-[1.5px] w-0 bg-black transition-all duration-300 ease-out group-hover:w-full" />
+            <span className="absolute bottom-1 left-0 h-px w-full origin-left scale-x-0 bg-[var(--ink-900)] transition-transform duration-300 ease-out group-hover:scale-x-100" />
           </Link>
           <button className="shrink-0 transition-transform hover:scale-110">
             <img

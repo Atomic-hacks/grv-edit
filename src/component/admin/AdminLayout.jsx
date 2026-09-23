@@ -1,6 +1,7 @@
 import React from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { AnimatePresence, motion as Motion } from "framer-motion";
+import { useAuth } from "../../context/AuthContext";
 
 const navigationGroups = [
   {
@@ -28,11 +29,15 @@ const navigationGroups = [
     ],
   },
   {
-    name: "Content",
+    name: "Communication",
     items: [
-      { label: "Journal", to: "/admin/journal" },
-      { label: "Contact Submissions", to: "/admin/contact-submissions" },
+      { label: "Messages", to: "/admin/contact-submissions" },
+      { label: "Campaigns", to: "/admin/campaigns" },
     ],
+  },
+  {
+    name: "Content",
+    items: [{ label: "Journal", to: "/admin/journal" }],
   },
 ];
 
@@ -40,37 +45,62 @@ const isItemActive = (pathname, item) =>
   item.exact ? pathname === item.to : pathname.startsWith(item.to);
 
 const linkClassName = (pathname, item) =>
-  `block border-l-2 px-4 py-2 text-sm transition-colors ${
+  `block border-l-2 px-4 py-2 text-[13px] transition-colors ${
     isItemActive(pathname, item)
-      ? "border-black bg-black text-white"
-      : "border-transparent text-gray-600 hover:border-gray-300 hover:text-black"
+      ? "border-[var(--ink-900)] bg-[var(--ink-900)] text-white"
+      : "border-transparent text-[var(--ink-500)] hover:border-[var(--line)] hover:text-[var(--ink-900)]"
   }`;
 
 const compactLinkClassName = (pathname, item) =>
-  `whitespace-nowrap border px-3 py-2 text-sm transition-colors ${
+  `whitespace-nowrap border px-3 py-2 text-[13px] transition-colors ${
     isItemActive(pathname, item)
-      ? "border-black bg-black text-white"
-      : "border-gray-300 text-gray-600 hover:border-black hover:text-black"
+      ? "border-[var(--ink-900)] bg-[var(--ink-900)] text-white"
+      : "border-[var(--line)] text-[var(--ink-500)] hover:border-[var(--ink-900)] hover:text-[var(--ink-900)]"
   }`;
 
 const AdminLayout = () => {
   const location = useLocation();
   const { pathname } = location;
+  const { appUser, signOut } = useAuth();
 
   return (
-    <div className="bg-white">
-      <div className="mx-auto flex max-w-[100rem] gap-8 px-6 md:px-12">
-        <aside className="sticky top-0 hidden h-screen w-56 shrink-0 overflow-y-auto border-r border-black py-10 pr-8 lg:block">
-          <Link
-            to="/admin"
-            className="block text-2xl font-semibold tracking-tight"
-          >
-            Admin
+    <div className="min-h-screen bg-white">
+      {/* Every admin screen needs a way back to the storefront and a way to
+          log out — neither existed anywhere in the panel before this. */}
+      <header className="border-b border-[var(--ink-900)] bg-white">
+        <div className="mx-auto flex max-w-[100rem] items-center justify-between gap-4 px-6 py-3 md:px-12">
+          <Link to="/admin" className="text-base font-semibold tracking-tight">
+            GRV Admin
           </Link>
-          <nav aria-label="Admin" className="mt-10 space-y-8">
+          <div className="flex items-center gap-4 text-[12px]">
+            {appUser?.name && (
+              <span className="hidden text-[var(--ink-500)] sm:inline">
+                {appUser.name}
+              </span>
+            )}
+            <Link
+              to="/"
+              className="font-semibold text-[var(--ink-700)] underline underline-offset-4 transition-colors hover:text-[var(--ink-900)]"
+            >
+              View storefront
+            </Link>
+            <button
+              type="button"
+              onClick={() => signOut()}
+              className="border border-[var(--line)] px-3 py-1.5 font-semibold uppercase tracking-[0.08em] text-[var(--ink-700)] transition-colors hover:border-red-700 hover:bg-red-700 hover:text-white"
+            >
+              Log out
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto flex max-w-[100rem] gap-8 px-6 md:px-12">
+        <aside className="sticky top-0 hidden h-screen w-56 shrink-0 overflow-y-auto border-r border-[var(--line)] py-8 pr-8 lg:block">
+          <nav aria-label="Admin" className="space-y-8">
             {navigationGroups.map((group) => (
               <section key={group.name}>
-                <h2 className="px-4 text-xs font-medium uppercase tracking-[0.2em] text-gray-500">
+                <h2 className="px-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-300)]">
                   {group.name}
                 </h2>
                 <div className="mt-3 space-y-1">
@@ -90,13 +120,10 @@ const AdminLayout = () => {
         </aside>
 
         <div className="min-w-0 flex-1">
-          <div className="border-b border-black py-4 lg:hidden">
-            <Link to="/admin" className="text-xl font-semibold">
-              Admin
-            </Link>
+          <div className="border-b border-[var(--line)] py-4 lg:hidden">
             <nav
               aria-label="Admin sections"
-              className="mt-4 flex gap-2 overflow-x-auto pb-1"
+              className="flex gap-2 overflow-x-auto pb-1"
             >
               {navigationGroups.flatMap((group) =>
                 group.items.map((item) => (

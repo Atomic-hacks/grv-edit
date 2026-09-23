@@ -104,17 +104,17 @@ const AdminTags = () => {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12 md:px-12 md:py-20">
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-black pb-6">
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
         <div>
           <Link
             to="/admin"
-            className="text-xs uppercase tracking-[0.2em] text-gray-500"
+            className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
           >
             Admin
           </Link>
           <h1 className="mt-3 text-3xl font-semibold">Tags</h1>
         </div>
-        <p className="max-w-sm text-sm text-gray-500">
+        <p className="max-w-sm text-sm text-[var(--ink-500)]">
           Organize products by mood, occasion, weather, and style.
         </p>
       </div>
@@ -130,7 +130,7 @@ const AdminTags = () => {
 
       <form
         onSubmit={createTag}
-        className="mt-8 grid gap-4 border-b border-gray-200 pb-8 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end"
+        className="mt-8 grid gap-4 border-b border-[var(--line)] pb-8 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end"
       >
         <label className="text-sm">
           <span className="mb-2 block font-medium">Name</span>
@@ -139,7 +139,7 @@ const AdminTags = () => {
             name="name"
             value={form.name}
             onChange={updateField(setForm)}
-            className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+            className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
           />
         </label>
         <label className="text-sm">
@@ -149,7 +149,7 @@ const AdminTags = () => {
             name="slug"
             value={form.slug}
             onChange={updateField(setForm)}
-            className="w-full border border-gray-300 px-3 py-2.5 outline-none focus:border-black"
+            className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
           />
         </label>
         <label className="text-sm">
@@ -159,7 +159,7 @@ const AdminTags = () => {
             name="filterTypeId"
             value={form.filterTypeId}
             onChange={updateField(setForm)}
-            className="w-full border border-gray-300 bg-white px-3 py-2.5 outline-none focus:border-black"
+            className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
           >
             <option value="">Select a filter type</option>
             {filterTypes.map((filterType) => (
@@ -172,36 +172,36 @@ const AdminTags = () => {
         <button
           type="submit"
           disabled={saving || loading}
-          className="border border-black bg-black px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+          className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? <Spinner label="Saving" /> : "Add tag"}
         </button>
       </form>
 
       {loading ? (
-        <Spinner label="Loading tags" className="mt-8 text-sm text-gray-500" />
+        <Spinner label="Loading tags" className="mt-8 text-sm text-[var(--ink-500)]" />
       ) : (
         <div className="mt-8 grid gap-10 md:grid-cols-2">
           {filterTypes.map((filterType) => {
             const typeTags = tagsByType(filterType.id);
             return (
-              <section key={filterType.id} className="border-t border-black">
+              <section key={filterType.id} className="border-t border-[var(--ink-900)]">
                 <div className="flex items-baseline justify-between py-4">
                   <h2 className="text-lg font-semibold">{filterType.name}</h2>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-[var(--ink-500)]">
                     {typeTags.length} tag{typeTags.length === 1 ? "" : "s"}
                   </span>
                 </div>
                 {typeTags.length === 0 ? (
-                  <p className="border-t border-gray-200 py-5 text-sm text-gray-500">
+                  <p className="border-t border-[var(--line)] py-5 text-sm text-[var(--ink-500)]">
                     No {filterType.name.toLowerCase()} tags yet.
                   </p>
                 ) : (
-                  <div className="border-t border-gray-200">
+                  <div className="border-t border-[var(--line)]">
                     {typeTags.map((tag) => (
                       <div
                         key={tag.id}
-                        className="border-b border-gray-200 py-4"
+                        className="border-b border-[var(--line)] py-4"
                       >
                         {editingId === tag.id ? (
                           <form
@@ -209,7 +209,7 @@ const AdminTags = () => {
                             className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto_auto] sm:items-end"
                           >
                             <label className="text-sm">
-                              <span className="mb-1 block text-xs text-gray-500">
+                              <span className="mb-1 block text-xs text-[var(--ink-500)]">
                                 Name
                               </span>
                               <input
@@ -217,11 +217,11 @@ const AdminTags = () => {
                                 name="name"
                                 value={editingForm.name}
                                 onChange={updateField(setEditingForm)}
-                                className="w-full border border-gray-300 px-2.5 py-2"
+                                className="w-full border border-[var(--line)] px-2.5 py-2"
                               />
                             </label>
                             <label className="text-sm">
-                              <span className="mb-1 block text-xs text-gray-500">
+                              <span className="mb-1 block text-xs text-[var(--ink-500)]">
                                 Slug
                               </span>
                               <input
@@ -229,11 +229,11 @@ const AdminTags = () => {
                                 name="slug"
                                 value={editingForm.slug}
                                 onChange={updateField(setEditingForm)}
-                                className="w-full border border-gray-300 px-2.5 py-2"
+                                className="w-full border border-[var(--line)] px-2.5 py-2"
                               />
                             </label>
                             <label className="text-sm">
-                              <span className="mb-1 block text-xs text-gray-500">
+                              <span className="mb-1 block text-xs text-[var(--ink-500)]">
                                 Filter type
                               </span>
                               <select
@@ -241,7 +241,7 @@ const AdminTags = () => {
                                 name="filterTypeId"
                                 value={editingForm.filterTypeId}
                                 onChange={updateField(setEditingForm)}
-                                className="w-full border border-gray-300 bg-white px-2.5 py-2"
+                                className="w-full border border-[var(--line)] bg-white px-2.5 py-2"
                               >
                                 {filterTypes.map((option) => (
                                   <option key={option.id} value={option.id}>
@@ -253,7 +253,7 @@ const AdminTags = () => {
                             <button
                               type="submit"
                               disabled={saving}
-                              className="border border-black bg-black px-3 py-2 text-sm text-white disabled:opacity-50"
+                              className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-3 py-2 text-sm text-white disabled:opacity-50"
                             >
                               {saving ? <Spinner label="Saving" /> : "Save"}
                             </button>
@@ -269,7 +269,7 @@ const AdminTags = () => {
                           <div className="flex flex-wrap items-center justify-between gap-4">
                             <div>
                               <p className="font-medium">{tag.name}</p>
-                              <p className="mt-1 text-xs text-gray-500">
+                              <p className="mt-1 text-xs text-[var(--ink-500)]">
                                 {tag.slug}
                               </p>
                             </div>

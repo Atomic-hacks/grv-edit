@@ -8,12 +8,18 @@ import { CartProvider } from "./context/CartContext.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import { WishlistProvider } from "./context/WishlistContext.jsx";
 import { ToastProvider } from "./context/ToastContext.jsx";
+import { RecentlyViewedProvider } from "./context/RecentlyViewedContext.jsx";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000,
-      refetchOnWindowFocus: true,
+      // Refetching every mounted query on window/tab focus was the source
+      // of the "reloads when you come back to it" complaint: switching
+      // apps and back re-fired every query on screen at once. Data is
+      // already considered fresh for 5 minutes (staleTime above); nothing
+      // here needs to be that eager.
+      refetchOnWindowFocus: false,
       gcTime: 10 * 60 * 1000,
     },
   },
@@ -26,7 +32,9 @@ createRoot(document.getElementById("root")).render(
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              <App />
+              <RecentlyViewedProvider>
+                <App />
+              </RecentlyViewedProvider>
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>
