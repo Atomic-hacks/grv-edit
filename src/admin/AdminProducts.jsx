@@ -27,7 +27,7 @@ const AdminProducts = () => {
   const normalizedQuery = query.trim().toLowerCase();
   const visibleProducts = normalizedQuery
     ? products.filter((product) =>
-        [product.name, product.brandName, product.subcategoryName]
+        [product.name, product.brandName, ...(product.categories || []).map((c) => c.name)]
           .filter(Boolean)
           .some((value) => value.toLowerCase().includes(normalizedQuery)),
       )
@@ -52,13 +52,6 @@ const AdminProducts = () => {
   const getImage = (product) =>
     product.imageUrl ||
     product.variants?.find((variant) => variant.images?.[0])?.images?.[0];
-
-  const getDepartment = (product) =>
-    product.categoryId === "accessories"
-      ? "Accessories"
-      : product.gender === "women"
-        ? "Women"
-        : "Men";
 
   return (
     <main className="max-w-7xl py-12 md:py-16">
@@ -115,18 +108,25 @@ const AdminProducts = () => {
               ),
             },
             {
-              key: "department",
-              label: "Department",
+              key: "categories",
+              label: "Categories",
               render: (product) => (
-                <span className="text-[var(--ink-700)]">{getDepartment(product)}</span>
+                <span className="text-[var(--ink-700)]">
+                  {(product.categories || []).map((c) => c.name).join(", ") || "—"}
+                </span>
               ),
             },
             {
-              key: "subcategory",
-              label: "Subcategory",
+              key: "flags",
+              label: "Flags",
               render: (product) => (
-                <span className="text-[var(--ink-700)]">
-                  {product.subcategoryName || product.subcategory || "—"}
+                <span className="flex gap-1.5">
+                  {product.isNew && (
+                    <span className="border border-[var(--line)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--ink-500)]">New</span>
+                  )}
+                  {product.featured && (
+                    <span className="border border-(--color-accent-orange) px-1.5 py-0.5 text-[10px] uppercase text-(--color-accent-orange)">Featured</span>
+                  )}
                 </span>
               ),
             },

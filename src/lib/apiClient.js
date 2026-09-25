@@ -41,14 +41,17 @@ const appendValues = (searchParams, key, value) => {
 };
 
 export const buildProductParams = ({
-  gender,
-  categoryId,
-  subcategory,
+  // A category slug, or an array of them (top-level or subcategory — what
+  // used to be gender is just another category slug now, e.g. "women").
+  // Browsing a top-level category automatically includes its subcategories
+  // server-side, so callers never need to enumerate both.
+  category,
   styleTag,
   brandId,
   tag,
   size,
   color,
+  featured,
   inStock,
   minPrice,
   maxPrice,
@@ -59,14 +62,13 @@ export const buildProductParams = ({
   archived,
 } = {}) => {
   const searchParams = new URLSearchParams();
-  appendValues(searchParams, "gender", gender);
-  appendValues(searchParams, "category", categoryId);
-  appendValues(searchParams, "subcategory", subcategory);
+  appendValues(searchParams, "category", category);
   appendValues(searchParams, "style", styleTag);
   appendValues(searchParams, "brand", brandId);
   appendValues(searchParams, "tag", tag);
   appendValues(searchParams, "size", size);
   appendValues(searchParams, "color", color);
+  if (featured) searchParams.set("featured", "true");
   if (inStock) searchParams.set("inStock", "true");
   if (minPrice !== undefined && minPrice !== null && minPrice !== "")
     searchParams.set("minPrice", String(minPrice));
@@ -126,6 +128,10 @@ export const fetchProductById = async (id) => {
   return jsonOrThrow(response);
 };
 
+// Flat list, every category (major and sub) with parentId — consumers
+// derive whatever tree shape they need (nav, breadcrumbs, a browse page's
+// sub-nav) from this one list rather than the API pre-shaping it several
+// ways.
 export const fetchCategories = async () =>
   jsonOrThrow(await fetch("/api/categories"));
 

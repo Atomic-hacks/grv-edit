@@ -8,11 +8,10 @@ const navigationGroups = [
     name: "Catalog",
     items: [
       { label: "Products", to: "/admin/products", exact: true },
+      { label: "Categories", to: "/admin/categories" },
       { label: "Brands", to: "/admin/brands" },
-      { label: "Subcategories", to: "/admin/subcategories" },
-      { label: "Tags", to: "/admin/tags" },
+      { label: "Style Tags", to: "/admin/tags" },
       { label: "Filter Types", to: "/admin/filter-types", exact: true },
-      { label: "Category Filters", to: "/admin/category-filter-types" },
       { label: "Bulk Upload", to: "/admin/products/bulk-upload" },
       { label: "Site Images", to: "/admin/site-images" },
     ],
@@ -25,7 +24,6 @@ const navigationGroups = [
       { label: "Discounts", to: "/admin/discounts" },
       { label: "First-order Promo", to: "/admin/first-order-promo" },
       { label: "Shipping Fees", to: "/admin/shipping-fees" },
-      { label: "Sections", to: "/admin/sections" },
     ],
   },
   {

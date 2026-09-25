@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getProductImages } from "./lib/productHelpers";
+import { getProductImages, getLeafCategory } from "./lib/productHelpers";
 import {
   fetchBrandBySlug,
   fetchBrands,
@@ -110,10 +110,11 @@ const ProductDetail = () => {
     if (waitlistQuery.error) setWaitlistError("Couldn't check your waitlist status. Refresh the page to try again.");
   }, [waitlistQuery.error]);
 
+  const leafCategory = getLeafCategory(product);
   const { data: moreProductsData } = useQuery({
-    queryKey: ["products", { categoryId: product?.categoryId }],
-    queryFn: () => fetchProducts({ categoryId: product.categoryId }),
-    enabled: Boolean(product?.categoryId),
+    queryKey: ["products", { category: leafCategory?.slug }],
+    queryFn: () => fetchProducts({ category: leafCategory.slug }),
+    enabled: Boolean(leafCategory),
   });
 
   const { data: brandProductsData, isPending: brandProductsPending } = useQuery({
@@ -266,9 +267,8 @@ const ProductDetail = () => {
     (product.highlights && product.highlights.length > 0) ||
     Boolean(product.composition);
   const breadcrumbParts = [
-    product.categoryId ? `${product.categoryId} Home` : null,
+    ...(product.categories || []).map((category) => category.name),
     brandName,
-    product.subcategory,
     product.name,
   ].filter(Boolean);
 
@@ -567,9 +567,7 @@ const ProductDetail = () => {
           title="You may also like"
           className="border-t border-[var(--line)]"
           products={similarProducts}
-          viewAllTo={
-            product.categoryId ? `/men?category=${product.categoryId}` : undefined
-          }
+          viewAllTo={leafCategory ? `/${leafCategory.slug}` : undefined}
           viewAllLabel="View category"
           onQuickAdd={(item, itemImages) =>
             addToCart(

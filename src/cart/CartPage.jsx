@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import { useRequireAuthAction } from "../component/auth/useRequireAuthAction";
-import { formatPrice } from "../lib/productHelpers";
+import { formatPrice, getLeafCategory } from "../lib/productHelpers";
 import { fetchProducts } from "../lib/apiClient";
 import LoadingImage from "../component/ui/LoadingImage";
 import ProductRail from "../component/section/ProductRail";
@@ -210,11 +210,11 @@ const CartPage = () => {
 
   // Cross-sell is anchored to what is already in the bag: the category of the
   // first line, not a generic "popular now" feed.
-  const anchorCategoryId = cartItems[0]?.product?.categoryId;
+  const anchorCategory = getLeafCategory(cartItems[0]?.product);
   const { data: suggestedData, isPending: suggestionsLoading } = useQuery({
-    queryKey: ["products", { categoryId: anchorCategoryId }],
-    queryFn: () => fetchProducts({ categoryId: anchorCategoryId }),
-    enabled: Boolean(anchorCategoryId),
+    queryKey: ["products", { category: anchorCategory?.slug }],
+    queryFn: () => fetchProducts({ category: anchorCategory.slug }),
+    enabled: Boolean(anchorCategory),
   });
   const inBagIds = new Set(cartItems.map((item) => item.product.id));
   const suggestions = (suggestedData || [])
@@ -301,7 +301,7 @@ const CartPage = () => {
           eyebrow="Goes with your bag"
           title="You might also want"
           products={suggestions}
-          loading={Boolean(anchorCategoryId) && suggestionsLoading}
+          loading={Boolean(anchorCategory) && suggestionsLoading}
           onQuickAdd={(product, images) =>
             addToCart(
               {

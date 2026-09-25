@@ -46,9 +46,46 @@ export const WishlistProvider = ({ children }) => {
     });
   };
 
+  const isBrandWishlisted = (brandId) =>
+    items.some((item) => item.brandId === brandId);
+
+  const toggleBrandWishlist = async (brand) => {
+    if (!session) return;
+    const saved = isBrandWishlisted(brand.id);
+    if (saved) {
+      await createAuthenticatedRequest(session)(
+        `/api/wishlist/brand/${encodeURIComponent(brand.id)}`,
+        { method: "DELETE" },
+      );
+      await queryClient.invalidateQueries({
+        queryKey: ["wishlist", user.id],
+      });
+      return;
+    }
+
+    const result = await createAuthenticatedRequest(session)("/api/wishlist", {
+      method: "POST",
+      body: JSON.stringify({ brandId: brand.id }),
+    });
+    queryClient.setQueryData(["wishlist", user.id], (current = []) => [
+      ...current,
+      { ...result.wishlist, brandId: brand.id, brand },
+    ]);
+    await queryClient.invalidateQueries({
+      queryKey: ["wishlist", user.id],
+    });
+  };
+
   return (
     <WishlistContext.Provider
-      value={{ items, loading, isWishlisted, toggleWishlist }}
+      value={{
+        items,
+        loading,
+        isWishlisted,
+        toggleWishlist,
+        isBrandWishlisted,
+        toggleBrandWishlist,
+      }}
     >
       {children}
     </WishlistContext.Provider>

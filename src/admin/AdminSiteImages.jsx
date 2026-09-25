@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
 import Spinner from "../component/ui/Spinner";
 
-const imageKeys = [
+const staticImageKeys = [
   ["hero", "Shop hero"],
   ["brands-section", "Brands feature"],
   ["department-men", "Men department"],
@@ -39,7 +39,21 @@ const AdminSiteImages = () => {
     queryFn: () => request("/api/site-images"),
     enabled: Boolean(session),
   });
+  // Shop By has one editorial image per theme (Mood, Occasion, Weather,
+  // Style, or whatever an admin adds as a FilterType) — generated from the
+  // live list rather than hardcoded, so a new theme gets an image slot here
+  // automatically instead of the key only existing implicitly on the page.
+  const filterTypesQuery = useQuery({
+    queryKey: ["filter-types"],
+    queryFn: () => request("/api/filter-types"),
+    enabled: Boolean(session),
+  });
   const images = imagesQuery.data || {};
+  const shopByImageKeys = (filterTypesQuery.data || []).map((filterType) => [
+    `shopby-${filterType.slug}`,
+    `Shop by: ${filterType.name}`,
+  ]);
+  const imageKeys = [...staticImageKeys, ...shopByImageKeys];
 
   const getValue = (key) => drafts[key] ?? images[key] ?? "";
 
@@ -112,7 +126,7 @@ const AdminSiteImages = () => {
           {error || imagesQuery.error.message}
         </div>
       )}
-      {imagesQuery.isPending ? (
+      {imagesQuery.isPending || filterTypesQuery.isPending ? (
         <Spinner
           label="Loading site images"
           className="mt-8 text-sm text-[var(--ink-500)]"

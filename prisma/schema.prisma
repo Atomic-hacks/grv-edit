@@ -165,6 +165,18 @@ model Discount {
   orders    Order[]
 }
 
+// Sliding-window rate limiting for the storefront's public, unauthenticated
+// write endpoints (contact form, newsletter signup). One row per hit;
+// `checkRateLimit` counts rows for a key within the window and prunes old
+// ones opportunistically, so this table never needs its own cleanup job.
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
 model SiteImage {
   id        String   @id @default(cuid())
   key       String   @unique
@@ -196,16 +208,24 @@ model OrderItem {
   priceAtPurchase Float
 }
 
+// A row favorites either a product or a brand, never both — productId and
+// brandId are each nullable so the same table covers "save this bag" and
+// "follow this label" without two parallel tables. Postgres treats NULL as
+// distinct in a unique index, so many brand-favorite rows (productId null)
+// coexist fine under the product unique constraint, and vice versa.
 model Wishlist {
   id           String   @id @default(cuid())
   userId       String   @db.Uuid
   user         User     @relation(fields: [userId], references: [id])
-  productId    String
-  product      Product  @relation(fields: [productId], references: [id])
+  productId    String?
+  product      Product? @relation(fields: [productId], references: [id])
+  brandId      String?
+  brand        Brand?   @relation(fields: [brandId], references: [id])
   createdAt    DateTime @default(now())
   reminderSent Boolean  @default(false)
 
   @@unique([userId, productId])
+  @@unique([userId, brandId])
 }
 
 model WaitlistEntry {
@@ -324,57 +344,69 @@ enum CampaignAudience {
 }
 
 model Brand {
-  id          String    @id
+  id          String     @id
   name        String
-  slug        String    @unique
+  slug        String     @unique
   logo        String?
   description String?
   products    Product[]
+  wishlists   Wishlist[]
 }
 
+// One self-referencing tree, arbitrarily deep — everything that used to be
+// Category / gender department / Section lives here. A row with no parent
+// is a "major category" (what can appear in navigation — Women, Men,
+// Accessories, Footwear, Jewelry, Lifestyle, anything an admin invents
+// later). A row with a parent nests under it, and that row can itself have
+// children (Men > Accessories > Jewelry), as deep as an admin wants to go.
+// The nav/homepage fields are optional on every row, which is what lets
+// "Lifestyle" or a seasonal drop be nothing more than a major category
+// that also happens to be featured — no separate Section model to keep in
+// sync with this one.
 model Category {
-  id            String               @id
-  name          String
-  styleTags     CategoryStyleTag[]
-  filterTypes   CategoryFilterType[]
-  subcategories Subcategory[]
-  products      Product[]
+  id       String     @id @default(cuid())
+  name     String
+  slug     String     @unique
+  parentId String?
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Category[] @relation("CategoryTree")
+
+  showInNav      Boolean @default(false)
+  navOrder       Int     @default(0)
+  description    String?
+  showOnHomepage Boolean @default(false)
+  homepageOrder  Int?
+
+  products  ProductCategory[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @default(now()) @updatedAt
+
+  @@index([parentId])
 }
 
+// A product's membership in the tree. Tagging a product with a subcategory
+// (Accessories > Bags) is enough — browsing the parent (Accessories) walks
+// the tree and picks up its descendants automatically, so a product never
+// needs a separate link to both.
+model ProductCategory {
+  productId  String
+  categoryId String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+  @@index([categoryId])
+}
+
+// Filters kept deliberately simple: brand and price are structured fields
+// already, color reads off the variant, and Style/Mood/Occasion/Weather are
+// all the same shape (a named tag under a named dimension) so they share
+// one small model instead of four bespoke ones.
 model FilterType {
-  id         String               @id @default(cuid())
-  name       String
-  slug       String               @unique
-  tags       Tag[]
-  categories CategoryFilterType[]
-}
-
-model CategoryFilterType {
-  categoryId   String
-  filterTypeId String
-  category     Category   @relation(fields: [categoryId], references: [id])
-  filterType   FilterType @relation(fields: [filterTypeId], references: [id])
-
-  @@id([categoryId, filterTypeId])
-}
-
-model CategoryStyleTag {
-  id         String    @id
-  name       String
-  categoryId String
-  category   Category  @relation(fields: [categoryId], references: [id])
-  products   Product[] @relation("CategoryStyleTagToProduct")
-
-  @@unique([categoryId, name])
-}
-
-model Subcategory {
-  id         String    @id @default(cuid())
-  name       String
-  slug       String    @unique
-  categoryId String
-  category   Category  @relation(fields: [categoryId], references: [id])
-  products   Product[]
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+  tags Tag[]
 }
 
 model Tag {
@@ -395,55 +427,26 @@ model ProductTag {
   @@id([productId, tagId])
 }
 
-model Section {
-  id             String           @id @default(cuid())
-  title          String
-  slug           String           @unique
-  description    String
-  showOnHomepage Boolean          @default(false)
-  homepageOrder  Int?
-  products       ProductSection[]
-  createdAt      DateTime         @default(now())
-}
-
-model ProductSection {
-  productId String
-  sectionId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-
-  @@id([productId, sectionId])
-}
-
 model Product {
-  id              String             @id
+  id              String            @id
   name            String
-  gender          Gender
-  categoryId      String
-  subcategory     String
-  subcategoryId   String?
   description     String
   basePrice       Float
   discountPercent Float?
-  status          ProductStatus      @default(ACTIVE)
-  createdAt       DateTime           @default(now())
+  status          ProductStatus     @default(ACTIVE)
+  createdAt       DateTime          @default(now())
   imageUrl        String?
-  isNew           Boolean            @default(false)
-  archived        Boolean            @default(false)
+  // Editorial pick, toggled by hand — unlike "new," this is a deliberate
+  // curatorial call, so it stays a plain flag rather than a tree membership.
+  featured        Boolean           @default(false)
+  archived        Boolean           @default(false)
   brandId         String
-  brand           Brand              @relation(fields: [brandId], references: [id])
-  category        Category           @relation(fields: [categoryId], references: [id])
-  subcategoryRef  Subcategory?       @relation(fields: [subcategoryId], references: [id])
+  brand           Brand             @relation(fields: [brandId], references: [id])
+  categories      ProductCategory[]
   variants        Variant[]
   tags            ProductTag[]
-  sections        ProductSection[]
   wishlists       Wishlist[]
-  styleTags       CategoryStyleTag[] @relation("CategoryStyleTagToProduct")
 
-  @@index([gender])
-  @@index([categoryId])
-  @@index([subcategory])
-  @@index([subcategoryId])
   @@index([brandId])
 }
 
@@ -464,13 +467,6 @@ model Variant {
   waitlistEntries WaitlistEntry[]
 
   @@index([productId])
-}
-
-enum Gender {
-  men
-  women
-  unisex
-  kids
 }
 
 enum Role {

@@ -17,10 +17,30 @@ import { useSiteImages } from "../lib/useSiteImages";
 import { useCart } from "../context/CartContext";
 
 const departments = [
-  { name: "Women", key: "department-women", image: "/img/femaletop.jpg", path: "/women" },
-  { name: "Men", key: "department-men", image: "/img/maleheromodel.jpg", path: "/men" },
-  { name: "Accessories", key: "department-accessories", image: "/img/bag1.jpg", path: "/accessories" },
-  { name: "Brands", key: "department-brands", image: "/img/heromodel.jpg", path: "/brands" },
+  {
+    name: "Women",
+    key: "department-women",
+    image: "/img/femaletop.jpg",
+    path: "/women",
+  },
+  {
+    name: "Men",
+    key: "department-men",
+    image: "/img/maleheromodel.jpg",
+    path: "/men",
+  },
+  {
+    name: "Accessories",
+    key: "department-accessories",
+    image: "/img/bag1.jpg",
+    path: "/accessories",
+  },
+  {
+    name: "Brands",
+    key: "department-brands",
+    image: "/img/heromodel.jpg",
+    path: "/brands",
+  },
 ];
 
 const Hero = () => {
@@ -76,7 +96,7 @@ const Hero = () => {
             className="uppercase tracking-[3px] text-4xl md:text-8xl font-normal mb-8 text-white"
           />
 
-          <ul className="space-y-2">
+          <ul className="space-y-2 flex flex-col items-center justify-center">
             {["Shop", "Departments", "Brands", "About Us", "Contact"].map(
               (title) => (
                 <Button

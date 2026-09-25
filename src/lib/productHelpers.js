@@ -16,3 +16,11 @@ export const getProductImages = (product, variantId) => {
     product?.variants?.[0];
   return [product?.imageUrl, ...(selected?.images || [])].filter(Boolean);
 };
+
+// The single most useful category for "more like this" queries: a
+// subcategory (it has a parent) is more specific than a bare major
+// category, so it's preferred when a product has both.
+export const getLeafCategory = (product) => {
+  const categories = product?.categories || [];
+  return categories.find((category) => category.parentId) || categories[0] || null;
+};

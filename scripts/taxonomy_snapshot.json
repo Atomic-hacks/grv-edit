@@ -1,0 +1,988 @@
+{
+  "categories": [
+    {
+      "id": "footwear",
+      "name": "Footwear"
+    },
+    {
+      "id": "accessories",
+      "name": "Accessories"
+    },
+    {
+      "id": "athletics",
+      "name": "Athletics"
+    },
+    {
+      "id": "apparel",
+      "name": "Apparel"
+    }
+  ],
+  "subcategories": [
+    {
+      "id": "cmtrtyj700001q1sx7tqd26v4",
+      "name": "Shorts",
+      "slug": "shorts",
+      "categoryId": "apparel"
+    },
+    {
+      "id": "cmtrtyjrh0003q1sx7z1yzpm7",
+      "name": "Jackets",
+      "slug": "jackets",
+      "categoryId": "apparel"
+    },
+    {
+      "id": "cmtrtykbg0005q1sxdovxglo9",
+      "name": "Sneakers",
+      "slug": "sneakers",
+      "categoryId": "footwear"
+    },
+    {
+      "id": "cmtrtykvd0007q1sx257krdj3",
+      "name": "Boots",
+      "slug": "boots",
+      "categoryId": "footwear"
+    },
+    {
+      "id": "cmtrtylfb0009q1sx0q2mwllx",
+      "name": "Tops",
+      "slug": "tops",
+      "categoryId": "apparel"
+    },
+    {
+      "id": "cmtrtylz7000bq1sxa63i0t5a",
+      "name": "Dresses",
+      "slug": "dresses",
+      "categoryId": "apparel"
+    },
+    {
+      "id": "cmtrtymj2000dq1sxijqaita3",
+      "name": "Coats",
+      "slug": "coats",
+      "categoryId": "apparel"
+    },
+    {
+      "id": "cmtrtyn2x000fq1sxx3d6e23r",
+      "name": "Totes",
+      "slug": "totes",
+      "categoryId": "accessories"
+    },
+    {
+      "id": "cmtrtynmz000hq1sxtwpt3ff3",
+      "name": "Clutches",
+      "slug": "clutches",
+      "categoryId": "accessories"
+    },
+    {
+      "id": "cmtrtyo6v000jq1sxrzhsqh30",
+      "name": "Crossbody",
+      "slug": "crossbody",
+      "categoryId": "accessories"
+    }
+  ],
+  "styleTags": [
+    {
+      "id": "footwear-sneakers",
+      "name": "Sneakers",
+      "categoryId": "footwear"
+    },
+    {
+      "id": "footwear-boots",
+      "name": "Boots",
+      "categoryId": "footwear"
+    },
+    {
+      "id": "footwear-sandals",
+      "name": "Sandals",
+      "categoryId": "footwear"
+    },
+    {
+      "id": "footwear-formal",
+      "name": "Formal",
+      "categoryId": "footwear"
+    },
+    {
+      "id": "footwear-athletic",
+      "name": "Athletic",
+      "categoryId": "footwear"
+    },
+    {
+      "id": "accessories-wedding",
+      "name": "Wedding",
+      "categoryId": "accessories"
+    },
+    {
+      "id": "accessories-casual",
+      "name": "Casual",
+      "categoryId": "accessories"
+    },
+    {
+      "id": "accessories-formal",
+      "name": "Formal",
+      "categoryId": "accessories"
+    },
+    {
+      "id": "accessories-everyday",
+      "name": "Everyday",
+      "categoryId": "accessories"
+    },
+    {
+      "id": "athletics-football",
+      "name": "Football",
+      "categoryId": "athletics"
+    },
+    {
+      "id": "athletics-running",
+      "name": "Running",
+      "categoryId": "athletics"
+    },
+    {
+      "id": "athletics-training",
+      "name": "Training",
+      "categoryId": "athletics"
+    },
+    {
+      "id": "athletics-casual",
+      "name": "Casual",
+      "categoryId": "athletics"
+    },
+    {
+      "id": "apparel-formal",
+      "name": "Formal",
+      "categoryId": "apparel"
+    },
+    {
+      "id": "apparel-casual",
+      "name": "Casual",
+      "categoryId": "apparel"
+    },
+    {
+      "id": "apparel-outerwear",
+      "name": "Outerwear",
+      "categoryId": "apparel"
+    }
+  ],
+  "products": [
+    {
+      "id": "prd-013",
+      "name": "Soft Form",
+      "gender": "women",
+      "categoryId": "apparel",
+      "subcategoryId": "cmtrtylfb0009q1sx0q2mwllx",
+      "subcategory": "Tops",
+      "isNew": true
+    },
+    {
+      "id": "07ff6c0e-d676-481e-ab28-2032c337d17e",
+      "name": "classical shirt",
+      "gender": "men",
+      "categoryId": "apparel",
+      "subcategoryId": "cmtrtylz7000bq1sxa63i0t5a",
+      "subcategory": "Dresses",
+      "isNew": false
+    },
+    {
+      "id": "prd-001",
+      "name": "Classic Shorts",
+      "gender": "men",
+      "categoryId": "apparel",
+      "subcategoryId": "cmtrtyj700001q1sx7tqd26v4",
+      "subcategory": "Shorts",
+      "isNew": false
+    },
+    {
+      "id": "ae7354e8-3a6c-4d40-b6e5-efd49498c448",
+      "name": "Silk Shirt",
+      "gender": "men",
+      "categoryId": "apparel",
+      "subcategoryId": "cmtrtylfb0009q1sx0q2mwllx",
+      "subcategory": "Tops",
+      "isNew": false
+    },
+    {
+      "id": "prd-002",
+      "name": "Cozy Sweatshirt",
+      "gender": "unisex",
+      "categoryId": "apparel",
+      "subcategoryId": null,
+      "subcategory": "Sweatshirts",
+      "isNew": true
+    },
+    {
+      "id": "prd-003",
+      "name": "Denim Jacket",
+      "gender": "unisex",
+      "categoryId": "apparel",
+      "subcategoryId": "cmtrtyjrh0003q1sx7z1yzpm7",
+      "subcategory": "Jackets",
+      "isNew": true
+    },
+    {
+      "id": "prd-004",
+      "name": "Casual Hoodie",
+      "gender": "unisex",
+      "categoryId": "apparel",
+      "subcategoryId": null,
+      "subcategory": "Hoodies",
+      "isNew": true
+    },
+    {
+      "id": "prd-005",
+      "name": "Vintage Tee",
+      "gender": "unisex",
+      "categoryId": "apparel",
+      "subcategoryId": null,
+      "subcategory": "T-Shirts",
+      "isNew": false
+    },
+    {
+      "id": "prd-006",
+      "name": "Summer Shorts",
+      "gender": "women",
+      "categoryId": "apparel",
+      "subcategoryId": "cmtrtyj700001q1sx7tqd26v4",
+      "subcategory": "Shorts",
+      "isNew": false
+    },
+    {
+      "id": "prd-007",
+      "name": "Street Jacket",
+      "gender": "men",
+      "categoryId": "apparel",
+      "subcategoryId": "cmtrtyjrh0003q1sx7z1yzpm7",
+      "subcategory": "Jackets",
+      "isNew": false
+    },
+    {
+      "id": "prd-008",
+      "name": "Crewneck Sweatshirt",
+      "gender": "unisex",
+      "categoryId": "apparel",
+      "subcategoryId": null,
+      "subcategory": "Sweatshirts",
+      "isNew": false
+    },
+    {
+      "id": "prd-009",
+      "name": "Runner One",
+      "gender": "men",
+      "categoryId": "footwear",
+      "subcategoryId": "cmtrtykbg0005q1sxdovxglo9",
+      "subcategory": "Sneakers",
+      "isNew": true
+    },
+    {
+      "id": "prd-010",
+      "name": "Court Four",
+      "gender": "women",
+      "categoryId": "footwear",
+      "subcategoryId": "cmtrtykbg0005q1sxdovxglo9",
+      "subcategory": "Sneakers",
+      "isNew": false
+    },
+    {
+      "id": "prd-011",
+      "name": "Everyday Trainer",
+      "gender": "unisex",
+      "categoryId": "footwear",
+      "subcategoryId": "cmtrtykbg0005q1sxdovxglo9",
+      "subcategory": "Sneakers",
+      "isNew": false
+    },
+    {
+      "id": "prd-012",
+      "name": "Trail Seven",
+      "gender": "men",
+      "categoryId": "footwear",
+      "subcategoryId": "cmtrtykvd0007q1sx257krdj3",
+      "subcategory": "Boots",
+      "isNew": false
+    },
+    {
+      "id": "prd-014",
+      "name": "Studio Dress",
+      "gender": "women",
+      "categoryId": "apparel",
+      "subcategoryId": "cmtrtylz7000bq1sxa63i0t5a",
+      "subcategory": "Dresses",
+      "isNew": false
+    },
+    {
+      "id": "prd-015",
+      "name": "City Coat",
+      "gender": "women",
+      "categoryId": "apparel",
+      "subcategoryId": "cmtrtymj2000dq1sxijqaita3",
+      "subcategory": "Coats",
+      "isNew": false
+    },
+    {
+      "id": "prd-016",
+      "name": "Everyday Tote",
+      "gender": "women",
+      "categoryId": "accessories",
+      "subcategoryId": "cmtrtyn2x000fq1sxx3d6e23r",
+      "subcategory": "Totes",
+      "isNew": true
+    },
+    {
+      "id": "prd-017",
+      "name": "Crossbody Mini",
+      "gender": "unisex",
+      "categoryId": "accessories",
+      "subcategoryId": "cmtrtyo6v000jq1sxrzhsqh30",
+      "subcategory": "Crossbody",
+      "isNew": false
+    },
+    {
+      "id": "prd-018",
+      "name": "Clutch Three",
+      "gender": "women",
+      "categoryId": "accessories",
+      "subcategoryId": "cmtrtynmz000hq1sxtwpt3ff3",
+      "subcategory": "Clutches",
+      "isNew": false
+    },
+    {
+      "id": "prd-019",
+      "name": "Training Jersey",
+      "gender": "unisex",
+      "categoryId": "athletics",
+      "subcategoryId": null,
+      "subcategory": "Jerseys",
+      "isNew": true
+    },
+    {
+      "id": "prd-020",
+      "name": "Training Short",
+      "gender": "unisex",
+      "categoryId": "athletics",
+      "subcategoryId": null,
+      "subcategory": "Activewear",
+      "isNew": true
+    },
+    {
+      "id": "prd-021",
+      "name": "Match Boot",
+      "gender": "unisex",
+      "categoryId": "athletics",
+      "subcategoryId": "cmtrtykvd0007q1sx257krdj3",
+      "subcategory": "Football Boots",
+      "isNew": false
+    },
+    {
+      "id": "prd-022",
+      "name": "Track Jacket",
+      "gender": "unisex",
+      "categoryId": "athletics",
+      "subcategoryId": "cmtrtyjrh0003q1sx7z1yzpm7",
+      "subcategory": "Track Jackets",
+      "isNew": false
+    }
+  ],
+  "productStyleTagLinks": [
+    {
+      "productId": "apparel-casual",
+      "styleTagId": "prd-001"
+    },
+    {
+      "productId": "apparel-casual",
+      "styleTagId": "prd-002"
+    },
+    {
+      "productId": "apparel-outerwear",
+      "styleTagId": "prd-003"
+    },
+    {
+      "productId": "apparel-casual",
+      "styleTagId": "prd-004"
+    },
+    {
+      "productId": "apparel-casual",
+      "styleTagId": "prd-005"
+    },
+    {
+      "productId": "apparel-casual",
+      "styleTagId": "prd-006"
+    },
+    {
+      "productId": "apparel-outerwear",
+      "styleTagId": "prd-007"
+    },
+    {
+      "productId": "apparel-casual",
+      "styleTagId": "prd-008"
+    },
+    {
+      "productId": "footwear-athletic",
+      "styleTagId": "prd-009"
+    },
+    {
+      "productId": "footwear-sneakers",
+      "styleTagId": "prd-010"
+    },
+    {
+      "productId": "footwear-sneakers",
+      "styleTagId": "prd-011"
+    },
+    {
+      "productId": "footwear-boots",
+      "styleTagId": "prd-012"
+    },
+    {
+      "productId": "apparel-casual",
+      "styleTagId": "prd-013"
+    },
+    {
+      "productId": "apparel-formal",
+      "styleTagId": "prd-014"
+    },
+    {
+      "productId": "apparel-outerwear",
+      "styleTagId": "prd-015"
+    },
+    {
+      "productId": "accessories-everyday",
+      "styleTagId": "prd-016"
+    },
+    {
+      "productId": "accessories-casual",
+      "styleTagId": "prd-017"
+    },
+    {
+      "productId": "accessories-formal",
+      "styleTagId": "prd-018"
+    },
+    {
+      "productId": "athletics-training",
+      "styleTagId": "prd-019"
+    },
+    {
+      "productId": "athletics-training",
+      "styleTagId": "prd-020"
+    },
+    {
+      "productId": "athletics-football",
+      "styleTagId": "prd-021"
+    },
+    {
+      "productId": "athletics-training",
+      "styleTagId": "prd-022"
+    }
+  ],
+  "filterTypes": [
+    {
+      "id": "cmtt8esvy0000q1xbmtlx22qo",
+      "name": "Mood",
+      "slug": "mood"
+    },
+    {
+      "id": "cmtt8esvz0001q1xb40j6uwvg",
+      "name": "Occasion",
+      "slug": "occasion"
+    },
+    {
+      "id": "cmtt8esvz0002q1xb2rdxlpfw",
+      "name": "Weather",
+      "slug": "weather"
+    },
+    {
+      "id": "cmtt8esvz0003q1xbxtx8176k",
+      "name": "Style",
+      "slug": "style"
+    }
+  ],
+  "tags": [
+    {
+      "id": "cmtru149e0000q1tiejbkdsmq",
+      "name": "Casual",
+      "slug": "casual",
+      "filterTypeId": "cmtt8esvy0000q1xbmtlx22qo"
+    },
+    {
+      "id": "cmtru14uk0001q1tif0vjswaf",
+      "name": "Formal",
+      "slug": "formal",
+      "filterTypeId": "cmtt8esvy0000q1xbmtlx22qo"
+    },
+    {
+      "id": "cmtru15fk0002q1timrpex1cu",
+      "name": "Sporty",
+      "slug": "sporty",
+      "filterTypeId": "cmtt8esvy0000q1xbmtlx22qo"
+    },
+    {
+      "id": "cmtru160k0003q1tih88q5vhb",
+      "name": "Elegant",
+      "slug": "elegant",
+      "filterTypeId": "cmtt8esvy0000q1xbmtlx22qo"
+    },
+    {
+      "id": "cmtru16lq0004q1ti9hiohnsj",
+      "name": "Everyday",
+      "slug": "everyday",
+      "filterTypeId": "cmtt8esvz0001q1xb40j6uwvg"
+    },
+    {
+      "id": "cmtru176u0005q1tidgwphzsp",
+      "name": "Weekend",
+      "slug": "weekend",
+      "filterTypeId": "cmtt8esvz0001q1xb40j6uwvg"
+    },
+    {
+      "id": "cmtru17ru0006q1tio15ib3li",
+      "name": "Party",
+      "slug": "party",
+      "filterTypeId": "cmtt8esvz0001q1xb40j6uwvg"
+    },
+    {
+      "id": "cmtru18cv0007q1tibxqjhz3i",
+      "name": "Work",
+      "slug": "work",
+      "filterTypeId": "cmtt8esvz0001q1xb40j6uwvg"
+    },
+    {
+      "id": "cmtru18xv0008q1tiwv88all3",
+      "name": "Hot",
+      "slug": "hot",
+      "filterTypeId": "cmtt8esvz0002q1xb2rdxlpfw"
+    },
+    {
+      "id": "cmtru19j80009q1tiik4pzizo",
+      "name": "Cold",
+      "slug": "cold",
+      "filterTypeId": "cmtt8esvz0002q1xb2rdxlpfw"
+    },
+    {
+      "id": "cmtru1a4d000aq1ti3lba94lf",
+      "name": "Rainy",
+      "slug": "rainy",
+      "filterTypeId": "cmtt8esvz0002q1xb2rdxlpfw"
+    },
+    {
+      "id": "cmtru1apd000bq1tiqk7cwl8i",
+      "name": "Mild",
+      "slug": "mild",
+      "filterTypeId": "cmtt8esvz0002q1xb2rdxlpfw"
+    },
+    {
+      "id": "cmtru1bae000cq1tica8th07z",
+      "name": "Minimalist",
+      "slug": "minimalist",
+      "filterTypeId": "cmtt8esvz0003q1xbxtx8176k"
+    },
+    {
+      "id": "cmtru1bvg000dq1titrwy9vc1",
+      "name": "Streetwear",
+      "slug": "streetwear",
+      "filterTypeId": "cmtt8esvz0003q1xbxtx8176k"
+    },
+    {
+      "id": "cmtru1cgi000eq1ti03lmao1x",
+      "name": "Classic",
+      "slug": "classic",
+      "filterTypeId": "cmtt8esvz0003q1xbxtx8176k"
+    },
+    {
+      "id": "cmtru1d1l000fq1tirmmxygo8",
+      "name": "Trendy",
+      "slug": "trendy",
+      "filterTypeId": "cmtt8esvz0003q1xbxtx8176k"
+    },
+    {
+      "id": "cmtrvx5nv0000q1wouo0ia5kn",
+      "name": "Cozy",
+      "slug": "cozy",
+      "filterTypeId": "cmtt8esvy0000q1xbmtlx22qo"
+    }
+  ],
+  "productTagLinks": [
+    {
+      "productId": "prd-001",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-001",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-001",
+      "tagId": "cmtru18xv0008q1tiwv88all3"
+    },
+    {
+      "productId": "prd-001",
+      "tagId": "cmtru1bae000cq1tica8th07z"
+    },
+    {
+      "productId": "prd-002",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-002",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-002",
+      "tagId": "cmtru19j80009q1tiik4pzizo"
+    },
+    {
+      "productId": "prd-002",
+      "tagId": "cmtru1bae000cq1tica8th07z"
+    },
+    {
+      "productId": "prd-003",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-003",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-003",
+      "tagId": "cmtru1apd000bq1tiqk7cwl8i"
+    },
+    {
+      "productId": "prd-003",
+      "tagId": "cmtru1d1l000fq1tirmmxygo8"
+    },
+    {
+      "productId": "prd-004",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-004",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-004",
+      "tagId": "cmtru19j80009q1tiik4pzizo"
+    },
+    {
+      "productId": "prd-004",
+      "tagId": "cmtru1bvg000dq1titrwy9vc1"
+    },
+    {
+      "productId": "prd-005",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-005",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-005",
+      "tagId": "cmtru18xv0008q1tiwv88all3"
+    },
+    {
+      "productId": "prd-005",
+      "tagId": "cmtru1d1l000fq1tirmmxygo8"
+    },
+    {
+      "productId": "prd-006",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-006",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-006",
+      "tagId": "cmtru18xv0008q1tiwv88all3"
+    },
+    {
+      "productId": "prd-006",
+      "tagId": "cmtru1d1l000fq1tirmmxygo8"
+    },
+    {
+      "productId": "prd-007",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-007",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-007",
+      "tagId": "cmtru1apd000bq1tiqk7cwl8i"
+    },
+    {
+      "productId": "prd-007",
+      "tagId": "cmtru1bvg000dq1titrwy9vc1"
+    },
+    {
+      "productId": "prd-008",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-008",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-008",
+      "tagId": "cmtru19j80009q1tiik4pzizo"
+    },
+    {
+      "productId": "prd-008",
+      "tagId": "cmtru1bae000cq1tica8th07z"
+    },
+    {
+      "productId": "prd-009",
+      "tagId": "cmtru15fk0002q1timrpex1cu"
+    },
+    {
+      "productId": "prd-009",
+      "tagId": "cmtru176u0005q1tidgwphzsp"
+    },
+    {
+      "productId": "prd-009",
+      "tagId": "cmtru1apd000bq1tiqk7cwl8i"
+    },
+    {
+      "productId": "prd-009",
+      "tagId": "cmtru1bae000cq1tica8th07z"
+    },
+    {
+      "productId": "prd-010",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-010",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-010",
+      "tagId": "cmtru1apd000bq1tiqk7cwl8i"
+    },
+    {
+      "productId": "prd-010",
+      "tagId": "cmtru1d1l000fq1tirmmxygo8"
+    },
+    {
+      "productId": "prd-011",
+      "tagId": "cmtru15fk0002q1timrpex1cu"
+    },
+    {
+      "productId": "prd-011",
+      "tagId": "cmtru176u0005q1tidgwphzsp"
+    },
+    {
+      "productId": "prd-011",
+      "tagId": "cmtru1a4d000aq1ti3lba94lf"
+    },
+    {
+      "productId": "prd-011",
+      "tagId": "cmtru1bae000cq1tica8th07z"
+    },
+    {
+      "productId": "prd-012",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-012",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-012",
+      "tagId": "cmtru19j80009q1tiik4pzizo"
+    },
+    {
+      "productId": "prd-012",
+      "tagId": "cmtru1cgi000eq1ti03lmao1x"
+    },
+    {
+      "productId": "prd-013",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-013",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-013",
+      "tagId": "cmtru1apd000bq1tiqk7cwl8i"
+    },
+    {
+      "productId": "prd-013",
+      "tagId": "cmtru1bae000cq1tica8th07z"
+    },
+    {
+      "productId": "prd-014",
+      "tagId": "cmtru160k0003q1tih88q5vhb"
+    },
+    {
+      "productId": "prd-014",
+      "tagId": "cmtru17ru0006q1tio15ib3li"
+    },
+    {
+      "productId": "prd-014",
+      "tagId": "cmtru1apd000bq1tiqk7cwl8i"
+    },
+    {
+      "productId": "prd-014",
+      "tagId": "cmtru1cgi000eq1ti03lmao1x"
+    },
+    {
+      "productId": "prd-015",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-015",
+      "tagId": "cmtru18cv0007q1tibxqjhz3i"
+    },
+    {
+      "productId": "prd-015",
+      "tagId": "cmtru19j80009q1tiik4pzizo"
+    },
+    {
+      "productId": "prd-015",
+      "tagId": "cmtru1cgi000eq1ti03lmao1x"
+    },
+    {
+      "productId": "prd-016",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-016",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-016",
+      "tagId": "cmtru1apd000bq1tiqk7cwl8i"
+    },
+    {
+      "productId": "prd-016",
+      "tagId": "cmtru1bae000cq1tica8th07z"
+    },
+    {
+      "productId": "prd-017",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "prd-017",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "prd-017",
+      "tagId": "cmtru1apd000bq1tiqk7cwl8i"
+    },
+    {
+      "productId": "prd-017",
+      "tagId": "cmtru1bvg000dq1titrwy9vc1"
+    },
+    {
+      "productId": "prd-018",
+      "tagId": "cmtru160k0003q1tih88q5vhb"
+    },
+    {
+      "productId": "prd-018",
+      "tagId": "cmtru17ru0006q1tio15ib3li"
+    },
+    {
+      "productId": "prd-018",
+      "tagId": "cmtru1apd000bq1tiqk7cwl8i"
+    },
+    {
+      "productId": "prd-018",
+      "tagId": "cmtru1bae000cq1tica8th07z"
+    },
+    {
+      "productId": "prd-019",
+      "tagId": "cmtru15fk0002q1timrpex1cu"
+    },
+    {
+      "productId": "prd-019",
+      "tagId": "cmtru176u0005q1tidgwphzsp"
+    },
+    {
+      "productId": "prd-019",
+      "tagId": "cmtru1a4d000aq1ti3lba94lf"
+    },
+    {
+      "productId": "prd-019",
+      "tagId": "cmtru1bvg000dq1titrwy9vc1"
+    },
+    {
+      "productId": "prd-020",
+      "tagId": "cmtru15fk0002q1timrpex1cu"
+    },
+    {
+      "productId": "prd-020",
+      "tagId": "cmtru176u0005q1tidgwphzsp"
+    },
+    {
+      "productId": "prd-020",
+      "tagId": "cmtru18xv0008q1tiwv88all3"
+    },
+    {
+      "productId": "prd-020",
+      "tagId": "cmtru1d1l000fq1tirmmxygo8"
+    },
+    {
+      "productId": "prd-021",
+      "tagId": "cmtru15fk0002q1timrpex1cu"
+    },
+    {
+      "productId": "prd-021",
+      "tagId": "cmtru176u0005q1tidgwphzsp"
+    },
+    {
+      "productId": "prd-021",
+      "tagId": "cmtru19j80009q1tiik4pzizo"
+    },
+    {
+      "productId": "prd-021",
+      "tagId": "cmtru1cgi000eq1ti03lmao1x"
+    },
+    {
+      "productId": "prd-022",
+      "tagId": "cmtru15fk0002q1timrpex1cu"
+    },
+    {
+      "productId": "prd-022",
+      "tagId": "cmtru176u0005q1tidgwphzsp"
+    },
+    {
+      "productId": "prd-022",
+      "tagId": "cmtru1a4d000aq1ti3lba94lf"
+    },
+    {
+      "productId": "prd-022",
+      "tagId": "cmtru1bvg000dq1titrwy9vc1"
+    },
+    {
+      "productId": "ae7354e8-3a6c-4d40-b6e5-efd49498c448",
+      "tagId": "cmtru160k0003q1tih88q5vhb"
+    },
+    {
+      "productId": "ae7354e8-3a6c-4d40-b6e5-efd49498c448",
+      "tagId": "cmtru18cv0007q1tibxqjhz3i"
+    },
+    {
+      "productId": "ae7354e8-3a6c-4d40-b6e5-efd49498c448",
+      "tagId": "cmtru176u0005q1tidgwphzsp"
+    },
+    {
+      "productId": "ae7354e8-3a6c-4d40-b6e5-efd49498c448",
+      "tagId": "cmtru1cgi000eq1ti03lmao1x"
+    },
+    {
+      "productId": "ae7354e8-3a6c-4d40-b6e5-efd49498c448",
+      "tagId": "cmtru1apd000bq1tiqk7cwl8i"
+    },
+    {
+      "productId": "07ff6c0e-d676-481e-ab28-2032c337d17e",
+      "tagId": "cmtru149e0000q1tiejbkdsmq"
+    },
+    {
+      "productId": "07ff6c0e-d676-481e-ab28-2032c337d17e",
+      "tagId": "cmtru16lq0004q1ti9hiohnsj"
+    },
+    {
+      "productId": "07ff6c0e-d676-481e-ab28-2032c337d17e",
+      "tagId": "cmtru18xv0008q1tiwv88all3"
+    },
+    {
+      "productId": "07ff6c0e-d676-481e-ab28-2032c337d17e",
+      "tagId": "cmtru1bae000cq1tica8th07z"
+    }
+  ]
+}

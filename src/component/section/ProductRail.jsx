@@ -59,7 +59,6 @@ const ProductRail = ({
                   title={product.name}
                   product={product}
                   category={product.subcategory}
-                  details={product.gender}
                   badge={product.isNew ? "NEW" : undefined}
                   onQuickAdd={
                     onQuickAdd ? () => onQuickAdd(product, images) : undefined

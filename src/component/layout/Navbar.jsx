@@ -7,13 +7,7 @@ import { searchProducts, fetchCategories } from "../../lib/apiClient";
 import { useQuery } from "@tanstack/react-query";
 import { getProductImages } from "../../lib/productHelpers";
 import LoadingImage from "../ui/LoadingImage";
-import {
-  getNavigationPath,
-  getNavigationRootPath,
-  getNavigationSectionsForDepartment,
-  mergeSectionsWithCategories,
-  navigationDepartments,
-} from "../../data/navigation";
+import { getNavTree } from "../../lib/categoryTree";
 
 const focusableSelector =
   "a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex='-1'])";
@@ -74,6 +68,65 @@ const Chevron = ({ open, direction = "down" }) => (
     <path d="M2.5 4.5L6 8l3.5-3.5" />
   </svg>
 );
+
+// A subcategory can itself have children (Accessories > Jewelry > Watches),
+// so each mobile row can expand into more rows the same way, as deep as
+// the tree goes — this renders itself recursively rather than assuming a
+// fixed depth.
+const MobileNavNode = ({ node, depth, openIds, toggleOpen, onNavigate }) => {
+  const hasChildren = node.children?.length > 0;
+  const isOpen = openIds.has(node.id);
+  return (
+    <div>
+      <div className="flex items-center justify-between py-2" style={{ paddingLeft: (depth - 1) * 14 }}>
+        <Link
+          to={node.href}
+          onClick={onNavigate}
+          className="text-sm text-gray-600 transition-colors hover:text-black"
+        >
+          {node.name}
+        </Link>
+        {hasChildren && (
+          <button
+            type="button"
+            onClick={() => toggleOpen(node.id)}
+            aria-expanded={isOpen}
+            aria-label={`Toggle ${node.name}`}
+            className="flex h-7 w-7 items-center justify-center text-black"
+          >
+            <Chevron open={isOpen} />
+          </button>
+        )}
+      </div>
+      {hasChildren && (
+        <AnimatePresence initial={false}>
+          {isOpen && (
+            <Motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="flex flex-col gap-1 pb-1">
+                {node.children.map((child) => (
+                  <MobileNavNode
+                    key={child.href}
+                    node={child}
+                    depth={depth + 1}
+                    openIds={openIds}
+                    toggleOpen={toggleOpen}
+                    onNavigate={onNavigate}
+                  />
+                ))}
+              </div>
+            </Motion.div>
+          )}
+        </AnimatePresence>
+      )}
+    </div>
+  );
+};
 
 const SearchPanel = ({
   searchQuery,
@@ -176,7 +229,7 @@ const Navbar = () => {
   const [openMegaMenu, setOpenMegaMenu] = useState(null);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [openMobileDept, setOpenMobileDept] = useState(null);
-  const [openMobileSection, setOpenMobileSection] = useState(null);
+  const [openMobileNodeIds, setOpenMobileNodeIds] = useState(new Set());
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -206,25 +259,35 @@ const Navbar = () => {
     ["Details and security", "/account?section=details"],
   ];
 
-  // Live taxonomy, so menus reflect what an admin has actually published.
-  // Falls back to the curated lists while loading or if the request fails.
-  const { data: navCategories } = useQuery({
+  // Fully data-driven: every top-level nav item is a Category row flagged
+  // showInNav, in the order an admin set. Adding "Jewelry" to the menu is
+  // ticking a box in the admin, not a code change here.
+  const { data: navCategoriesRaw } = useQuery({
     queryKey: ["categories"],
     queryFn: () => fetchCategories(),
     staleTime: 5 * 60 * 1000,
   });
+  const navTree = getNavTree(navCategoriesRaw || []);
+
+  // Stamps a href onto every node of a category subtree by walking down
+  // from its parent's path — the tree from buildCategoryTree already
+  // nests children arbitrarily deep, this just gives each node its URL.
+  const withHref = (node, parentPath) => {
+    const href = `${parentPath}/${node.slug}`;
+    return { ...node, href, children: node.children.map((child) => withHref(child, href)) };
+  };
 
   const navLinks = [
-    ...navigationDepartments.map((department) => ({
-      name: department.label || department.name,
-      departmentName: department.name,
-      href: getNavigationRootPath(department.name),
-      sections: mergeSectionsWithCategories(
-        getNavigationSectionsForDepartment(department.name),
-        navCategories,
-      ),
-      megaMenu: true,
-    })),
+    ...navTree.map((major) => {
+      const node = withHref(major, "");
+      return {
+        id: node.id,
+        name: node.name,
+        href: node.href,
+        megaMenu: node.children.length > 0,
+        children: node.children,
+      };
+    }),
     { name: "Shop By", href: "/shop-by" },
     { name: "Brands", href: "/brands" },
   ];
@@ -274,7 +337,7 @@ const Navbar = () => {
   useEffect(() => {
     if (!isMobileOpen) {
       setOpenMobileDept(null);
-      setOpenMobileSection(null);
+      setOpenMobileNodeIds(new Set());
       return;
     }
 
@@ -320,12 +383,15 @@ const Navbar = () => {
 
   const toggleMobileDept = (name) => {
     setOpenMobileDept((current) => (current === name ? null : name));
-    setOpenMobileSection(null);
   };
 
-  const toggleMobileSection = (name) => {
-    setOpenMobileSection((current) => (current === name ? null : name));
-  };
+  const toggleMobileNode = (id) =>
+    setOpenMobileNodeIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return (
     <nav className="sticky top-0 z-40 w-full border-b border-[var(--line)] bg-white/98">
@@ -359,35 +425,48 @@ const Navbar = () => {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
                       transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                      className="absolute left-0 top-full z-20 w-max max-w-[min(56rem,90vw)] pt-3"
+                      className="absolute left-0 top-full z-20 min-w-56 pt-3"
                     >
-                      <div className="grid max-h-[70vh] grid-cols-3 gap-x-10 gap-y-8 overflow-y-auto border border-[var(--line)] bg-white p-7 shadow-[0_18px_40px_rgba(0,0,0,0.08)]">
-                        {link.sections.map((section) => (
-                          <div key={section.name}>
+                      {/* Two nested levels shown here (Accessories, then Jewelry/
+                          Watches under it) — anything deeper than that is still
+                          fully reachable via the category page and the Browse
+                          drawer, just not surfaced in this hover panel. One
+                          column per subcategory (so 2 subcategories really is
+                          a 2-column panel), capped at 4 wide before wrapping
+                          to a second row instead of stretching endlessly. */}
+                      <div
+                        className="max-h-[70vh] overflow-y-auto border border-[var(--line)] bg-white p-3 shadow-[0_18px_40px_rgba(0,0,0,0.08)]"
+                        style={
+                          link.children.some((sub) => sub.children.length > 0)
+                            ? {
+                                display: "grid",
+                                gridTemplateColumns: `repeat(${Math.min(link.children.length, 4)}, minmax(170px, 1fr))`,
+                                columnGap: "1.5rem",
+                              }
+                            : { minWidth: "14rem" }
+                        }
+                      >
+                        {link.children.map((sub) => (
+                          <div key={sub.href} className="min-w-0">
                             <Link
-                              to={getNavigationPath(
-                                link.departmentName || link.name,
-                                section.name,
-                              )}
-                              className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-900)] transition-colors hover:text-[var(--color-accent-orange)]"
+                              to={sub.href}
+                              className="block whitespace-nowrap px-3 py-2.5 text-[13px] font-semibold text-[var(--ink-900)] transition-colors hover:text-[var(--ink-500)]"
                             >
-                              {section.name}
+                              {sub.name}
                             </Link>
-                            <div className="mt-3 space-y-1.5">
-                              {section.styles.map((style) => (
-                                <Link
-                                  key={style}
-                                  to={getNavigationPath(
-                                    link.departmentName || link.name,
-                                    section.name,
-                                    style,
-                                  )}
-                                  className="block text-[13px] leading-6 text-[var(--ink-500)] transition-colors hover:text-[var(--ink-900)]"
-                                >
-                                  {style}
-                                </Link>
-                              ))}
-                            </div>
+                            {sub.children.length > 0 && (
+                              <div className="pb-2">
+                                {sub.children.map((grandchild) => (
+                                  <Link
+                                    key={grandchild.href}
+                                    to={grandchild.href}
+                                    className="block whitespace-nowrap px-3 py-1.5 text-[12px] text-[var(--ink-500)] transition-colors hover:text-[var(--ink-900)]"
+                                  >
+                                    {grandchild.name}
+                                  </Link>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -751,78 +830,17 @@ const Navbar = () => {
                             }}
                             className="overflow-hidden"
                           >
-                            <div className="pb-3 pl-3">
-                              {link.sections.map((section) => {
-                                const sectionKey = `${link.name}-${section.name}`;
-                                const isSectionOpen =
-                                  openMobileSection === sectionKey;
-
-                                return (
-                                  <div key={section.name} className="py-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <Link
-                                        to={getNavigationPath(
-                                          link.departmentName || link.name,
-                                          section.name,
-                                        )}
-                                        onClick={() => setIsMobileOpen(false)}
-                                        className="py-1.5 text-sm font-semibold text-black"
-                                      >
-                                        {section.name}
-                                      </Link>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          toggleMobileSection(sectionKey)
-                                        }
-                                        aria-expanded={isSectionOpen}
-                                        aria-label={`Toggle ${section.name} styles`}
-                                        className="flex h-7 w-7 items-center justify-center text-gray-500"
-                                      >
-                                        <Chevron open={isSectionOpen} />
-                                      </button>
-                                    </div>
-
-                                    <AnimatePresence initial={false}>
-                                      {isSectionOpen && (
-                                        <Motion.div
-                                          initial={{ height: 0, opacity: 0 }}
-                                          animate={{
-                                            height: "auto",
-                                            opacity: 1,
-                                          }}
-                                          exit={{ height: 0, opacity: 0 }}
-                                          transition={{
-                                            duration: 0.25,
-                                            ease: [0.22, 1, 0.36, 1],
-                                          }}
-                                          className="overflow-hidden"
-                                        >
-                                          <div className="flex flex-col gap-2 py-2 pl-3">
-                                            {section.styles.map((style) => (
-                                              <Link
-                                                key={style}
-                                                to={getNavigationPath(
-                                                  link.departmentName ||
-                                                    link.name,
-                                                  section.name,
-                                                  style,
-                                                )}
-                                                onClick={() =>
-                                                  setIsMobileOpen(false)
-                                                }
-                                                className="text-sm text-gray-600 transition-colors hover:text-black"
-                                              >
-                                                {style}
-                                              </Link>
-                                            ))}
-                                          </div>
-                                        </Motion.div>
-                                      )}
-                                    </AnimatePresence>
-                                  </div>
-                                );
-                              })}
+                            <div className="flex flex-col gap-1 pb-3 pl-3">
+                              {link.children.map((child) => (
+                                <MobileNavNode
+                                  key={child.href}
+                                  node={child}
+                                  depth={1}
+                                  openIds={openMobileNodeIds}
+                                  toggleOpen={toggleMobileNode}
+                                  onNavigate={() => setIsMobileOpen(false)}
+                                />
+                              ))}
                             </div>
                           </Motion.div>
                         )}

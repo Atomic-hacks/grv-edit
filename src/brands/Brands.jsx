@@ -1,19 +1,59 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
-import LoadingImage from "../component/ui/LoadingImage";
 import { BrandGridSkeleton } from "../component/ui/LoadingSkeletons";
 import ErrorState from "../component/ui/ErrorState";
+import WishlistButton from "../component/ui/WishlistButton";
 import { fetchBrands } from "../lib/apiClient";
 import { useAsync } from "../lib/useAsync";
 
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+const letterOf = (name) => {
+  const first = (name || "").trim().charAt(0).toUpperCase();
+  return /[A-Z]/.test(first) ? first : "#";
+};
+
+// A directory, not a gallery — brand logos varied wildly in quality and
+// slowed the page down for a list that shoppers mostly just want to search
+// or scan alphabetically and jump straight to a label.
 const Brands = () => {
-  const {
-    data: brands,
-    loading,
-    error,
-    refetch,
-  } = useAsync(() => fetchBrands(), []);
+  const { data: brands, loading, error, refetch } = useAsync(() => fetchBrands(), []);
+  const [query, setQuery] = useState("");
+
+  const sorted = useMemo(
+    () => [...(brands || [])].sort((a, b) => a.name.localeCompare(b.name)),
+    [brands],
+  );
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sorted;
+    return sorted.filter((brand) => brand.name.toLowerCase().includes(q));
+  }, [sorted, query]);
+
+  const grouped = useMemo(() => {
+    const map = new Map();
+    for (const brand of filtered) {
+      const letter = letterOf(brand.name);
+      const list = map.get(letter) || [];
+      list.push(brand);
+      map.set(letter, list);
+    }
+    return map;
+  }, [filtered]);
+
+  const availableLetters = useMemo(() => {
+    const set = new Set();
+    for (const brand of sorted) set.add(letterOf(brand.name));
+    return set;
+  }, [sorted]);
+
+  const scrollToLetter = (letter) => {
+    document.getElementById(`brand-letter-${letter}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
 
   return (
     <div className="page-shell min-h-screen bg-white pb-24">
@@ -24,37 +64,86 @@ const Brands = () => {
         />
       </div>
 
+      <label className="block max-w-md">
+        <span className="sr-only">Search brands</span>
+        <div className="relative">
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search brands"
+            className="w-full border border-[var(--line)] px-4 py-3 text-sm outline-none transition-colors placeholder:text-[var(--ink-300)] focus:border-[var(--ink-900)]"
+          />
+        </div>
+      </label>
+
       {error ? (
         <ErrorState
+          className="mt-10"
           title="Couldn't load brands"
           message="Something went wrong on our end — your connection is fine."
           onRetry={refetch}
         />
       ) : loading ? (
-        <BrandGridSkeleton />
+        <div className="mt-10">
+          <BrandGridSkeleton />
+        </div>
+      ) : filtered.length === 0 ? (
+        <p className="meta-text mt-10">No brands match &ldquo;{query}&rdquo;.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-3 md:gap-x-4 md:gap-y-14 lg:grid-cols-4">
-          {(brands || []).map((brand) => (
-            <Link key={brand.id} to={`/brands/${brand.id}`} className="group">
-              <div className="aspect-3/4 overflow-hidden bg-[var(--surface-muted)]">
-                <LoadingImage
-                  src={brand.logo}
-                  alt={brand.name}
-                  width={800}
-                  className="h-full w-full object-cover transition-transform duration-[600ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.03]"
-                  wrapperClassName="h-full w-full"
-                />
-              </div>
-              <div className="pt-3">
-                <h2 className="text-[13px] font-semibold text-[var(--ink-900)]">
-                  {brand.name}
-                </h2>
-                <p className="mt-1 line-clamp-2 text-xs leading-snug text-[var(--ink-500)]">
-                  {brand.description}
-                </p>
-              </div>
-            </Link>
-          ))}
+        <div className="mt-10 flex gap-6 md:gap-10">
+          <div className="min-w-0 flex-1">
+            {ALPHABET.map((letter) => {
+              const letterBrands = grouped.get(letter);
+              if (!letterBrands?.length) return null;
+              return (
+                <section key={letter} id={`brand-letter-${letter}`} className="scroll-mt-24">
+                  <h2 className="sticky top-[var(--nav-h)] z-10 border-b border-[var(--ink-900)] bg-white py-2 text-sm font-semibold uppercase tracking-[0.14em] text-[var(--ink-500)]">
+                    {letter}
+                  </h2>
+                  <div className="divide-y divide-[var(--line)]">
+                    {letterBrands.map((brand) => (
+                      <div key={brand.id} className="flex items-center justify-between gap-4 py-4">
+                        <Link to={`/brands/${brand.id}`} className="group min-w-0 flex-1">
+                          <h3 className="truncate text-base font-semibold text-[var(--ink-900)] transition-colors group-hover:text-[var(--ink-500)]">
+                            {brand.name}
+                          </h3>
+                          {brand.description && (
+                            <p className="mt-1 line-clamp-1 text-xs text-[var(--ink-500)]">
+                              {brand.description}
+                            </p>
+                          )}
+                        </Link>
+                        <WishlistButton brand={brand} />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+
+          {/* A-Z quick nav — hidden on small screens where the list is short enough to just scroll. */}
+          <nav
+            aria-label="Jump to letter"
+            className="sticky top-[calc(var(--nav-h)+2rem)] hidden h-fit shrink-0 flex-col gap-0.5 text-[11px] font-medium sm:flex"
+          >
+            {ALPHABET.map((letter) => (
+              <button
+                key={letter}
+                type="button"
+                onClick={() => scrollToLetter(letter)}
+                disabled={!availableLetters.has(letter)}
+                className={`w-5 text-center transition-colors ${
+                  availableLetters.has(letter)
+                    ? "text-[var(--ink-700)] hover:text-(--color-accent-orange)"
+                    : "text-[var(--ink-300)]"
+                }`}
+              >
+                {letter}
+              </button>
+            ))}
+          </nav>
         </div>
       )}
     </div>

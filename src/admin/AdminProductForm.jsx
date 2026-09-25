@@ -1,116 +1,172 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
+import { buildCategoryTree, getCategoryPath } from "../lib/categoryTree";
+import AdminPageHeader from "../component/admin/AdminPageHeader";
+import InlineNotice from "../component/ui/InlineNotice";
+import SubmitButton from "../component/ui/SubmitButton";
 import Spinner from "../component/ui/Spinner";
-
-const departments = [
-  { value: "men", label: "Men", gender: "men", categoryId: "apparel" },
-  { value: "women", label: "Women", gender: "women", categoryId: "apparel" },
-  {
-    value: "accessories",
-    label: "Accessories",
-    gender: "unisex",
-    categoryId: "accessories",
-  },
-];
 
 const emptyForm = {
   name: "",
   description: "",
   brandId: "",
-  department: "men",
-  subcategoryId: "",
   basePrice: "",
   discountPercent: "",
   imageUrl: "",
   archived: false,
+  featured: false,
 };
 
-const emptyVariantForm = {
-  color: "",
-  size: "",
-  sku: "",
-  stock: "10",
-  imageUrl: "",
+const emptyVariantForm = { color: "", size: "", sku: "", stock: "10", imageUrl: "" };
+
+/**
+ * One continuous flow, on one page: details, which categories this belongs
+ * to (with subcategories nested under each), tags, and variants — added
+ * inline the moment the product exists, without leaving the page. The
+ * product is only ever "half done" for the few seconds between the first
+ * save and adding a variant, never because the admin got redirected
+ * somewhere else and had to find their way back.
+ */
+// A category can nest arbitrarily deep (Men > Accessories > Jewelry), so
+// this renders itself recursively — checking "Jewelry" works the same way
+// at any depth as checking a major category.
+const CategoryCheckboxRow = ({
+  category,
+  depth,
+  selectedCategoryIds,
+  toggleCategory,
+  expandedCategoryIds,
+  toggleExpandedCategory,
+}) => {
+  const isExpanded = expandedCategoryIds.has(category.id);
+  const hasChildren = category.children.length > 0;
+  return (
+    <div className={depth === 0 ? "border-b border-[var(--line)] last:border-b-0" : ""}>
+      <div className="flex items-center gap-3 px-4 py-3" style={{ paddingLeft: 16 + depth * 24 }}>
+        <input
+          type="checkbox"
+          checked={selectedCategoryIds.includes(category.id)}
+          onChange={() => toggleCategory(category.id)}
+          className="h-4 w-4 accent-(--color-accent-orange)"
+        />
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={() => toggleExpandedCategory(category.id)}
+            className={`flex flex-1 items-center justify-between text-left ${depth === 0 ? "text-[14px] font-medium" : "text-[13px]"}`}
+          >
+            {category.name}
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}>
+              <path d="M2 3.5l3 3 3-3" />
+            </svg>
+          </button>
+        ) : (
+          <span className={depth === 0 ? "text-[14px] font-medium" : "text-[13px]"}>{category.name}</span>
+        )}
+      </div>
+      {isExpanded && hasChildren && (
+        <div className={depth === 0 ? "space-y-2 bg-[var(--surface-muted)] py-3" : "space-y-2 py-2"}>
+          {category.children.map((child) => (
+            <CategoryCheckboxRow
+              key={child.id}
+              category={child}
+              depth={depth + 1}
+              selectedCategoryIds={selectedCategoryIds}
+              toggleCategory={toggleCategory}
+              expandedCategoryIds={expandedCategoryIds}
+              toggleExpandedCategory={toggleExpandedCategory}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const AdminProductForm = () => {
-  const { id } = useParams();
-  const isEditing = Boolean(id);
-  const navigate = useNavigate();
+  const { id: routeId } = useParams();
   const { session } = useAuth();
+  const request = useMemo(() => createAuthenticatedRequest(session), [session]);
+  const queryClient = useQueryClient();
+
+  // productId starts as whatever's in the URL (editing) and becomes set the
+  // moment a brand-new product's first save succeeds — from that point on
+  // this screen behaves identically whether you arrived via "New product"
+  // or "Edit product".
+  const [productId, setProductId] = useState(routeId || null);
+  const isEditingExisting = Boolean(routeId);
+
   const [form, setForm] = useState(emptyForm);
   const [brands, setBrands] = useState([]);
-  const [subcategories, setSubcategories] = useState([]);
-  const [tags, setTags] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState([]);
+  const [expandedCategoryIds, setExpandedCategoryIds] = useState(new Set());
   const [filterTypes, setFilterTypes] = useState([]);
+  const [tags, setTags] = useState([]);
   const [selectedTagIds, setSelectedTagIds] = useState([]);
   const [variants, setVariants] = useState([]);
   const [variantForm, setVariantForm] = useState(emptyVariantForm);
   const [stockDrafts, setStockDrafts] = useState({});
   const [variantSavingId, setVariantSavingId] = useState(null);
   const [variantAction, setVariantAction] = useState(null);
-  const [loading, setLoading] = useState(isEditing);
+  const [loading, setLoading] = useState(isEditingExisting);
   const [saving, setSaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
   const [error, setError] = useState("");
-
-  const request = useMemo(() => createAuthenticatedRequest(session), [session]);
-  const queryClient = useQueryClient();
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([
       request("/api/brands"),
-      request("/api/admin/subcategories"),
-      request("/api/tags"),
+      request("/api/admin/categories"),
       request("/api/filter-types"),
-      isEditing ? request(`/api/admin/products/${id}`) : Promise.resolve(null),
+      request("/api/tags"),
+      isEditingExisting ? request(`/api/admin/products/${routeId}`) : Promise.resolve(null),
     ])
-      .then(
-        ([brandData, subcategoryData, tagData, filterTypeData, product]) => {
-          if (cancelled) return;
-          setBrands(brandData);
-          setSubcategories(subcategoryData);
-          setTags(tagData);
-          setFilterTypes(filterTypeData);
-          if (product) {
-            const department =
-              product.categoryId === "accessories"
-                ? "accessories"
-                : product.gender === "women"
-                  ? "women"
-                  : "men";
-            setForm({
-              name: product.name,
-              description: product.description,
-              brandId: product.brandId,
-              department,
-              subcategoryId: product.subcategoryId || "",
-              basePrice: String(product.basePrice),
-              discountPercent:
-                product.discountPercent === null ||
-                product.discountPercent === undefined
-                  ? ""
-                  : String(product.discountPercent),
-              imageUrl: product.imageUrl || "",
-              archived: Boolean(product.archived),
-            });
-            setSelectedTagIds(product.tags.map((tag) => tag.id));
-            setVariants(product.variants || []);
-            setStockDrafts(
-              Object.fromEntries(
-                (product.variants || []).map((variant) => [
-                  variant.id,
-                  String(variant.stock),
-                ]),
+      .then(([brandData, categoryData, filterTypeData, tagData, product]) => {
+        if (cancelled) return;
+        setBrands(brandData);
+        setCategories(categoryData);
+        setFilterTypes(filterTypeData);
+        setTags(tagData);
+        if (product) {
+          setForm({
+            name: product.name,
+            description: product.description,
+            brandId: product.brandId,
+            basePrice: String(product.basePrice),
+            discountPercent:
+              product.discountPercent === null || product.discountPercent === undefined
+                ? ""
+                : String(product.discountPercent),
+            imageUrl: product.imageUrl || "",
+            archived: Boolean(product.archived),
+            featured: Boolean(product.featured),
+          });
+          const productCategoryIds = product.categoryIds || [];
+          setSelectedCategoryIds(productCategoryIds);
+          // Reveal every selected category even when it's nested a few
+          // levels deep, instead of it silently being checked but hidden.
+          setExpandedCategoryIds(
+            new Set(
+              productCategoryIds.flatMap((categoryId) =>
+                getCategoryPath(categoryData, categoryId).map((c) => c.id),
               ),
-            );
-          }
-        },
-      )
+            ),
+          );
+          setSelectedTagIds(product.tags.map((tag) => tag.id));
+          setVariants(product.variants || []);
+          setStockDrafts(
+            Object.fromEntries(
+              (product.variants || []).map((variant) => [variant.id, String(variant.stock)]),
+            ),
+          );
+        }
+      })
       .catch((loadError) => {
         if (!cancelled) setError(loadError.message);
       })
@@ -120,57 +176,42 @@ const AdminProductForm = () => {
     return () => {
       cancelled = true;
     };
-  }, [id, isEditing, request]);
+  }, [routeId, isEditingExisting, request]);
 
-  const selectedDepartment = departments.find(
-    (department) => department.value === form.department,
-  );
-  const filteredSubcategories = useMemo(
-    () =>
-      subcategories.filter(
-        (subcategory) =>
-          subcategory.categoryId === selectedDepartment?.categoryId,
-      ),
-    [selectedDepartment?.categoryId, subcategories],
-  );
+  const tree = buildCategoryTree(categories);
   const canArchive =
-    isEditing &&
-    variants.length > 0 &&
-    variants.every((variant) => variant.stock === 0);
+    Boolean(productId) && variants.length > 0 && variants.every((variant) => variant.stock === 0);
 
   const updateField = (event) => {
     const { name, value } = event.target;
-    setForm((current) => {
-      const next = { ...current, [name]: value };
-      if (name === "department") {
-        const nextDepartment = departments.find((item) => item.value === value);
-        const nextSubcategories = subcategories.filter(
-          (subcategory) =>
-            subcategory.categoryId === nextDepartment?.categoryId,
-        );
-        next.subcategoryId = nextSubcategories.some(
-          (subcategory) => subcategory.id === current.subcategoryId,
-        )
-          ? current.subcategoryId
-          : "";
-      }
+    setForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const toggleCategory = (categoryId) => {
+    setSelectedCategoryIds((current) =>
+      current.includes(categoryId)
+        ? current.filter((id) => id !== categoryId)
+        : [...current, categoryId],
+    );
+  };
+
+  const toggleExpandedCategory = (categoryId) =>
+    setExpandedCategoryIds((current) => {
+      const next = new Set(current);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
       return next;
     });
-  };
 
   const uploadMainImage = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     setImageUploading(true);
     setError("");
     const body = new FormData();
     body.append("file", file);
     try {
-      const result = await request("/api/admin/upload-image", {
-        method: "POST",
-        body,
-      });
+      const result = await request("/api/admin/upload-image", { method: "POST", body });
       if (!result.url) throw new Error("Image upload returned no URL");
       setForm((current) => ({ ...current, imageUrl: result.url }));
     } catch (uploadError) {
@@ -183,43 +224,47 @@ const AdminProductForm = () => {
 
   const toggleTag = (tagId) => {
     setSelectedTagIds((current) =>
-      current.includes(tagId)
-        ? current.filter((idValue) => idValue !== tagId)
-        : [...current, tagId],
+      current.includes(tagId) ? current.filter((value) => value !== tagId) : [...current, tagId],
     );
   };
 
   const saveProduct = async (event) => {
     event.preventDefault();
-    setSaving(true);
     setError("");
+    setNotice("");
+    if (selectedCategoryIds.length === 0) {
+      setError("Pick at least one category — check where this product belongs below.");
+      return;
+    }
+    setSaving(true);
     try {
       const payload = {
         name: form.name,
         description: form.description,
         brandId: form.brandId,
-        categoryId: selectedDepartment.categoryId,
-        subcategoryId: form.subcategoryId,
-        gender: selectedDepartment.gender,
+        categoryIds: selectedCategoryIds,
         basePrice: form.basePrice,
-        discountPercent:
-          form.discountPercent === "" ? null : form.discountPercent,
+        discountPercent: form.discountPercent === "" ? null : form.discountPercent,
         imageUrl: form.imageUrl,
         archived: form.archived,
+        featured: form.featured,
       };
       const product = await request(
-        isEditing ? `/api/admin/products/${id}` : "/api/admin/products",
-        {
-          method: isEditing ? "PUT" : "POST",
-          body: JSON.stringify(payload),
-        },
+        productId ? `/api/admin/products/${productId}` : "/api/admin/products",
+        { method: productId ? "PUT" : "POST", body: JSON.stringify(payload) },
       );
       await request(`/api/admin/products/${product.id}/tags`, {
         method: "PUT",
         body: JSON.stringify({ tagIds: selectedTagIds }),
       });
       await queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
-      navigate("/admin/products");
+      const wasNew = !productId;
+      setProductId(product.id);
+      setNotice(
+        wasNew
+          ? "Product created. Add variants below, or come back to this page any time."
+          : "Changes saved.",
+      );
     } catch (saveError) {
       setError(saveError.message);
     } finally {
@@ -238,7 +283,7 @@ const AdminProductForm = () => {
     setVariantAction("saving");
     setError("");
     try {
-      const variant = await request(`/api/admin/products/${id}/variants`, {
+      const variant = await request(`/api/admin/products/${productId}/variants`, {
         method: "POST",
         body: JSON.stringify({
           color: variantForm.color,
@@ -254,10 +299,7 @@ const AdminProductForm = () => {
           })
         : variant;
       setVariants((current) => [...current, savedVariant]);
-      setStockDrafts((current) => ({
-        ...current,
-        [savedVariant.id]: String(savedVariant.stock),
-      }));
+      setStockDrafts((current) => ({ ...current, [savedVariant.id]: String(savedVariant.stock) }));
       setVariantForm(emptyVariantForm);
     } catch (variantError) {
       setError(variantError.message);
@@ -274,24 +316,16 @@ const AdminProductForm = () => {
       return;
     }
     if (stock === variant.stock) return;
-
     setVariantSavingId(variant.id);
     setVariantAction("saving");
     setError("");
     try {
-      const updatedVariant = await request(
-        `/api/admin/variants/${variant.id}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ stock }),
-        },
-      );
+      const updatedVariant = await request(`/api/admin/variants/${variant.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ stock }),
+      });
       setVariants((current) =>
-        current.map((currentVariant) =>
-          currentVariant.id === updatedVariant.id
-            ? updatedVariant
-            : currentVariant,
-        ),
+        current.map((item) => (item.id === updatedVariant.id ? updatedVariant : item)),
       );
     } catch (variantError) {
       setError(variantError.message);
@@ -307,9 +341,7 @@ const AdminProductForm = () => {
     setError("");
     try {
       await request(`/api/admin/variants/${variantId}`, { method: "DELETE" });
-      setVariants((current) =>
-        current.filter((variant) => variant.id !== variantId),
-      );
+      setVariants((current) => current.filter((variant) => variant.id !== variantId));
       setStockDrafts((current) => {
         const next = { ...current };
         delete next[variantId];
@@ -323,39 +355,34 @@ const AdminProductForm = () => {
     }
   };
 
-  const tagsByType = (slug) =>
-    tags.filter((tag) => tag.filterType?.slug === slug);
+  const tagsByType = (slug) => tags.filter((tag) => tag.filterType?.slug === slug);
 
   if (loading) {
     return (
-      <main className="mx-auto max-w-4xl px-6 py-20">
+      <main className="py-20">
         <Spinner label="Loading product" className="text-sm text-[var(--ink-500)]" />
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-12 md:px-12 md:py-20">
-      <div className="border-b border-[var(--ink-900)] pb-6">
-        <Link
-          to="/admin/products"
-          className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
-        >
-          Products
-        </Link>
-        <h1 className="mt-3 text-3xl font-semibold">
-          {isEditing ? "Edit product" : "New product"}
-        </h1>
-      </div>
+    <main className="max-w-4xl py-10 md:py-14">
+      <AdminPageHeader
+        title={productId ? "Edit product" : "New product"}
+        backTo="/admin/products"
+        backLabel="Products"
+        actions={
+          <Link
+            to="/admin/products"
+            className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--ink-500)] underline underline-offset-4 hover:text-[var(--ink-900)]"
+          >
+            Done — back to products
+          </Link>
+        }
+      />
 
-      {error && (
-        <div
-          role="alert"
-          className="mt-6 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
-        >
-          {error}
-        </div>
-      )}
+      {error && <InlineNotice tone="error" className="mt-6">{error}</InlineNotice>}
+      {notice && <InlineNotice tone="success" className="mt-6">{notice}</InlineNotice>}
 
       <form onSubmit={saveProduct} className="mt-8 space-y-8">
         <div className="grid gap-5 md:grid-cols-2">
@@ -380,9 +407,7 @@ const AdminProductForm = () => {
             >
               <option value="">Select a brand</option>
               {brands.map((brand) => (
-                <option key={brand.id} value={brand.id}>
-                  {brand.name}
-                </option>
+                <option key={brand.id} value={brand.id}>{brand.name}</option>
               ))}
             </select>
           </label>
@@ -393,42 +418,9 @@ const AdminProductForm = () => {
               name="description"
               value={form.description}
               onChange={updateField}
-              rows={5}
+              rows={4}
               className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
-          </label>
-          <label className="text-sm">
-            <span className="mb-2 block font-medium">Department</span>
-            <select
-              required
-              name="department"
-              value={form.department}
-              onChange={updateField}
-              className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
-            >
-              {departments.map((department) => (
-                <option key={department.value} value={department.value}>
-                  {department.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-2 block font-medium">Subcategory</span>
-            <select
-              required
-              name="subcategoryId"
-              value={form.subcategoryId}
-              onChange={updateField}
-              className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
-            >
-              <option value="">Select a subcategory</option>
-              {filteredSubcategories.map((subcategory) => (
-                <option key={subcategory.id} value={subcategory.id}>
-                  {subcategory.name}
-                </option>
-              ))}
-            </select>
           </label>
           <label className="text-sm">
             <span className="mb-2 block font-medium">Base price</span>
@@ -457,7 +449,7 @@ const AdminProductForm = () => {
               className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
           </label>
-          <label className="text-sm">
+          <label className="text-sm md:col-span-2">
             <span className="mb-2 block font-medium">Main product image</span>
             <input
               type="file"
@@ -467,11 +459,8 @@ const AdminProductForm = () => {
               className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
             {imageUploading && (
-              <span className="mt-2 block text-xs text-[var(--ink-500)]">
-                <Spinner
-                  label="Uploading image"
-                  className="text-xs text-[var(--ink-500)]"
-                />
+              <span className="mt-2 block">
+                <Spinner label="Uploading image" className="text-xs text-[var(--ink-500)]" />
               </span>
             )}
           </label>
@@ -480,16 +469,39 @@ const AdminProductForm = () => {
         {form.imageUrl && (
           <div>
             <p className="mb-2 text-sm font-medium">Image preview</p>
-            <img
-              src={form.imageUrl}
-              alt="Product preview"
-              className="h-40 w-32 object-cover"
-            />
+            <img src={form.imageUrl} alt="Product preview" className="h-40 w-32 object-cover" />
           </div>
         )}
 
-        <fieldset>
-          <legend className="text-sm font-medium">Tags</legend>
+        {/* Where this belongs — a product can be in as many of these as
+            apply. Checking "Bags" under Women and "Bags" under Accessories
+            is two clicks, and it shows up browsing either. */}
+        <fieldset className="border-t border-[var(--line)] pt-6">
+          <legend className="text-sm font-medium">
+            Categories <span className="font-normal text-[var(--ink-500)]">— pick every one that applies</span>
+          </legend>
+          <div className="mt-4 border border-[var(--line)]">
+            {tree.map((major) => (
+              <CategoryCheckboxRow
+                key={major.id}
+                category={major}
+                depth={0}
+                selectedCategoryIds={selectedCategoryIds}
+                toggleCategory={toggleCategory}
+                expandedCategoryIds={expandedCategoryIds}
+                toggleExpandedCategory={toggleExpandedCategory}
+              />
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-[var(--ink-500)]">
+            Need a category that isn't here? <Link to="/admin/categories" className="underline">Add it</Link> — it'll show up here immediately.
+          </p>
+        </fieldset>
+
+        <fieldset className="border-t border-[var(--line)] pt-6">
+          <legend className="text-sm font-medium">
+            Tags <span className="font-normal text-[var(--ink-500)]">— powers Mood, Occasion, Weather and Style discovery</span>
+          </legend>
           <div className="mt-4 grid gap-6 sm:grid-cols-2">
             {filterTypes.map((filterType) => (
               <div key={filterType.id}>
@@ -498,10 +510,7 @@ const AdminProductForm = () => {
                 </h2>
                 <div className="mt-3 space-y-2">
                   {tagsByType(filterType.slug).map((tag) => (
-                    <label
-                      key={tag.id}
-                      className="flex items-center gap-2 text-sm"
-                    >
+                    <label key={tag.id} className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
                         checked={selectedTagIds.includes(tag.id)}
@@ -516,45 +525,48 @@ const AdminProductForm = () => {
           </div>
         </fieldset>
 
-        {isEditing && (
-          <label className="flex items-start gap-3 border-t border-[var(--line)] pt-6 text-sm">
+        <fieldset className="flex flex-wrap gap-8 border-t border-[var(--line)] pt-6">
+          <label className="flex items-start gap-3 text-sm">
             <input
               type="checkbox"
-              name="archived"
-              checked={form.archived}
-              disabled={!canArchive && !form.archived}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  archived: event.target.checked,
-                }))
-              }
-              className="mt-1 h-4 w-4 accent-black"
+              name="featured"
+              checked={form.featured}
+              onChange={(event) => setForm((current) => ({ ...current, featured: event.target.checked }))}
+              className="mt-1 h-4 w-4 accent-(--color-accent-orange)"
             />
             <span>
-              <span className="block font-medium">Archive this product</span>
-              <span className="mt-1 block text-[var(--ink-500)]">
-                Archive is only available when every variant is sold out.
-              </span>
+              <span className="block font-medium">Featured</span>
+              <span className="mt-1 block text-[var(--ink-500)]">Editorial pick — shown in featured collections.</span>
             </span>
           </label>
-        )}
+          {productId && (
+            <label className="flex items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                name="archived"
+                checked={form.archived}
+                disabled={!canArchive && !form.archived}
+                onChange={(event) => setForm((current) => ({ ...current, archived: event.target.checked }))}
+                className="mt-1 h-4 w-4 accent-black"
+              />
+              <span>
+                <span className="block font-medium">Archive this product</span>
+                <span className="mt-1 block text-[var(--ink-500)]">Only available when every variant is sold out.</span>
+              </span>
+            </label>
+          )}
+        </fieldset>
 
         <div className="flex gap-4 border-t border-[var(--line)] pt-6">
-          <button
-            type="submit"
-            disabled={saving}
-            className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? <Spinner label="Saving" /> : "Save product"}
-          </button>
-          <Link to="/admin/products" className="px-5 py-3 text-sm underline">
-            Cancel
-          </Link>
+          <SubmitButton type="submit" loading={saving} loadingLabel="Saving">
+            {productId ? "Save changes" : "Create product"}
+          </SubmitButton>
         </div>
       </form>
 
-      {isEditing && (
+      {/* Variants appear the instant the product exists — no save-and-
+          reload trip required to reach them. */}
+      {productId ? (
         <section className="mt-12 border-t border-[var(--ink-900)] pt-8">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <h2 className="text-xl font-semibold">Variants</h2>
@@ -563,15 +575,8 @@ const AdminProductForm = () => {
             </p>
           </div>
 
-          <form
-            onSubmit={createVariant}
-            className="mt-6 grid gap-3 border-b border-[var(--line)] pb-6 md:grid-cols-[1fr_0.8fr_1fr_0.7fr_1.4fr_auto] md:items-end"
-          >
-            {[
-              ["color", "Color"],
-              ["size", "Size"],
-              ["sku", "SKU"],
-            ].map(([name, label]) => (
+          <form onSubmit={createVariant} className="mt-6 grid gap-3 border-b border-[var(--line)] pb-6 md:grid-cols-[1fr_0.8fr_1fr_0.7fr_1.4fr_auto] md:items-end">
+            {[["color", "Color"], ["size", "Size"], ["sku", "SKU"]].map(([name, label]) => (
               <label key={name} className="text-sm">
                 <span className="mb-2 block font-medium">{label}</span>
                 <input
@@ -607,42 +612,29 @@ const AdminProductForm = () => {
                 className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
               />
             </label>
-            <button
-              type="submit"
-              disabled={variantSavingId === "new"}
-              className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-4 py-2.5 text-sm font-medium text-white hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {variantSavingId === "new" ? (
-                <Spinner label="Saving" />
-              ) : (
-                "Add variant"
-              )}
-            </button>
+            <SubmitButton type="submit" loading={variantSavingId === "new"} loadingLabel="Saving">
+              Add variant
+            </SubmitButton>
           </form>
 
           <div className="mt-6 space-y-2 border-t border-[var(--ink-900)] pt-2">
+            {variants.length === 0 && (
+              <p className="py-6 text-sm text-[var(--ink-500)]">
+                No variants yet — add at least one above (color, size and stock) before this product can be bought.
+              </p>
+            )}
             {variants.map((variant) => (
               <details key={variant.id} className="border-b border-[var(--line)]">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-sm marker:hidden">
                   <span className="min-w-0">
-                    <span className="font-medium">
-                      {variant.color} / {variant.size}
-                    </span>
-                    <span className="ml-3 font-mono text-xs text-[var(--ink-500)]">
-                      {variant.sku}
-                    </span>
+                    <span className="font-medium">{variant.color} / {variant.size}</span>
+                    <span className="ml-3 font-mono text-xs text-[var(--ink-500)]">{variant.sku}</span>
                   </span>
-                  <span className="shrink-0 text-[var(--ink-700)]">
-                    {variant.stock} in stock
-                  </span>
+                  <span className="shrink-0 text-[var(--ink-700)]">{variant.stock} in stock</span>
                 </summary>
                 <div className="grid gap-5 border-t border-[var(--line)] py-5 md:grid-cols-[auto_1fr]">
                   {variant.images?.[0] ? (
-                    <img
-                      src={variant.images[0]}
-                      alt=""
-                      className="h-28 w-24 object-cover"
-                    />
+                    <img src={variant.images[0]} alt="" className="h-28 w-24 object-cover" />
                   ) : (
                     <div className="flex h-28 w-24 items-center justify-center bg-[var(--surface-muted)] text-center text-xs text-[var(--ink-300)]">
                       No image
@@ -657,10 +649,7 @@ const AdminProductForm = () => {
                         step="1"
                         value={stockDrafts[variant.id] ?? variant.stock}
                         onChange={(event) =>
-                          setStockDrafts((current) => ({
-                            ...current,
-                            [variant.id]: event.target.value,
-                          }))
+                          setStockDrafts((current) => ({ ...current, [variant.id]: event.target.value }))
                         }
                         onBlur={() => saveVariantStock(variant)}
                         className="w-24 border border-[var(--line)] px-2 py-2"
@@ -672,12 +661,7 @@ const AdminProductForm = () => {
                       disabled={variantSavingId === variant.id}
                       className="text-sm underline disabled:opacity-50"
                     >
-                      {variantSavingId === variant.id &&
-                      variantAction === "saving" ? (
-                        <Spinner label="Saving" />
-                      ) : (
-                        "Save stock"
-                      )}
+                      {variantSavingId === variant.id && variantAction === "saving" ? <Spinner label="Saving" /> : "Save stock"}
                     </button>
                     <button
                       type="button"
@@ -685,12 +669,7 @@ const AdminProductForm = () => {
                       disabled={variantSavingId === variant.id}
                       className="text-sm text-red-700 underline disabled:opacity-50"
                     >
-                      {variantSavingId === variant.id &&
-                      variantAction === "deleting" ? (
-                        <Spinner label="Deleting" />
-                      ) : (
-                        "Delete"
-                      )}
+                      {variantSavingId === variant.id && variantAction === "deleting" ? <Spinner label="Deleting" /> : "Delete"}
                     </button>
                   </div>
                 </div>
@@ -698,6 +677,10 @@ const AdminProductForm = () => {
             ))}
           </div>
         </section>
+      ) : (
+        <p className="mt-10 border-t border-[var(--line)] pt-6 text-sm text-[var(--ink-500)]">
+          Save the product above to start adding variants — you'll stay right here.
+        </p>
       )}
     </main>
   );

@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import PasswordInput from "../component/ui/PasswordInput";
 import InlineNotice from "../component/ui/InlineNotice";
+import GoogleSignInButton from "../component/ui/GoogleSignInButton";
 
 const SignUp = () => {
   const { signUp } = useAuth();
@@ -40,7 +41,15 @@ const SignUp = () => {
   return (
     <main className="mx-auto max-w-md px-6 py-24">
       <h1 className="text-2xl font-semibold">Create account</h1>
-      <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
+      <div className="mt-6">
+        <GoogleSignInButton returnTo={returnTo} onError={setError} />
+      </div>
+      <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-[0.1em] text-gray-400">
+        <span className="h-px flex-1 bg-gray-200" />
+        or
+        <span className="h-px flex-1 bg-gray-200" />
+      </div>
+      <form onSubmit={handleSubmit} className="mt-2 flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm">
           Name
           <input

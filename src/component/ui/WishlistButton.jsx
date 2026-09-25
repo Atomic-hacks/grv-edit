@@ -34,11 +34,13 @@ const CloseIcon = () => (
   </svg>
 );
 
-const WishlistButton = ({ product, className = "", icon = "heart" }) => {
-  const { isWishlisted, toggleWishlist } = useWishlist();
+// Favorites either a product or a brand — pass one or the other. Used on
+// product cards (product) and on the Brands list (brand).
+const WishlistButton = ({ product, brand, className = "", icon = "heart" }) => {
+  const { isWishlisted, toggleWishlist, isBrandWishlisted, toggleBrandWishlist } = useWishlist();
   const requireAuthAction = useRequireAuthAction();
   const [pending, setPending] = useState(false);
-  const saved = isWishlisted(product.id);
+  const saved = brand ? isBrandWishlisted(brand.id) : isWishlisted(product.id);
 
   const handleClick = (event) => {
     event.preventDefault();
@@ -46,7 +48,8 @@ const WishlistButton = ({ product, className = "", icon = "heart" }) => {
     requireAuthAction(async () => {
       setPending(true);
       try {
-        await toggleWishlist(product);
+        if (brand) await toggleBrandWishlist(brand);
+        else await toggleWishlist(product);
       } finally {
         setPending(false);
       }

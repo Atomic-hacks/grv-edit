@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { handleApiRequest } from "./src/api/routes.js";
 
 const apiPlugin = () => ({
@@ -34,5 +35,21 @@ const apiPlugin = () => ({
 });
 
 export default defineConfig({
-  plugins: [tailwindcss(), apiPlugin()],
+  plugins: [
+    tailwindcss(),
+    apiPlugin(),
+    // Uploads source maps so stack traces in Sentry show real file/line
+    // instead of minified gibberish. Silently skipped without an auth
+    // token — everyone's local `vite build` still works without one, only
+    // CI/deploys that have SENTRY_AUTH_TOKEN set actually upload.
+    process.env.SENTRY_AUTH_TOKEN &&
+      sentryVitePlugin({
+        org: process.env.SENTRY_ORG,
+        project: process.env.SENTRY_PROJECT,
+        authToken: process.env.SENTRY_AUTH_TOKEN,
+      }),
+  ].filter(Boolean),
+  build: {
+    sourcemap: true,
+  },
 });

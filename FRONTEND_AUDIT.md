@@ -245,3 +245,7 @@ Not present in the frontend at all (§1, §5). If the admin panel needs to manag
 2. **Single-variant products with array-shaped `styleTags`/`variants` fields that are never actually exercised beyond length 1** — the relational schema (already more normalized than the frontend) will work, but multi-variant and multi-style-tag UI paths (variant picker, style filters) are effectively untested against real multi-value data and may reveal bugs once real data has >1 variant or >1 style tag per product (§1.1, §5).
 3. **Category is single-valued today; multi-category membership does not exist** — decide now whether to keep `Product.categoryId` single (matches frontend) or move to a join table (matches the task's stated goal but requires a frontend filtering rewrite in `GenderCatalogue.jsx`/`listing.js`, which currently assume one category per product throughout, e.g. `product.categoryId !== categoryId` strict equality in `getProducts`).
 4. **Cart/order line items need a variant reference that the frontend doesn't currently send** — `addToCart` calls today never include the selected variant (§1.2); the admin/order schema can still model `OrderItem.variantId` correctly, but the frontend's `ProductDetail.jsx`/`CartContext.jsx` will need changes (out of scope for this read-only audit, flagged for follow-up) before real orders can record which variant was purchased.
+Please help me get started with sentry.
+
+org slug: grvhq
+run code: 66b6111354

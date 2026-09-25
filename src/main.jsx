@@ -9,6 +9,12 @@ import { AuthProvider } from "./context/AuthContext.jsx";
 import { WishlistProvider } from "./context/WishlistContext.jsx";
 import { ToastProvider } from "./context/ToastContext.jsx";
 import { RecentlyViewedProvider } from "./context/RecentlyViewedContext.jsx";
+import ErrorBoundary from "./component/ErrorBoundary.jsx";
+import { initSentry } from "./lib/sentry.js";
+import { initAnalytics } from "./lib/analytics.js";
+
+initSentry();
+initAnalytics();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,18 +33,20 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <AuthProvider>
-          <CartProvider>
-            <WishlistProvider>
-              <RecentlyViewedProvider>
-                <App />
-              </RecentlyViewedProvider>
-            </WishlistProvider>
-          </CartProvider>
-        </AuthProvider>
-      </ToastProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <AuthProvider>
+            <CartProvider>
+              <WishlistProvider>
+                <RecentlyViewedProvider>
+                  <App />
+                </RecentlyViewedProvider>
+              </WishlistProvider>
+            </CartProvider>
+          </AuthProvider>
+        </ToastProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

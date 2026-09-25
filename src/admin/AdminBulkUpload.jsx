@@ -82,8 +82,10 @@ const AdminBulkUpload = () => {
             className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
           />
           <span className="mt-2 block text-xs text-[var(--ink-500)]">
-            Columns: name, description, price, brandSlug, department,
-            subcategorySlug, designCode, color, size, stock, tagSlugs
+            Columns: name, description, price, brandSlug, categorySlugs,
+            designCode, color, size, stock, tagSlugs. categorySlugs is a
+            comma-separated list — any mix of major categories and
+            subcategories, e.g. "women,accessories,bags".
           </span>
         </label>
         <button

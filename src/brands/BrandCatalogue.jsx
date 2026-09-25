@@ -13,13 +13,12 @@ import ErrorState from "../component/ui/ErrorState";
 import RecentlyViewedRail from "../component/section/RecentlyViewedRail";
 import StoreSupport from "../component/section/StoreSupport";
 import {
-  buildFilterChips,
-  emptyFilters,
-  filterProducts,
-  removeFilterValue,
-  sortProducts,
-} from "../data/listing";
-import { formatPrice, getProductImages } from "../lib/productHelpers";
+  emptyClientFilters,
+  applyClientFilters,
+  buildClientFacets,
+  countActiveClientFilters,
+} from "../lib/clientProductFilters";
+import { getProductImages } from "../lib/productHelpers";
 import { fetchBrandBySlug, fetchProducts } from "../lib/apiClient";
 import { useAsync } from "../lib/useAsync";
 import { useCart } from "../context/CartContext";
@@ -29,8 +28,7 @@ const BrandCatalogue = () => {
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [appliedFilters, setAppliedFilters] = useState(emptyFilters);
-  const [sort, setSort] = useState("");
+  const [appliedFilters, setAppliedFilters] = useState(emptyClientFilters);
   const {
     data: brand,
     loading: brandLoading,
@@ -42,14 +40,9 @@ const BrandCatalogue = () => {
     [brand],
   );
   const brandProducts = brandProductsData || [];
-  const visibleProducts = sortProducts(
-    filterProducts(brandProducts, appliedFilters),
-    sort,
-  );
-
-  const chips = buildFilterChips(appliedFilters, (key, value) =>
-    setAppliedFilters((current) => removeFilterValue(current, key, value)),
-  );
+  const visibleProducts = applyClientFilters(brandProducts, appliedFilters);
+  const facets = buildClientFacets(brandProducts);
+  const activeFilterCount = countActiveClientFilters(appliedFilters);
 
   if (brandLoading) return <ProductDetailSkeleton />;
   if (brandError)
@@ -92,9 +85,7 @@ const BrandCatalogue = () => {
         <AnimatedPageTitle title={brand.name} subtitle={brand.description} />
       </div>
       <ListingToolbar
-        sort={sort}
-        onSortChange={setSort}
-        onClearFilters={() => setAppliedFilters(emptyFilters())}
+        onClearFilters={activeFilterCount > 0 ? () => setAppliedFilters(emptyClientFilters()) : undefined}
         leftContent={
           <span className="meta-text">
             {visibleProducts.length}{" "}
@@ -102,8 +93,7 @@ const BrandCatalogue = () => {
           </span>
         }
         onFilter={() => setIsFilterOpen(true)}
-        activeFilterCount={Object.values(appliedFilters).flat().length}
-        chips={chips}
+        activeFilterCount={activeFilterCount}
       />
       {productsLoading ? (
         <ProductGridSkeleton />
@@ -131,9 +121,7 @@ const BrandCatalogue = () => {
                   title={item.name}
                   product={item}
                   category={item.subcategory}
-                  details={item.gender}
                   badge={item.isNew ? "NEW" : undefined}
-                  price={formatPrice(item.basePrice)}
                   onQuickAdd={() =>
                     addToCart(
                       {
@@ -154,12 +142,12 @@ const BrandCatalogue = () => {
       <FilterDrawer
         isOpen={isFilterOpen}
         onClose={() => setIsFilterOpen(false)}
-        products={brandProducts}
         appliedFilters={appliedFilters}
         onApply={(filters) => {
           setAppliedFilters(filters);
           setIsFilterOpen(false);
         }}
+        facets={facets}
       />
       <RecentlyViewedRail />
       </div>

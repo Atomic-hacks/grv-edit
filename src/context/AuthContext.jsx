@@ -40,6 +40,9 @@ export const AuthProvider = ({ children }) => {
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event, nextSession) => {
         setSession(nextSession);
+        // Covers the Google OAuth redirect too, not just signIn/signUp —
+        // any session appearing at all means this browser has an account.
+        if (nextSession) rememberAccountOnThisBrowser();
       },
     );
 
@@ -90,6 +93,18 @@ export const AuthProvider = ({ children }) => {
     if (error) throw error;
   };
 
+  // Redirects out to Google and back — there's no local result to return,
+  // the session shows up via onAuthStateChange once the redirect completes.
+  const signInWithGoogle = async ({ returnTo = "/account" } = {}) => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}${returnTo}`,
+      },
+    });
+    if (error) throw error;
+  };
+
   const value = useMemo(
     () => ({
       session,
@@ -99,6 +114,7 @@ export const AuthProvider = ({ children }) => {
       loading,
       signUp,
       signIn,
+      signInWithGoogle,
       signOut,
     }),
     [session, appUser, appUserLoading, loading],

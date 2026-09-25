@@ -12,11 +12,10 @@ const groups = [
     description: "Products, categorization, filters, and imports.",
     links: [
       ["Products", "/admin/products"],
+      ["Categories", "/admin/categories"],
       ["Brands", "/admin/brands"],
-      ["Subcategories", "/admin/subcategories"],
-      ["Tags", "/admin/tags"],
+      ["Style Tags", "/admin/tags"],
       ["Filter Types", "/admin/filter-types"],
-      ["Category Filters", "/admin/category-filter-types"],
       ["Bulk Upload", "/admin/products/bulk-upload"],
       ["Site Images", "/admin/site-images"],
     ],
@@ -30,7 +29,6 @@ const groups = [
       ["Discounts", "/admin/discounts"],
       ["First-order Promo", "/admin/first-order-promo"],
       ["Shipping Fees", "/admin/shipping-fees"],
-      ["Sections", "/admin/sections"],
     ],
   },
   {

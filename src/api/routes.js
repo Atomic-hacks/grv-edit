@@ -1,3 +1,4 @@
+import { Sentry } from "../server/sentry.js";
 import { prisma } from "../server/prisma.js";
 import { getCurrentUser } from "../server/getCurrentUser.js";
 import { requireAdmin } from "../server/requireAdmin.js";
@@ -20,6 +21,7 @@ import {
   adminOrderAlertEmail,
 } from "../server/emailTemplates.js";
 import { supportReplyEmail } from "../server/orderEmailTemplates.js";
+import { checkRateLimit, clientIp } from "../server/rateLimit.js";
 import {
   verifyPaystackSignature,
   claimOrderForPayment,
@@ -372,6 +374,19 @@ const processUnsentNotifications = async (request) => {
 };
 
 const createContactSubmission = async (request) => {
+  // The only fully open, unauthenticated write in the API — a basic per-IP
+  // throttle so it can't be used to flood the admin's message list.
+  const limit = await checkRateLimit(`contact:${clientIp(request)}`, {
+    max: 5,
+    windowMs: 10 * 60 * 1000,
+  });
+  if (!limit.allowed) {
+    return jsonResponse(
+      { error: "Too many messages sent. Please try again in a few minutes." },
+      429,
+    );
+  }
+
   const body = await request.json();
   const fields = ["name", "email", "subject", "message"];
   const missingFields = fields.filter(
@@ -393,6 +408,17 @@ const createContactSubmission = async (request) => {
 };
 
 const subscribeToNewsletter = async (request) => {
+  const limit = await checkRateLimit(`newsletter:${clientIp(request)}`, {
+    max: 5,
+    windowMs: 10 * 60 * 1000,
+  });
+  if (!limit.allowed) {
+    return jsonResponse(
+      { error: "Too many attempts. Please try again in a few minutes." },
+      429,
+    );
+  }
+
   const body = await request.json();
   const email = typeof body.email === "string" ? body.email.trim() : "";
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -761,9 +787,18 @@ const cloudinaryReady = initializeCloudinary();
 const DEFAULT_PAGE_SIZE = 48;
 const MAX_PAGE_SIZE = 100;
 
+// A product is "new" for a fixed window after creation, computed at read
+// time rather than stored — nobody has to remember to flip a flag on and,
+// more importantly, nobody has to remember to flip it back off.
+const NEW_PRODUCT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const isProductNew = (createdAt) =>
+  Date.now() - new Date(createdAt).getTime() < NEW_PRODUCT_WINDOW_MS;
+
 const productInclude = {
   variants: true,
-  styleTags: true,
+  categories: {
+    include: { category: { select: { id: true, name: true, slug: true, parentId: true } } },
+  },
   tags: {
     include: {
       tag: {
@@ -776,55 +811,95 @@ const productInclude = {
   brand: { select: { id: true, name: true, slug: true } },
 };
 
-// Flattens relations (styleTags, brand) back to the plain shape the frontend
-// already expects from the old mock data — kept here so no component needs
-// to change just because the DB models these as relations.
-const serializeProduct = (product) => ({
-  id: product.id,
-  name: product.name,
-  gender: product.gender,
-  categoryId: product.categoryId,
-  subcategory: product.subcategory,
-  styleTags: product.styleTags.map((tag) => tag.name),
-  tags: product.tags.map(({ tag }) => ({
-    id: tag.id,
-    name: tag.name,
-    slug: tag.slug,
-    filterTypeId: tag.filterTypeId,
-    filterType: tag.filterType,
-  })),
-  description: product.description,
-  basePrice: product.basePrice,
-  discountPercent: product.discountPercent,
-  status: product.status,
-  createdAt: product.createdAt,
-  imageUrl: product.imageUrl,
-  isNew: product.isNew,
-  archived: product.archived,
-  brandId: product.brandId,
-  brandName: product.brand?.name,
-  variants: product.variants.map((variant) => ({
-    id: variant.id,
-    color: variant.color,
-    size: variant.size,
-    stock: variant.stock,
-    sku: variant.sku,
-    images: variant.images,
-  })),
-});
+// Flattens relations (categories, tags, brand) back to a plain shape the
+// frontend can use without knowing how any of this is modeled in the DB.
+const serializeProduct = (product) => {
+  const categories = product.categories.map(({ category }) => category);
+  // The single most useful category for a simple "category / detail" label
+  // on a product card: prefer a subcategory (it's the more specific thing)
+  // over a bare top-level category.
+  const leafCategory =
+    categories.find((category) => category.parentId) || categories[0] || null;
+
+  return {
+    id: product.id,
+    name: product.name,
+    categories,
+    categoryIds: categories.map((category) => category.id),
+    // Convenience field for display-only call sites that just want "the
+    // category name" without walking the tree themselves.
+    subcategory: leafCategory?.name || null,
+    tags: product.tags.map(({ tag }) => ({
+      id: tag.id,
+      name: tag.name,
+      slug: tag.slug,
+      filterTypeId: tag.filterTypeId,
+      filterType: tag.filterType,
+    })),
+    description: product.description,
+    basePrice: product.basePrice,
+    discountPercent: product.discountPercent,
+    status: product.status,
+    createdAt: product.createdAt,
+    imageUrl: product.imageUrl,
+    isNew: isProductNew(product.createdAt),
+    featured: product.featured,
+    archived: product.archived,
+    brandId: product.brandId,
+    brandName: product.brand?.name,
+    variants: product.variants.map((variant) => ({
+      id: variant.id,
+      color: variant.color,
+      size: variant.size,
+      stock: variant.stock,
+      sku: variant.sku,
+      images: variant.images,
+    })),
+  };
+};
 
 const serializeCategory = (category) => ({
   id: category.id,
   name: category.name,
-  styleTags: category.styleTags.map((tag) => tag.name),
-  // Exposed publicly so storefront navigation and filters reflect the
-  // taxonomy an admin actually manages, instead of a hardcoded copy.
-  subcategories: (category.subcategories || []).map((subcategory) => ({
-    id: subcategory.id,
-    name: subcategory.name,
-    slug: subcategory.slug,
-  })),
+  slug: category.slug,
+  parentId: category.parentId,
+  showInNav: category.showInNav,
+  navOrder: category.navOrder,
+  description: category.description,
+  showOnHomepage: category.showOnHomepage,
+  homepageOrder: category.homepageOrder,
+  productCount: category._count?.products,
 });
+
+// The tree can be arbitrarily deep (Men > Accessories > Jewelry, as far as
+// an admin nests it), so "this category and everything under it" walks the
+// whole subtree rather than assuming one level of children. One query for
+// the full flat list (small table) plus an in-memory walk beats a round
+// trip per level.
+const getCategoryAndDescendantIds = async (idOrSlug) => {
+  const all = await prisma.category.findMany({
+    select: { id: true, slug: true, parentId: true },
+  });
+  const target = all.find((category) => category.id === idOrSlug || category.slug === idOrSlug);
+  if (!target) return [];
+
+  const childrenOf = new Map();
+  for (const category of all) {
+    if (!category.parentId) continue;
+    const list = childrenOf.get(category.parentId) || [];
+    list.push(category.id);
+    childrenOf.set(category.parentId, list);
+  }
+
+  const result = [];
+  const stack = [target.id];
+  while (stack.length) {
+    const id = stack.pop();
+    result.push(id);
+    for (const childId of childrenOf.get(id) || []) stack.push(childId);
+  }
+  return result;
+};
 
 // Filters are multi-value: every key accepts repeated params
 // (?size=S&size=M) or a comma list (?size=S,M). Values within one filter
@@ -837,7 +912,7 @@ const filterValues = (params, key) =>
     .map((value) => value.trim())
     .filter(Boolean);
 
-const buildProductsWhere = (url) => {
+const buildProductsWhere = async (url) => {
   const params = url.searchParams;
   const where = { archived: params.get("archived") === "true" };
   // Each entry here is AND'd together. Anything needing case-insensitive
@@ -845,35 +920,34 @@ const buildProductsWhere = (url) => {
   // directly, since Prisma's `in` has no insensitive mode.
   const and = [];
 
-  const genders = filterValues(params, "gender");
-  if (genders.length) where.gender = { in: genders };
-
-  const categories = filterValues(params, "category");
-  if (categories.length) where.categoryId = { in: categories };
+  // A category filter matches the category itself and, if it's a
+  // top-level one, everything nested under it — browsing "Accessories"
+  // picks up a product tagged only with "Accessories > Bags" without the
+  // product needing a separate link to the parent.
+  const categorySlugs = filterValues(params, "category");
+  if (categorySlugs.length) {
+    const idLists = await Promise.all(
+      categorySlugs.map((slug) => getCategoryAndDescendantIds(slug)),
+    );
+    const ids = [...new Set(idLists.flat())];
+    and.push({ categories: { some: { categoryId: { in: ids } } } });
+  }
 
   const brands = filterValues(params, "brand");
   if (brands.length) where.brandId = { in: brands };
 
-  const subcategories = filterValues(params, "subcategory");
-  if (subcategories.length) {
-    and.push({
-      OR: subcategories.map((value) => ({
-        subcategory: { equals: value, mode: "insensitive" },
-      })),
-    });
-  }
-
+  // Style tags share the same shape as every other admin-managed tag —
+  // matched by slug, same as `tag` below — kept as its own param because
+  // the storefront's filter drawer treats it as its own facet.
   const styleTags = filterValues(params, "style");
   if (styleTags.length) {
     and.push({
       OR: styleTags.map((value) => ({
-        styleTags: { some: { name: { equals: value, mode: "insensitive" } } },
+        tags: { some: { tag: { slug: { equals: value, mode: "insensitive" } } } },
       })),
     });
   }
 
-  // Admin-managed tags (see /api/admin/tags) are matched by slug so the
-  // taxonomy an admin builds is filterable on the storefront.
   const tags = filterValues(params, "tag");
   if (tags.length) {
     and.push({
@@ -914,15 +988,16 @@ const buildProductsWhere = (url) => {
   if (params.get("maxPrice") && Number.isFinite(maxPrice)) price.lte = maxPrice;
   if (Object.keys(price).length) where.basePrice = price;
 
+  if (params.get("featured") === "true") where.featured = true;
+
   const query = params.get("q");
   if (query) {
     and.push({
       OR: [
         { name: { contains: query, mode: "insensitive" } },
         { brand: { name: { contains: query, mode: "insensitive" } } },
-        { subcategory: { contains: query, mode: "insensitive" } },
         { description: { contains: query, mode: "insensitive" } },
-        { styleTags: { some: { name: { contains: query, mode: "insensitive" } } } },
+        { categories: { some: { category: { name: { contains: query, mode: "insensitive" } } } } },
         { tags: { some: { tag: { name: { contains: query, mode: "insensitive" } } } } },
         {
           variants: {
@@ -958,7 +1033,7 @@ const getProductOrderBy = (url) =>
   PRODUCT_SORT_ORDERS[url.searchParams.get("sort")] || [{ id: "asc" }];
 
 const listProducts = async (url) => {
-  const where = buildProductsWhere(url);
+  const where = await buildProductsWhere(url);
   const page = Math.max(1, parseInt(url.searchParams.get("page"), 10) || 1);
   const pageSize = Math.min(
     MAX_PAGE_SIZE,
@@ -987,10 +1062,12 @@ const listProducts = async (url) => {
   });
 };
 
-// Facets for the filter drawer, derived from the live catalogue rather
-// than a hardcoded list, so anything an admin creates becomes filterable
-// as soon as a product uses it. Counts respect every *other* active
-// filter but not the facet's own, which is what lets a shopper widen a
+// Facets for the filter drawer, kept deliberately small: brand, size,
+// color and price are structured data already; style is the one
+// admin-managed tag dimension. Derived from the live catalogue (not a
+// hardcoded list), so anything an admin adds becomes filterable the
+// moment a product uses it. Counts respect every *other* active filter
+// but not the facet's own, which is what lets a shopper widen a
 // selection without the options disappearing underneath them.
 const CLOTHING_SIZE_ORDER = [
   "XXS",
@@ -1029,18 +1106,17 @@ const titleCase = (value) =>
     .replace(/\b\w/g, (character) => character.toUpperCase());
 
 const listProductFilters = async (url) => {
-  const where = buildProductsWhere(url);
+  const where = await buildProductsWhere(url);
 
   const [products, priceBounds] = await Promise.all([
     prisma.product.findMany({
       where,
       select: {
-        categoryId: true,
-        subcategory: true,
         brandId: true,
         brand: { select: { id: true, name: true } },
-        styleTags: { select: { name: true } },
-        tags: { select: { tag: { select: { name: true, slug: true } } } },
+        tags: {
+          select: { tag: { select: { name: true, slug: true, filterType: { select: { slug: true } } } } },
+        },
         variants: { select: { size: true, color: true, stock: true } },
       },
     }),
@@ -1069,26 +1145,11 @@ const listProductFilters = async (url) => {
     })),
   ).sort((a, b) => a.label.localeCompare(b.label));
 
-  const categories = tally(
-    products.map((product) => ({ value: product.categoryId })),
-  ).sort((a, b) => a.label.localeCompare(b.label));
-
-  const subcategories = tally(
-    products.map((product) => ({
-      value: product.subcategory,
-      label: product.subcategory,
-    })),
-  ).sort((a, b) => a.label.localeCompare(b.label));
-
   const styles = tally(
     products.flatMap((product) =>
-      product.styleTags.map((tag) => ({ value: tag.name })),
-    ),
-  ).sort((a, b) => a.label.localeCompare(b.label));
-
-  const tags = tally(
-    products.flatMap((product) =>
-      product.tags.map(({ tag }) => ({ value: tag.slug, label: tag.name })),
+      product.tags
+        .filter(({ tag }) => tag.filterType?.slug === "style")
+        .map(({ tag }) => ({ value: tag.slug, label: tag.name })),
     ),
   ).sort((a, b) => a.label.localeCompare(b.label));
 
@@ -1115,10 +1176,7 @@ const listProductFilters = async (url) => {
   return jsonResponse({
     total: products.length,
     brands,
-    categories,
-    subcategories,
     styles,
-    tags,
     sizes,
     colors,
     inStockCount,
@@ -1132,7 +1190,11 @@ const listProductFilters = async (url) => {
 
 const listNewArrivals = async () => {
   const products = await prisma.product.findMany({
-    where: { status: "ACTIVE" },
+    where: {
+      status: "ACTIVE",
+      archived: false,
+      createdAt: { gte: new Date(Date.now() - NEW_PRODUCT_WINDOW_MS) },
+    },
     include: productInclude,
     orderBy: { createdAt: "desc" },
     take: 10,
@@ -1153,58 +1215,15 @@ const getProductById = async (id) => {
   return jsonResponse(serializeProduct(product));
 };
 
+// The full tree, flat with parentId — consumers (nav bar, browse pages,
+// breadcrumbs, the admin screen) each derive whatever shape of the tree
+// they need from this rather than the API pre-shaping it several ways.
 const listCategories = async () => {
-  const [categories, inUse] = await Promise.all([
-    prisma.category.findMany({
-      include: {
-        styleTags: true,
-        subcategories: { orderBy: { name: "asc" } },
-      },
-      orderBy: { id: "asc" },
-    }),
-    // Products carry a free-text `subcategory` alongside the managed
-    // Subcategory table, and the two have drifted apart. Merging both
-    // keeps storefront navigation complete without silently linking to a
-    // subcategory that has nothing to show.
-    prisma.product.groupBy({
-      by: ["categoryId", "subcategory"],
-      where: { archived: false, status: "ACTIVE" },
-      _count: { _all: true },
-    }),
-  ]);
-
-  const inUseByCategory = new Map();
-  for (const row of inUse) {
-    if (!row.subcategory) continue;
-    const list = inUseByCategory.get(row.categoryId) || [];
-    list.push({ name: row.subcategory, count: row._count._all });
-    inUseByCategory.set(row.categoryId, list);
-  }
-
-  return jsonResponse(
-    categories.map((category) => {
-      const serialized = serializeCategory(category);
-      const used = inUseByCategory.get(category.id) || [];
-      const byName = new Map(
-        serialized.subcategories.map((subcategory) => [
-          subcategory.name.toLowerCase(),
-          { ...subcategory, productCount: 0 },
-        ]),
-      );
-      for (const { name, count } of used) {
-        const key = name.toLowerCase();
-        const existing = byName.get(key);
-        if (existing) existing.productCount = count;
-        else byName.set(key, { id: null, name, slug: null, productCount: count });
-      }
-      return {
-        ...serialized,
-        subcategories: [...byName.values()].sort((a, b) =>
-          a.name.localeCompare(b.name),
-        ),
-      };
-    }),
-  );
+  const categories = await prisma.category.findMany({
+    include: { _count: { select: { products: true } } },
+    orderBy: [{ parentId: "asc" }, { navOrder: "asc" }, { name: "asc" }],
+  });
+  return jsonResponse(categories.map(serializeCategory));
 };
 
 const listBrands = async () => {
@@ -1306,89 +1325,6 @@ const uploadImage = async (request) => {
   }
 };
 
-const listSubcategories = async (request) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  const subcategories = await prisma.subcategory.findMany({
-    include: {
-      category: { select: { id: true, name: true } },
-      _count: { select: { products: true } },
-    },
-    orderBy: [{ categoryId: "asc" }, { name: "asc" }],
-  });
-  return jsonResponse(subcategories);
-};
-
-const createSubcategory = async (request) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  const body = await request.json();
-  if (!body.name || !body.slug || !body.categoryId) {
-    return jsonResponse(
-      { error: "name, slug, and categoryId are required" },
-      400,
-    );
-  }
-
-  const subcategory = await prisma.subcategory.create({
-    data: {
-      name: body.name,
-      slug: body.slug,
-      categoryId: body.categoryId,
-    },
-    include: { category: { select: { id: true, name: true } } },
-  });
-  return jsonResponse(subcategory, 201);
-};
-
-const updateSubcategory = async (request, id) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  const body = await request.json();
-  const data = Object.fromEntries(
-    ["name", "slug", "categoryId"]
-      .filter((field) => body[field] !== undefined)
-      .map((field) => [field, body[field]]),
-  );
-  if (Object.keys(data).length === 0) {
-    return jsonResponse(
-      { error: "At least one of name, slug, or categoryId is required" },
-      400,
-    );
-  }
-
-  const subcategory = await prisma.subcategory.update({
-    where: { id },
-    data,
-    include: { category: { select: { id: true, name: true } } },
-  });
-  return jsonResponse(subcategory);
-};
-
-const deleteSubcategory = async (request, id) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  const productCount = await prisma.product.count({
-    where: { subcategoryId: id },
-  });
-  if (productCount > 0) {
-    return jsonResponse(
-      {
-        error: "Subcategory has products and cannot be deleted",
-        productCount,
-      },
-      409,
-    );
-  }
-
-  await prisma.subcategory.delete({ where: { id } });
-  return jsonResponse({ deleted: true, id });
-};
-
 const listAdminBrands = async (request) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
@@ -1471,114 +1407,153 @@ const handleAdminBrandRequest = async (request, segments) => {
   return jsonResponse({ error: "Method not allowed" }, 405);
 };
 
-const handleAdminSubcategoryRequest = async (request, segments) => {
-  const id = segments[3] ? decodeURIComponent(segments[3]) : null;
-  if (request.method === "GET" && !id) return listSubcategories(request);
-  if (request.method === "POST" && !id) return createSubcategory(request);
-  if (request.method === "PUT" && id) return updateSubcategory(request, id);
-  if (request.method === "DELETE" && id) return deleteSubcategory(request, id);
-  return jsonResponse({ error: "Method not allowed" }, 405);
-};
+const slugify = (name) =>
+  name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 
-const listAdminCategoryFilterTypes = async (request, categoryId) => {
+// One admin CRUD for the entire tree — major categories and their
+// subcategories are the same model, so creating, editing, deleting and
+// reordering either happens through these four handlers.
+const listAdminCategories = async (request) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
-  const category = await prisma.category.findUnique({
-    where: { id: categoryId },
-    select: {
-      id: true,
-      name: true,
-      filterTypes: {
-        select: {
-          filterType: { select: { id: true, name: true, slug: true } },
-        },
-      },
-    },
+  const categories = await prisma.category.findMany({
+    include: { _count: { select: { products: true } } },
+    orderBy: [{ parentId: "asc" }, { navOrder: "asc" }, { name: "asc" }],
   });
-  if (!category) return jsonResponse({ error: "Category not found" }, 404);
-
-  return jsonResponse({
-    ...category,
-    filterTypes: category.filterTypes
-      .map(({ filterType }) => filterType)
-      .sort((left, right) => left.name.localeCompare(right.name)),
-  });
+  return jsonResponse(categories.map(serializeCategory));
 };
 
-const replaceAdminCategoryFilterTypes = async (request, categoryId) => {
+const categoryInputFrom = async (body, { partial = false } = {}) => {
+  const data = {};
+  if (body.name !== undefined) data.name = String(body.name).trim();
+  if (body.slug !== undefined) data.slug = slugify(String(body.slug));
+  else if (body.name !== undefined && !partial) data.slug = slugify(body.name);
+  if (body.description !== undefined) data.description = body.description || null;
+  if (body.showInNav !== undefined) data.showInNav = Boolean(body.showInNav);
+  if (body.navOrder !== undefined) data.navOrder = Number(body.navOrder) || 0;
+  if (body.showOnHomepage !== undefined) data.showOnHomepage = Boolean(body.showOnHomepage);
+  if (body.homepageOrder !== undefined) {
+    data.homepageOrder = body.homepageOrder === null ? null : Number(body.homepageOrder);
+  }
+
+  if (!partial && !data.name) return { error: "name is required" };
+
+  // parentId is validated, not just trusted: it must point at an existing
+  // category. The tree can nest arbitrarily deep (Men > Accessories >
+  // Jewelry), so any category — major or already-nested — is a valid
+  // parent; the only thing that can't happen is a cycle, which is checked
+  // separately in updateAdminCategory since it needs the category's own id.
+  if (Object.prototype.hasOwnProperty.call(body, "parentId")) {
+    if (body.parentId) {
+      const parent = await prisma.category.findUnique({
+        where: { id: body.parentId },
+        select: { id: true },
+      });
+      if (!parent) return { error: "parentId was not found" };
+      data.parentId = parent.id;
+    } else {
+      data.parentId = null;
+    }
+  }
+
+  return { data };
+};
+
+const createAdminCategory = async (request) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  const category = await prisma.category.findUnique({
-    where: { id: categoryId },
-    select: { id: true, name: true },
-  });
-  if (!category) return jsonResponse({ error: "Category not found" }, 404);
 
   const body = await request.json();
-  if (
-    !Array.isArray(body.filterTypeIds) ||
-    body.filterTypeIds.some((id) => typeof id !== "string")
-  ) {
-    return jsonResponse(
-      { error: "filterTypeIds must be an array of IDs" },
-      400,
-    );
-  }
+  const input = await categoryInputFrom(body);
+  if (input.error) return jsonResponse({ error: input.error }, 400);
 
-  const filterTypeIds = [...new Set(body.filterTypeIds)];
-  const filterTypeCount = await prisma.filterType.count({
-    where: { id: { in: filterTypeIds } },
-  });
-  if (filterTypeCount !== filterTypeIds.length) {
-    return jsonResponse(
-      { error: "One or more filterTypeIds were not found" },
-      400,
-    );
-  }
-
-  const updatedCategory = await prisma.$transaction(async (transaction) => {
-    await transaction.categoryFilterType.deleteMany({ where: { categoryId } });
-    if (filterTypeIds.length) {
-      await transaction.categoryFilterType.createMany({
-        data: filterTypeIds.map((filterTypeId) => ({
-          categoryId,
-          filterTypeId,
-        })),
-      });
+  try {
+    const category = await prisma.category.create({ data: input.data });
+    return jsonResponse(serializeCategory(category), 201);
+  } catch (error) {
+    if (error?.code === "P2002") {
+      return jsonResponse({ error: "A category with this slug already exists" }, 409);
     }
-
-    return transaction.category.findUnique({
-      where: { id: categoryId },
-      select: {
-        id: true,
-        name: true,
-        filterTypes: {
-          select: {
-            filterType: { select: { id: true, name: true, slug: true } },
-          },
-        },
-      },
-    });
-  });
-
-  return jsonResponse({
-    ...updatedCategory,
-    filterTypes: updatedCategory.filterTypes
-      .map(({ filterType }) => filterType)
-      .sort((left, right) => left.name.localeCompare(right.name)),
-  });
+    throw error;
+  }
 };
 
-const handleAdminCategoryFilterTypeRequest = async (request, segments) => {
-  const categoryId = decodeURIComponent(segments[3]);
-  if (request.method === "GET") {
-    return listAdminCategoryFilterTypes(request, categoryId);
+const updateAdminCategory = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const body = await request.json();
+  const input = await categoryInputFrom(body, { partial: true });
+  if (input.error) return jsonResponse({ error: input.error }, 400);
+  if (Object.keys(input.data).length === 0) {
+    return jsonResponse({ error: "At least one field is required" }, 400);
   }
-  if (request.method === "PUT") {
-    return replaceAdminCategoryFilterTypes(request, categoryId);
+  // A category can't become its own descendant's child — that would create
+  // a cycle. `getCategoryAndDescendantIds` includes the category itself,
+  // so this also catches the simpler "parent of itself" case.
+  if (input.data.parentId) {
+    const invalidParentIds = await getCategoryAndDescendantIds(id);
+    if (invalidParentIds.includes(input.data.parentId)) {
+      return jsonResponse(
+        { error: "A category cannot be moved under itself or one of its own subcategories" },
+        400,
+      );
+    }
   }
+
+  try {
+    const category = await prisma.category.update({
+      where: { id },
+      data: input.data,
+    });
+    return jsonResponse(serializeCategory(category));
+  } catch (error) {
+    if (error?.code === "P2025") return jsonResponse({ error: "Category not found" }, 404);
+    if (error?.code === "P2002") {
+      return jsonResponse({ error: "A category with this slug already exists" }, 409);
+    }
+    throw error;
+  }
+};
+
+const deleteAdminCategory = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const category = await prisma.category.findUnique({ where: { id }, select: { id: true } });
+  if (!category) return jsonResponse({ error: "Category not found" }, 404);
+
+  // Deleting cascades to the whole subtree at the DB level (onDelete:
+  // Cascade on parentId), so the product check has to cover every
+  // descendant at any depth, not just direct children.
+  const subtreeIds = await getCategoryAndDescendantIds(id);
+  const totalProducts = await prisma.productCategory.count({
+    where: { categoryId: { in: subtreeIds } },
+  });
+  if (totalProducts > 0) {
+    return jsonResponse(
+      {
+        error: `${totalProducts} product${totalProducts === 1 ? " is" : "s are"} still tagged with this category or its subcategories. Reassign them first.`,
+      },
+      409,
+    );
+  }
+
+  await prisma.category.delete({ where: { id } });
+  return jsonResponse({ success: true });
+};
+
+const handleAdminCategoryRequest = async (request, segments) => {
+  const id = segments[3] ? decodeURIComponent(segments[3]) : null;
+  if (request.method === "GET" && !id) return listAdminCategories(request);
+  if (request.method === "POST" && !id) return createAdminCategory(request);
+  if (request.method === "PUT" && id) return updateAdminCategory(request, id);
+  if (request.method === "DELETE" && id) return deleteAdminCategory(request, id);
   return jsonResponse({ error: "Method not allowed" }, 405);
 };
 
@@ -1784,210 +1759,40 @@ const handleAdminTagRequest = async (request, segments) => {
   return jsonResponse({ error: "Method not allowed" }, 405);
 };
 
-const sectionSelect = {
-  id: true,
-  title: true,
-  slug: true,
-  description: true,
-  showOnHomepage: true,
-  homepageOrder: true,
-  createdAt: true,
-  products: { select: { productId: true } },
-};
+// Public-facing "section" views are just categories with showOnHomepage
+// set — no separate Section model to keep synchronized with this one.
+// Includes descendants via the same tree-walk browsing uses, so a
+// homepage block pointed at "Lifestyle" (no children) or at a major
+// category with subcategories both work the same way.
+const publicProductArchivedFilter = { archived: false, status: "ACTIVE" };
 
-const serializeAdminSection = (section) => ({
-  ...section,
-  productIds: section.products.map(({ productId }) => productId),
-  productCount: section.products.length,
-  products: undefined,
-});
-
-const validateSectionInput = (body, { partial = false } = {}) => {
-  const data = {};
-  for (const field of ["title", "slug", "description"]) {
-    if (body[field] !== undefined) {
-      if (typeof body[field] !== "string" || !body[field].trim()) {
-        return { error: `${field} must be a non-empty string` };
-      }
-      data[field] = body[field].trim();
-    } else if (!partial) {
-      return { error: `${field} is required` };
-    }
-  }
-  if (body.showOnHomepage !== undefined) {
-    if (typeof body.showOnHomepage !== "boolean") {
-      return { error: "showOnHomepage must be a boolean" };
-    }
-    data.showOnHomepage = body.showOnHomepage;
-  }
-  if (body.homepageOrder !== undefined) {
-    if (
-      body.homepageOrder !== null &&
-      (!Number.isInteger(Number(body.homepageOrder)) ||
-        Number(body.homepageOrder) < 0)
-    ) {
-      return { error: "homepageOrder must be a non-negative integer or null" };
-    }
-    data.homepageOrder =
-      body.homepageOrder === null ? null : Number(body.homepageOrder);
-  }
-  return { data };
-};
-
-const listAdminSections = async (request) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-  const sections = await prisma.section.findMany({
-    orderBy: [{ homepageOrder: "asc" }, { createdAt: "desc" }],
-    select: sectionSelect,
+const getCategoryWithProducts = async (where) => {
+  const category = await prisma.category.findFirst({ where });
+  if (!category) return null;
+  const ids = await getCategoryAndDescendantIds(category.id);
+  const products = await prisma.product.findMany({
+    where: { ...publicProductArchivedFilter, categories: { some: { categoryId: { in: ids } } } },
+    include: productInclude,
+    orderBy: { createdAt: "desc" },
   });
-  return jsonResponse(sections.map(serializeAdminSection));
-};
-
-const getAdminSection = async (request, id) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-  const section = await prisma.section.findUnique({
-    where: { id },
-    select: sectionSelect,
-  });
-  if (!section) return jsonResponse({ error: "Section not found" }, 404);
-  return jsonResponse(serializeAdminSection(section));
-};
-
-const createAdminSection = async (request) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-  const result = validateSectionInput(await request.json());
-  if (result.error) return jsonResponse({ error: result.error }, 400);
-  const section = await prisma.section.create({
-    data: result.data,
-    select: sectionSelect,
-  });
-  return jsonResponse(serializeAdminSection(section), 201);
-};
-
-const updateAdminSection = async (request, id) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-  const result = validateSectionInput(await request.json(), { partial: true });
-  if (result.error || Object.keys(result.data).length === 0) {
-    return jsonResponse(
-      { error: result.error || "At least one section field is required" },
-      400,
-    );
-  }
-  const section = await prisma.section.update({
-    where: { id },
-    data: result.data,
-    select: sectionSelect,
-  });
-  return jsonResponse(serializeAdminSection(section));
-};
-
-const deleteAdminSection = async (request, id) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-  await prisma.section.delete({ where: { id } });
-  return jsonResponse({ deleted: true, id });
-};
-
-const replaceAdminSectionProducts = async (request, id) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-  const body = await request.json();
-  if (
-    !Array.isArray(body.productIds) ||
-    body.productIds.some((productId) => typeof productId !== "string")
-  ) {
-    return jsonResponse(
-      { error: "productIds must be an array of product IDs" },
-      400,
-    );
-  }
-  const productIds = [...new Set(body.productIds)];
-  const section = await prisma.section.findUnique({
-    where: { id },
-    select: { id: true },
-  });
-  if (!section) return jsonResponse({ error: "Section not found" }, 404);
-  const productCount = await prisma.product.count({
-    where: { id: { in: productIds } },
-  });
-  if (productCount !== productIds.length) {
-    return jsonResponse({ error: "One or more products were not found" }, 400);
-  }
-  await prisma.$transaction([
-    prisma.productSection.deleteMany({ where: { sectionId: id } }),
-    prisma.productSection.createMany({
-      data: productIds.map((productId) => ({ productId, sectionId: id })),
-    }),
-  ]);
-  return getAdminSection(request, id);
-};
-
-const handleAdminSectionRequest = async (request, segments) => {
-  const id = segments[3] ? decodeURIComponent(segments[3]) : null;
-  if (request.method === "GET" && !id) return listAdminSections(request);
-  if (request.method === "GET" && id && segments[4] !== "products") {
-    return getAdminSection(request, id);
-  }
-  if (request.method === "POST" && !id) return createAdminSection(request);
-  if (request.method === "PUT" && id && segments[4] === "products") {
-    return replaceAdminSectionProducts(request, id);
-  }
-  if (request.method === "PUT" && id) return updateAdminSection(request, id);
-  if (request.method === "DELETE" && id) return deleteAdminSection(request, id);
-  return jsonResponse({ error: "Method not allowed" }, 405);
-};
-
-const serializePublicSection = (section) => ({
-  id: section.id,
-  title: section.title,
-  slug: section.slug,
-  description: section.description,
-  showOnHomepage: section.showOnHomepage,
-  homepageOrder: section.homepageOrder,
-  products: section.products.map(serializeProduct),
-});
-
-const sectionProductInclude = {
-  product: { include: productInclude },
-};
-
-const publicSectionProductsInclude = {
-  where: { product: { archived: false, status: "ACTIVE" } },
-  include: sectionProductInclude,
+  return { ...serializeCategory(category), products: products.map(serializeProduct) };
 };
 
 const getPublicSection = async (slug) => {
-  const section = await prisma.section.findUnique({
-    where: { slug },
-    include: { products: publicSectionProductsInclude },
-  });
-  if (!section) return jsonResponse({ error: "Section not found" }, 404);
-  return jsonResponse(
-    serializePublicSection({
-      ...section,
-      products: section.products.map(({ product }) => product),
-    }),
-  );
+  const section = await getCategoryWithProducts({ slug });
+  if (!section) return jsonResponse({ error: "Not found" }, 404);
+  return jsonResponse(section);
 };
 
 const listHomepageSections = async () => {
-  const sections = await prisma.section.findMany({
+  const categories = await prisma.category.findMany({
     where: { showOnHomepage: true },
     orderBy: [{ homepageOrder: "asc" }, { createdAt: "asc" }],
-    include: { products: publicSectionProductsInclude },
   });
-  return jsonResponse(
-    sections.map((section) =>
-      serializePublicSection({
-        ...section,
-        products: section.products.map(({ product }) => product),
-      }),
-    ),
+  const sections = await Promise.all(
+    categories.map((category) => getCategoryWithProducts({ id: category.id })),
   );
+  return jsonResponse(sections.filter(Boolean));
 };
 
 const discountSelect = {
@@ -2617,8 +2422,9 @@ const handleAdminCustomerRequest = async (request, segments, url) => {
 
 const adminProductInclude = {
   brand: { select: { id: true, name: true } },
-  category: { select: { id: true, name: true } },
-  subcategoryRef: { select: { id: true, name: true, slug: true } },
+  categories: {
+    include: { category: { select: { id: true, name: true, slug: true, parentId: true } } },
+  },
   variants: true,
   tags: {
     include: {
@@ -2636,8 +2442,10 @@ const BULK_PRODUCT_CSV_COLUMNS = [
   "description",
   "price",
   "brandSlug",
-  "department",
-  "subcategorySlug",
+  // Comma-separated category/subcategory slugs, e.g. "women,accessories,bags" —
+  // any mix of major categories and subcategories, exactly what the product
+  // form's checklist would tick.
+  "categorySlugs",
   "designCode",
   "color",
   "size",
@@ -2664,8 +2472,7 @@ const getAdminProductBulkUploadTemplate = async (request) => {
     "A sample product for bulk upload",
     "49.99",
     "northline",
-    "Men",
-    "tops",
+    "men,tops",
     "DESIGN-001",
     "Black",
     "M",
@@ -2685,12 +2492,6 @@ const getAdminProductBulkUploadTemplate = async (request) => {
   });
 };
 
-const bulkProductDepartments = {
-  Men: { gender: "men", categoryId: "apparel" },
-  Women: { gender: "women", categoryId: "apparel" },
-  Accessories: { gender: "unisex", categoryId: "accessories" },
-};
-
 const getBulkProductRowValue = (row, field) =>
   typeof row[field] === "string" ? row[field].trim() : "";
 
@@ -2705,8 +2506,7 @@ const validateBulkProductRow = async (
     "description",
     "price",
     "brandSlug",
-    "department",
-    "subcategorySlug",
+    "categorySlugs",
     "designCode",
     "color",
     "size",
@@ -2720,13 +2520,6 @@ const validateBulkProductRow = async (
   );
   const missingField = requiredFields.find((field) => !values[field]);
   if (missingField) return { error: `${missingField} is required` };
-
-  const department = bulkProductDepartments[values.department];
-  if (!department) {
-    return {
-      error: "department must be one of Men, Women, or Accessories",
-    };
-  }
 
   const price = Number(values.price);
   if (!Number.isFinite(price)) return { error: "price must be a number" };
@@ -2747,31 +2540,25 @@ const validateBulkProductRow = async (
   const brand = context.brandsBySlug.get(values.brandSlug);
   if (!brand) return { error: `brandSlug "${values.brandSlug}" was not found` };
 
-  const subcategory = context.subcategoriesBySlug.get(values.subcategorySlug);
-  if (!subcategory) {
-    return {
-      error: `subcategorySlug "${values.subcategorySlug}" was not found`,
-    };
+  const categorySlugs = [
+    ...new Set(
+      values.categorySlugs.split(",").map((slug) => slug.trim()).filter(Boolean),
+    ),
+  ];
+  const categoryIds = [];
+  for (const slug of categorySlugs) {
+    const category = context.categoriesBySlug.get(slug);
+    if (!category) return { error: `categorySlugs "${slug}" was not found` };
+    categoryIds.push(category.id);
   }
-  if (subcategory.categoryId !== department.categoryId) {
-    return {
-      error: `subcategorySlug "${values.subcategorySlug}" belongs to category "${subcategory.categoryId}", not department ${values.department}`,
-    };
-  }
-  if (
-    subcategory.genders.length > 0 &&
-    !subcategory.genders.includes(department.gender)
-  ) {
-    return {
-      error: `subcategorySlug "${values.subcategorySlug}" is associated with ${subcategory.genders.join(" and ")}, not department ${values.department}`,
-    };
+  if (categoryIds.length === 0) {
+    return { error: "categorySlugs must include at least one category" };
   }
 
   return {
     values,
     brand,
-    subcategory,
-    department,
+    categoryIds,
     price,
     stock,
   };
@@ -2828,17 +2615,9 @@ const bulkProductImport = async (request) => {
       ),
     )
     .filter(Boolean);
-  const [brands, subcategories, tags, existingVariants] = await Promise.all([
+  const [brands, categories, tags, existingVariants] = await Promise.all([
     prisma.brand.findMany({ select: { id: true, slug: true } }),
-    prisma.subcategory.findMany({
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        categoryId: true,
-        products: { select: { gender: true }, distinct: ["gender"] },
-      },
-    }),
+    prisma.category.findMany({ select: { id: true, slug: true } }),
     prisma.tag.findMany({ select: { id: true, slug: true } }),
     prisma.variant.findMany({
       where: { sku: { in: designCodes } },
@@ -2847,15 +2626,7 @@ const bulkProductImport = async (request) => {
   ]);
   const context = {
     brandsBySlug: new Map(brands.map((brand) => [brand.slug, brand])),
-    subcategoriesBySlug: new Map(
-      subcategories.map((subcategory) => [
-        subcategory.slug,
-        {
-          ...subcategory,
-          genders: subcategory.products.map((product) => product.gender),
-        },
-      ]),
-    ),
+    categoriesBySlug: new Map(categories.map((category) => [category.slug, category])),
     tagsBySlug: new Map(tags.map((tag) => [tag.slug, tag])),
     existingDesignCodes: new Set(
       existingVariants.map((variant) => variant.sku),
@@ -2928,11 +2699,10 @@ const bulkProductImport = async (request) => {
             name: validated.values.name,
             description: validated.values.description,
             basePrice: validated.price,
-            gender: validated.department.gender,
-            categoryId: validated.department.categoryId,
-            subcategory: validated.subcategory.name,
-            subcategoryId: validated.subcategory.id,
             brandId: validated.brand.id,
+            categories: {
+              create: validated.categoryIds.map((categoryId) => ({ categoryId })),
+            },
             variants: {
               create: {
                 id: crypto.randomUUID(),
@@ -2962,46 +2732,47 @@ const bulkProductImport = async (request) => {
   return jsonResponse(summary);
 };
 
-const serializeAdminProduct = (product) => ({
-  id: product.id,
-  name: product.name,
-  gender: product.gender,
-  description: product.description,
-  basePrice: product.basePrice,
-  discountPercent: product.discountPercent,
-  imageUrl: product.imageUrl,
-  isNew: product.isNew,
-  archived: product.archived,
-  brandId: product.brandId,
-  brandName: product.brand?.name,
-  categoryId: product.categoryId,
-  categoryName: product.category?.name,
-  subcategory: product.subcategory,
-  subcategoryId: product.subcategoryId,
-  subcategoryName: product.subcategoryRef?.name,
-  variants: product.variants,
-  tags: product.tags.map(({ tag }) => ({
-    id: tag.id,
-    name: tag.name,
-    slug: tag.slug,
-    filterTypeId: tag.filterTypeId,
-    filterType: tag.filterType,
-  })),
-});
+const serializeAdminProduct = (product) => {
+  const categories = product.categories.map(({ category }) => category);
+  return {
+    id: product.id,
+    name: product.name,
+    description: product.description,
+    basePrice: product.basePrice,
+    discountPercent: product.discountPercent,
+    imageUrl: product.imageUrl,
+    isNew: isProductNew(product.createdAt),
+    featured: product.featured,
+    archived: product.archived,
+    brandId: product.brandId,
+    brandName: product.brand?.name,
+    categories,
+    categoryIds: categories.map((category) => category.id),
+    variants: product.variants,
+    tags: product.tags.map(({ tag }) => ({
+      id: tag.id,
+      name: tag.name,
+      slug: tag.slug,
+      filterTypeId: tag.filterTypeId,
+      filterType: tag.filterType,
+    })),
+  };
+};
 
+// categoryIds is returned separately from `data`: it's a join-table
+// relation, not a scalar column, so create/update wire it through Prisma's
+// nested-write / replace syntax themselves rather than spreading it into a
+// plain `data` object.
 const getAdminProductInput = async (body, { partial = false } = {}) => {
   const fields = [
     "name",
-    "gender",
     "description",
     "basePrice",
     "discountPercent",
     "imageUrl",
-    "isNew",
+    "featured",
     "archived",
     "brandId",
-    "categoryId",
-    "subcategoryId",
   ];
   const data = Object.fromEntries(
     fields
@@ -3010,15 +2781,7 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
   );
 
   if (!partial) {
-    const required = [
-      "name",
-      "gender",
-      "description",
-      "basePrice",
-      "brandId",
-      "categoryId",
-      "subcategoryId",
-    ];
+    const required = ["name", "description", "basePrice", "brandId"];
     const missing = required.filter(
       (field) =>
         body[field] === undefined || body[field] === null || body[field] === "",
@@ -3027,6 +2790,9 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
       return {
         error: `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required`,
       };
+    }
+    if (!Array.isArray(body.categoryIds) || body.categoryIds.length === 0) {
+      return { error: "categoryIds must include at least one category" };
     }
   }
 
@@ -3045,8 +2811,8 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
       return { error: "discountPercent must be between 0 and 100" };
     }
   }
-  if (data.isNew !== undefined && typeof data.isNew !== "boolean") {
-    return { error: "isNew must be a boolean" };
+  if (data.featured !== undefined && typeof data.featured !== "boolean") {
+    return { error: "featured must be a boolean" };
   }
   if (data.archived !== undefined && typeof data.archived !== "boolean") {
     return { error: "archived must be a boolean" };
@@ -3055,19 +2821,23 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
     data.status = data.archived ? "ARCHIVED" : "ACTIVE";
   }
 
-  if (data.subcategoryId !== undefined && data.subcategoryId !== null) {
-    const subcategory = await prisma.subcategory.findUnique({
-      where: { id: data.subcategoryId },
-      select: { id: true, name: true, categoryId: true },
-    });
-    if (!subcategory) return { error: "subcategoryId was not found" };
-    if (data.categoryId && data.categoryId !== subcategory.categoryId) {
-      return { error: "subcategoryId must belong to categoryId" };
+  let categoryIds;
+  if (body.categoryIds !== undefined) {
+    if (!Array.isArray(body.categoryIds) || body.categoryIds.some((id) => typeof id !== "string")) {
+      return { error: "categoryIds must be an array of category IDs" };
     }
-    data.subcategory = subcategory.name;
+    categoryIds = [...new Set(body.categoryIds)];
+    if (categoryIds.length > 0) {
+      const count = await prisma.category.count({ where: { id: { in: categoryIds } } });
+      if (count !== categoryIds.length) {
+        return { error: "One or more categoryIds were not found" };
+      }
+    } else if (!partial) {
+      return { error: "categoryIds must include at least one category" };
+    }
   }
 
-  return { data };
+  return { data, categoryIds };
 };
 
 const listAdminProducts = async (request) => {
@@ -3102,7 +2872,11 @@ const createAdminProduct = async (request) => {
   if (input.error) return jsonResponse({ error: input.error }, 400);
 
   const product = await prisma.product.create({
-    data: { id: body.id || crypto.randomUUID(), ...input.data },
+    data: {
+      id: body.id || crypto.randomUUID(),
+      ...input.data,
+      categories: { create: input.categoryIds.map((categoryId) => ({ categoryId })) },
+    },
     include: adminProductInclude,
   });
   return jsonResponse(serializeAdminProduct(product), 201);
@@ -3150,6 +2924,13 @@ const updateAdminProduct = async (request, id) => {
   }
 
   const product = await prisma.$transaction(async (transaction) => {
+    if (input.categoryIds !== undefined) {
+      await transaction.productCategory.deleteMany({ where: { productId: id } });
+      await transaction.productCategory.createMany({
+        data: input.categoryIds.map((categoryId) => ({ productId: id, categoryId })),
+      });
+    }
+
     const updatedProduct = await transaction.product.update({
       where: { id },
       data: input.data,
@@ -4418,6 +4199,15 @@ const changeAccountPassword = async (request) => {
   ) {
     return jsonResponse({ error: "newPassword is required" }, 400);
   }
+  // The signup form enforces this client-side (minLength=8); this endpoint
+  // didn't, so a too-short password only failed with Supabase's generic
+  // error after a round trip. Same rule, checked before we make the call.
+  if (body.newPassword.length < 8) {
+    return jsonResponse(
+      { error: "Password must be at least 8 characters." },
+      400,
+    );
+  }
 
   const { error } = await getSupabaseAdmin().auth.admin.updateUserById(
     user.id,
@@ -4579,6 +4369,14 @@ const wishlistProductSelect = {
   },
 };
 
+const wishlistBrandSelect = {
+  id: true,
+  name: true,
+  slug: true,
+  logo: true,
+  description: true,
+};
+
 const cartItemSelect = {
   id: true,
   productId: true,
@@ -4671,20 +4469,42 @@ const listWishlist = async (request) => {
     select: {
       id: true,
       productId: true,
+      brandId: true,
       createdAt: true,
       product: { select: wishlistProductSelect },
+      brand: { select: wishlistBrandSelect },
     },
   });
   return jsonResponse(wishlist);
 };
 
+// One endpoint for both — a row favorites a product or a brand depending
+// on which id the caller sends, never both.
 const addToWishlist = async (request) => {
   const user = await getCurrentUser(request);
   if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
 
   const body = await request.json();
-  if (typeof body.productId !== "string" || !body.productId.trim()) {
-    return jsonResponse({ error: "productId is required" }, 400);
+  const hasProductId = typeof body.productId === "string" && body.productId.trim();
+  const hasBrandId = typeof body.brandId === "string" && body.brandId.trim();
+  if (!hasProductId && !hasBrandId) {
+    return jsonResponse({ error: "productId or brandId is required" }, 400);
+  }
+
+  if (hasBrandId) {
+    const brand = await prisma.brand.findUnique({
+      where: { id: body.brandId },
+      select: { id: true },
+    });
+    if (!brand) return jsonResponse({ error: "Brand not found" }, 404);
+
+    const wishlist = await prisma.wishlist.upsert({
+      where: { userId_brandId: { userId: user.id, brandId: brand.id } },
+      create: { userId: user.id, brandId: brand.id },
+      update: {},
+      select: { id: true, brandId: true, createdAt: true },
+    });
+    return jsonResponse({ success: true, wishlist });
   }
 
   const product = await prisma.product.findUnique({
@@ -4712,6 +4532,16 @@ const removeFromWishlist = async (request, productId) => {
     where: { userId: user.id, productId },
   });
   return jsonResponse({ success: true, productId });
+};
+
+const removeBrandFromWishlist = async (request, brandId) => {
+  const user = await getCurrentUser(request);
+  if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+
+  await prisma.wishlist.deleteMany({
+    where: { userId: user.id, brandId },
+  });
+  return jsonResponse({ success: true, brandId });
 };
 
 const waitlistEntrySelect = {
@@ -4936,6 +4766,8 @@ const ROUTES = [
       if (request.method === "GET" && !segments[2]) return listWishlist(request);
       if (request.method === "POST" && !segments[2])
         return addToWishlist(request);
+      if (request.method === "DELETE" && segments[2] === "brand" && segments[3])
+        return removeBrandFromWishlist(request, decodeURIComponent(segments[3]));
       if (request.method === "DELETE" && segments[2])
         return removeFromWishlist(request, decodeURIComponent(segments[2]));
       return jsonResponse({ error: "Method not allowed" }, 405);
@@ -5112,16 +4944,10 @@ const ROUTES = [
     errorMessage: "Brand request failed",
   },
   {
-    ...prefix("api", "admin", "subcategories"),
+    ...prefix("api", "admin", "categories"),
     handler: ({ request, segments }) =>
-      handleAdminSubcategoryRequest(request, segments),
-    errorMessage: "Subcategory request failed",
-  },
-  {
-    ...path("api", "admin", "categories", ":categoryId", "filter-types"),
-    handler: ({ request, segments }) =>
-      handleAdminCategoryFilterTypeRequest(request, segments),
-    errorMessage: "Category filter type request failed",
+      handleAdminCategoryRequest(request, segments),
+    errorMessage: "Category request failed",
   },
   {
     ...prefix("api", "admin", "filter-types"),
@@ -5133,11 +4959,6 @@ const ROUTES = [
     ...prefix("api", "admin", "tags"),
     handler: ({ request, segments }) => handleAdminTagRequest(request, segments),
     errorMessage: "Tag request failed",
-  },
-  {
-    ...prefix("api", "admin", "sections"),
-    handler: ({ request, segments }) => handleAdminSectionRequest(request, segments),
-    errorMessage: "Section request failed",
   },
   {
     ...prefix("api", "admin", "journal"),
@@ -5276,6 +5097,9 @@ export const handleApiRequest = async (request) => {
       return await route.handler({ request, url, segments, params });
     } catch (error) {
       console.error(route.errorLog || route.errorMessage, error);
+      Sentry.captureException(error, {
+        tags: { route: route.errorLog || route.errorMessage },
+      });
       return jsonResponse(
         { error: route.errorMessage || "Request failed" },
         route.errorStatus || 500,

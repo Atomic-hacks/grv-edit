@@ -25,7 +25,8 @@ import Brands from "./brands/Brands";
 import BrandCatalogue from "./brands/BrandCatalogue";
 import Catalogues from "./catalog/Catalogues";
 import NewArrivals from "./shop/NewArrivals";
-import GenderCatalogue from "./catalog/GenderCatalogue";
+import CategoryPage from "./catalog/CategoryPage";
+import ArchivePage from "./catalog/ArchivePage";
 import ShopBy from "./shop/ShopBy";
 import SignUp from "./auth/SignUp";
 import LogIn from "./auth/LogIn";
@@ -42,6 +43,7 @@ import Wishlist from "./wishlist/Wishlist";
 import NewsletterBanner from "./component/ui/NewsletterBanner";
 import FirstOrderPromoBanner from "./component/ui/FirstOrderPromoBanner";
 import Spinner from "./component/ui/Spinner";
+import { trackPageview } from "./lib/analytics";
 
 // Checkout and account screens pull in the full country/state dataset
 // via AddressFields. They are always reached by navigation, never as a
@@ -56,9 +58,7 @@ const OrderDetail = React.lazy(() => import("./account/OrderDetail"));
 // and bundling it with the storefront made every visitor download it.
 const AdminHome = React.lazy(() => import("./admin/AdminHome"));
 const AdminLayout = React.lazy(() => import("./component/admin/AdminLayout"));
-const AdminSubcategories = React.lazy(() => import("./admin/AdminSubcategories"));
 const AdminFilterTypes = React.lazy(() => import("./admin/AdminFilterTypes"));
-const AdminCategoryFilterTypes = React.lazy(() => import("./admin/AdminCategoryFilterTypes"));
 const AdminTags = React.lazy(() => import("./admin/AdminTags"));
 const AdminBrands = React.lazy(() => import("./admin/AdminBrands"));
 const AdminBrandForm = React.lazy(() => import("./admin/AdminBrandForm"));
@@ -76,7 +76,7 @@ const AdminDiscounts = React.lazy(() => import("./admin/AdminDiscounts"));
 const AdminFirstOrderPromo = React.lazy(() => import("./admin/AdminFirstOrderPromo"));
 const AdminShippingFees = React.lazy(() => import("./admin/AdminShippingFees"));
 const AdminSiteImages = React.lazy(() => import("./admin/AdminSiteImages"));
-const AdminSections = React.lazy(() => import("./admin/AdminSections"));
+const AdminCategories = React.lazy(() => import("./admin/AdminCategories"));
 const AdminCampaigns = React.lazy(() => import("./admin/AdminCampaigns"));
 const AdminCampaignForm = React.lazy(() => import("./admin/AdminCampaignForm"));
 
@@ -106,10 +106,22 @@ const useScrollToTopOnNavigate = () => {
   }, [pathname]);
 };
 
+// A SPA never reloads, so GA never sees a navigation on its own — one
+// page_view per route change (including filter/sort changes via search
+// params, which is a real change in what's on screen) has to be sent by
+// hand.
+const useAnalyticsPageview = () => {
+  const location = useLocation();
+  React.useEffect(() => {
+    trackPageview(location.pathname + location.search);
+  }, [location.pathname, location.search]);
+};
+
 const AppLayout = () => {
   const location = useLocation();
   const hideNavbar = location.pathname === "/";
   useScrollToTopOnNavigate();
+  useAnalyticsPageview();
 
   return (
     <>
@@ -134,10 +146,6 @@ const AppLayout = () => {
         <Route path="/shop" element={<Shop />} />
         <Route path="/shop-by" element={<ShopBy />} />
         <Route path="/shop/new-arrivals" element={<NewArrivals />} />
-        <Route
-          path="/lifestyle"
-          element={<GenderCatalogue facet="lifestyle" />}
-        />
         <Route path="/product/:id" element={<ProductDetail />} />
         <Route path="/size-guide" element={<SizeGuide />} />
         <Route path="/faq" element={<Faq />} />
@@ -146,21 +154,7 @@ const AppLayout = () => {
         <Route path="/catalogues" element={<Catalogues />} />
         <Route path="/brands" element={<Brands />} />
         <Route path="/brands/:slug" element={<BrandCatalogue />} />
-        <Route path="/men" element={<GenderCatalogue facet="men" />} />
-        <Route path="/women" element={<GenderCatalogue facet="women" />} />
-        <Route
-          path="/accessories"
-          element={<GenderCatalogue facet="accessories" />}
-        />
-        <Route
-          path="/athletics"
-          element={<GenderCatalogue facet="athletics" />}
-        />
-        <Route
-          path="/footwear"
-          element={<GenderCatalogue facet="footwear" />}
-        />
-        <Route path="/archive" element={<GenderCatalogue facet="archive" />} />
+        <Route path="/archive" element={<ArchivePage />} />
         <Route path="/brand" element={<Brand />} />
         <Route path="/journal" element={<Journal />} />
         <Route path="/Departments" element={<Catalogues />} />
@@ -168,6 +162,8 @@ const AppLayout = () => {
         <Route path="/contact" element={<Contact />} />
         <Route path="/about" element={<About />} />
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/:categorySlug" element={<CategoryPage />} />
+        <Route path="/:categorySlug/*" element={<CategoryPage />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/login" element={<LogIn />} />
         <Route path="/email-confirmed" element={<EmailConfirmed />} />
@@ -209,15 +205,8 @@ const AppLayout = () => {
                 <Routes>
                 <Route element={<AdminLayout />}>
                   <Route index element={<AdminHome />} />
-                  <Route
-                    path="subcategories"
-                    element={<AdminSubcategories />}
-                  />
+                  <Route path="categories" element={<AdminCategories />} />
                   <Route path="filter-types" element={<AdminFilterTypes />} />
-                  <Route
-                    path="category-filter-types"
-                    element={<AdminCategoryFilterTypes />}
-                  />
                   <Route path="tags" element={<AdminTags />} />
                   <Route path="brands" element={<AdminBrands />} />
                   <Route path="brands/new" element={<AdminBrandForm />} />
@@ -250,8 +239,6 @@ const AppLayout = () => {
                   />
                   <Route path="shipping-fees" element={<AdminShippingFees />} />
                   <Route path="site-images" element={<AdminSiteImages />} />
-                  <Route path="sections" element={<AdminSections />} />
-                  <Route path="sections/:id/edit" element={<AdminSections />} />
                   <Route path="orders" element={<AdminOrders />} />
                   <Route path="orders/:id" element={<AdminOrderDetail />} />
                   <Route

@@ -123,8 +123,23 @@ const WishlistCard = ({ item }) => {
   );
 };
 
+const WishlistBrandRow = ({ item }) => (
+  <div className="flex items-center justify-between gap-4 border-b border-[var(--line)] py-4">
+    <Link
+      to={`/brands/${item.brand.id}`}
+      className="min-w-0 truncate text-sm font-semibold text-[var(--ink-900)] hover:text-[var(--ink-500)]"
+    >
+      {item.brand.name}
+    </Link>
+    <WishlistButton brand={item.brand} icon="close" />
+  </div>
+);
+
 const WishlistContent = () => {
   const { items, loading } = useWishlist();
+  const productItems = items.filter((item) => item.productId);
+  const brandItems = items.filter((item) => item.brandId);
+  const isEmpty = productItems.length === 0 && brandItems.length === 0;
 
   return (
     <main className="min-h-screen bg-white">
@@ -136,11 +151,11 @@ const WishlistContent = () => {
             label="Loading wishlist"
             className="mt-12 text-sm text-gray-500"
           />
-        ) : items.length === 0 ? (
+        ) : isEmpty ? (
           <div className="mt-10 flex flex-col items-start gap-3 border-t border-[var(--line)] pt-10">
             <p className="section-title">Nothing saved yet</p>
             <p className="meta-text">
-              Tap the heart on any piece to keep it here.
+              Tap the heart on any piece — or follow a brand — to keep it here.
             </p>
             <Link
               to="/shop"
@@ -150,11 +165,25 @@ const WishlistContent = () => {
             </Link>
           </div>
         ) : (
-          <div className="mt-10 product-grid">
-            {items.map((item) => (
-              <WishlistCard key={item.productId} item={item} />
-            ))}
-          </div>
+          <>
+            {productItems.length > 0 && (
+              <div className="mt-10 product-grid">
+                {productItems.map((item) => (
+                  <WishlistCard key={item.productId} item={item} />
+                ))}
+              </div>
+            )}
+            {brandItems.length > 0 && (
+              <section className={productItems.length > 0 ? "mt-16 border-t border-[var(--line)] pt-10" : "mt-10"}>
+                <h2 className="section-title">Followed brands</h2>
+                <div className="mt-4 max-w-lg divide-y divide-[var(--line)] border-t border-[var(--line)]">
+                  {brandItems.map((item) => (
+                    <WishlistBrandRow key={item.brandId} item={item} />
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
         )}
         <RecentlyViewedRail />
       </div>

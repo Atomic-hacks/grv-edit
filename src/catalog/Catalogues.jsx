@@ -138,7 +138,6 @@ const Catalogues = () => {
                       title={product.name}
                       product={product}
                       category={product.subcategory}
-                      details={product.gender}
                       badge="NEW"
                     />
                   </Link>

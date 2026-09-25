@@ -1,207 +1,154 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion as Motion } from "framer-motion";
-import {
-  emptyFilters,
-  filterGroups,
-  filterProducts,
-  getFilterValues,
-} from "../../data/listing";
+import React, { useEffect, useState } from "react";
+import SidePanel from "./SidePanel";
 
 const formatValue = (value) =>
-  value
+  String(value)
     .replaceAll("-", " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
 
+// Filters, kept deliberately small: brand and size are already structured,
+// color reads off the variant, style is the one admin-managed tag
+// dimension. This is not where category/subcategory browsing happens
+// anymore — that's the Browse drawer, opening from the other side.
 const FilterDrawer = ({
   isOpen,
   onClose,
-  products,
   appliedFilters,
   onApply,
-  activeCategoryId,
-  categories = [],
-  facetOptions = [],
-  onFacetSelect,
+  facets,
+  facetsLoading,
 }) => {
-  const [draftFilters, setDraftFilters] = useState(appliedFilters);
-  const [openGroup, setOpenGroup] = useState(null);
+  const [draft, setDraft] = useState(appliedFilters);
+  const [openGroup, setOpenGroup] = useState("brand");
 
   useEffect(() => {
-    if (isOpen) setDraftFilters(appliedFilters);
+    if (isOpen) setDraft(appliedFilters);
   }, [appliedFilters, isOpen]);
 
-  const matchingCount = useMemo(
-    () => filterProducts(products, draftFilters).length,
-    [draftFilters, products],
-  );
-
-  const toggleValue = (key, value) => {
-    setDraftFilters((current) => ({
-      ...current,
-      [key]: current[key].includes(value)
-        ? current[key].filter((item) => item !== value)
-        : [...current[key], value],
-    }));
+  const toggle = (key, value) => {
+    setDraft((current) => {
+      const list = current[key] || [];
+      return {
+        ...current,
+        [key]: list.includes(value)
+          ? list.filter((item) => item !== value)
+          : [...list, value],
+      };
+    });
   };
 
-  const clearFilters = () => setDraftFilters(emptyFilters());
+  const setPrice = (field, value) =>
+    setDraft((current) => ({ ...current, [field]: value }));
+
+  const clear = () =>
+    setDraft({ brand: [], size: [], color: [], style: [], minPrice: "", maxPrice: "" });
+
+  const groups = [
+    { key: "brand", label: "Brand", options: facets?.brands?.map((b) => ({ value: b.value, label: b.label, count: b.count })) },
+    { key: "size", label: "Size", options: facets?.sizes?.map((s) => ({ value: s.value, label: s.value, count: s.count })) },
+    { key: "color", label: "Color", options: facets?.colors?.map((c) => ({ value: c.value, label: c.value, count: c.count })) },
+    { key: "style", label: "Style", options: facets?.styles?.map((s) => ({ value: s.value, label: s.label, count: s.count })) },
+  ];
+
+  const activeCount =
+    (draft.brand?.length || 0) +
+    (draft.size?.length || 0) +
+    (draft.color?.length || 0) +
+    (draft.style?.length || 0) +
+    (draft.minPrice ? 1 : 0) +
+    (draft.maxPrice ? 1 : 0);
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <Motion.div
-          className="fixed inset-0 z-50"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-        >
-          <Motion.button
+    <SidePanel
+      isOpen={isOpen}
+      onClose={onClose}
+      side="right"
+      title="Filter"
+      footer={
+        <div className="grid grid-cols-2 gap-3">
+          <button
             type="button"
-            aria-label="Close filters"
-            className="absolute inset-0 bg-black/40"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          />
-          <Motion.aside
-            aria-label="Product filters"
-            className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-white text-[var(--ink-900)] shadow-[-8px_0_40px_rgba(0,0,0,0.12)]"
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "100%" }}
-            transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+            onClick={clear}
+            className="border border-[var(--line)] py-3 text-[11px] font-semibold uppercase tracking-[0.12em] hover:bg-[var(--surface-muted)]"
           >
-            <div className="flex items-center justify-between border-b border-[var(--line)] px-6 py-5">
-              <h2 className="text-[12px] font-semibold uppercase tracking-[0.14em]">
-                Filter
-              </h2>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close filters"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--ink-500)] transition-colors hover:border-[var(--ink-900)] hover:text-[var(--ink-900)]"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                >
-                  <path d="M12 4L4 12M4 4l8 8" />
-                </svg>
-              </button>
-            </div>
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => onApply(draft)}
+            className="bg-[var(--ink-900)] py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-white hover:bg-(--color-accent-orange)"
+          >
+            Apply{activeCount > 0 ? ` (${activeCount})` : ""}
+          </button>
+        </div>
+      }
+    >
+      {/* Price is its own, always-open row — a range isn't a checklist. */}
+      <div className="border-b border-[var(--line)] py-5">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.12em]">Price</p>
+        <div className="mt-3 flex items-center gap-3">
+          <input
+            type="number"
+            min="0"
+            placeholder="Min"
+            value={draft.minPrice || ""}
+            onChange={(event) => setPrice("minPrice", event.target.value)}
+            className="w-full border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-[var(--ink-900)]"
+          />
+          <span className="text-[var(--ink-300)]">–</span>
+          <input
+            type="number"
+            min="0"
+            placeholder="Max"
+            value={draft.maxPrice || ""}
+            onChange={(event) => setPrice("maxPrice", event.target.value)}
+            className="w-full border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-[var(--ink-900)]"
+          />
+        </div>
+      </div>
 
-            <div className="flex-1 overflow-y-auto px-6">
-              {facetOptions.length > 0 && (
-                <div className="border-b border-[var(--line)] py-5">
-                  <p className="eyebrow">Browse catalogue</p>
-                  <div className="mt-3 space-y-0.5">
-                    {facetOptions.map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => onFacetSelect?.(option)}
-                        className={`block w-full py-1.5 text-left text-[13px] transition-colors hover:text-(--color-accent-orange) ${
-                          option.active
-                            ? "font-semibold text-(--color-accent-orange)"
-                            : "text-[var(--ink-700)]"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {filterGroups.map((group) => {
-                const values = getFilterValues(
-                  products,
-                  group.key,
-                  activeCategoryId,
-                  categories,
-                );
-                const isExpanded = openGroup === group.key;
-                return (
-                  <div key={group.key} className="border-b border-[var(--line)]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setOpenGroup(isExpanded ? null : group.key)
-                      }
-                      className="flex w-full items-center justify-between gap-3 py-5 text-left"
-                      aria-expanded={isExpanded}
-                    >
-                      <span className="text-[12px] font-semibold uppercase tracking-[0.12em]">
-                        {group.label}
-                        {draftFilters[group.key].length > 0 && (
-                          <span className="ml-2 font-normal normal-case tracking-normal text-[var(--ink-500)]">
-                            {draftFilters[group.key].length} selected
-                          </span>
-                        )}
-                      </span>
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 12 12"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        className={`shrink-0 transition-transform duration-300 ${
-                          isExpanded ? "rotate-180" : ""
-                        }`}
-                      >
-                        <path d="M2 4l4 4 4-4" />
-                      </svg>
-                    </button>
-                    {isExpanded && (
-                      <div className="grid grid-cols-2 gap-x-4 pb-4">
-                        {values.map((value) => (
-                          <label
-                            key={value}
-                            className="flex min-h-10 cursor-pointer items-center gap-2.5 py-1 text-[13px] text-[var(--ink-700)] transition-colors hover:text-[var(--ink-900)]"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={draftFilters[group.key].includes(value)}
-                              onChange={() => toggleValue(group.key, value)}
-                              className="h-4 w-4 shrink-0 accent-(--color-accent-orange)"
-                            />
-                            <span className="min-w-0 truncate">
-                              {formatValue(value)}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
+      {groups.map((group) => {
+        const isExpanded = openGroup === group.key;
+        const options = group.options || [];
+        return (
+          <div key={group.key} className="border-b border-[var(--line)]">
+            <button
+              type="button"
+              onClick={() => setOpenGroup(isExpanded ? null : group.key)}
+              className="flex w-full items-center justify-between py-5 text-left text-[12px] font-semibold uppercase tracking-[0.12em]"
+              aria-expanded={isExpanded}
+            >
+              {group.label}
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" className={isExpanded ? "rotate-180" : ""}>
+                <path d="M2 4l4 4 4-4" />
+              </svg>
+            </button>
+            {isExpanded && (
+              <div className="grid grid-cols-2 gap-3 pb-5">
+                {facetsLoading && <p className="meta-text col-span-2">Loading…</p>}
+                {!facetsLoading && options.length === 0 && (
+                  <p className="meta-text col-span-2">Nothing to filter by here.</p>
+                )}
+                {options.map((option) => (
+                  <label key={option.value} className="flex items-center gap-2 text-sm text-[var(--ink-700)]">
+                    <input
+                      type="checkbox"
+                      checked={(draft[group.key] || []).includes(option.value)}
+                      onChange={() => toggle(group.key, option.value)}
+                      className="accent-(--color-accent-orange)"
+                    />
+                    <span className="truncate">{formatValue(option.label)}</span>
+                    {option.count !== undefined && (
+                      <span className="text-[var(--ink-300)]">({option.count})</span>
                     )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="grid grid-cols-[1fr_1.6fr] gap-3 border-t border-[var(--line)] px-6 py-5">
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="border border-[var(--line)] py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:border-[var(--ink-900)]"
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                onClick={() => onApply(draftFilters)}
-                className="bg-[var(--ink-900)] py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-(--color-accent-orange)"
-              >
-                Show {matchingCount} {matchingCount === 1 ? "item" : "items"}
-              </button>
-            </div>
-          </Motion.aside>
-        </Motion.div>
-      )}
-    </AnimatePresence>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </SidePanel>
   );
 };
 

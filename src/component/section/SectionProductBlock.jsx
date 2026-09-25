@@ -30,7 +30,7 @@ const SectionProductBlock = ({ section, standalone = false }) => {
       <div className="page-shell">
         <ProductRail
           eyebrow="Curated section"
-          title={section.title}
+          title={section.name}
           description={section.description}
           products={section.products}
           viewAllTo={`/sections/${section.slug}`}
@@ -45,7 +45,7 @@ const SectionProductBlock = ({ section, standalone = false }) => {
     <section className="page-shell py-16 md:py-20">
       <div className="mb-6 max-w-2xl md:mb-8">
         <p className="eyebrow">Curated section</p>
-        <h2 className="section-title mt-1.5">{section.title}</h2>
+        <h2 className="section-title mt-1.5">{section.name}</h2>
         {section.description && (
           <p className="body-text mt-2 text-sm">{section.description}</p>
         )}
@@ -71,7 +71,6 @@ const SectionProductBlock = ({ section, standalone = false }) => {
                   title={product.name}
                   product={product}
                   category={product.subcategory}
-                  details={product.gender}
                   badge={product.isNew ? "NEW" : undefined}
                   onQuickAdd={() => addProductToCart(product, images)}
                 />
