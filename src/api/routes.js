@@ -2437,19 +2437,46 @@ const adminProductInclude = {
   },
 };
 
+// One row is one color/size variant, not one product — rows sharing the
+// same productKey become variants of a single product. Product-level
+// fields (name, description, price, ...) only need to be filled in on the
+// first row for a given productKey; later rows for it can leave them
+// blank (inherited) or repeat them exactly (validated, to catch typos —
+// a mismatch is treated as an error rather than silently ignored).
 const BULK_PRODUCT_CSV_COLUMNS = [
+  "productKey",
   "name",
   "description",
   "price",
+  "discountPercent",
+  "featured",
   "brandSlug",
   // Comma-separated category/subcategory slugs, e.g. "women,accessories,bags" —
   // any mix of major categories and subcategories, exactly what the product
   // form's checklist would tick.
   "categorySlugs",
-  "designCode",
+  "imageUrl",
+  "tagSlugs",
   "color",
   "size",
   "stock",
+  // Optional — auto-generated from name/color/size when left blank.
+  "sku",
+  // Optional, comma-separated — photos for this specific color. Leaving it
+  // blank is fine: the storefront already falls back to the product's
+  // main imageUrl wherever a variant has none of its own.
+  "variantImageUrls",
+];
+
+const BULK_PRODUCT_LEVEL_FIELDS = [
+  "name",
+  "description",
+  "price",
+  "discountPercent",
+  "featured",
+  "brandSlug",
+  "categorySlugs",
+  "imageUrl",
   "tagSlugs",
 ];
 
@@ -2457,6 +2484,9 @@ const csvCell = (value) => {
   const cell = String(value ?? "");
   return /[",\n\r]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
 };
+
+const parseBulkBoolean = (value) =>
+  ["true", "1", "yes", "y"].includes(String(value ?? "").trim().toLowerCase());
 
 const getAdminProductBulkUploadTemplate = async (request) => {
   const guard = await requireAdmin(request);
@@ -2467,19 +2497,46 @@ const getAdminProductBulkUploadTemplate = async (request) => {
     });
   }
 
-  const exampleRow = [
-    "Example product",
-    "A sample product for bulk upload",
-    "49.99",
-    "northline",
-    "men,tops",
-    "DESIGN-001",
-    "Black",
-    "M",
-    "10",
-    "casual,weekend",
+  // Two rows sharing a productKey — this is the shape a "same shirt, two
+  // colors" upload takes: the second row leaves every product-level column
+  // blank and only fills in what's different (color, size, stock).
+  const exampleRows = [
+    [
+      "SHIRT-001",
+      "Classic Tee",
+      "A sample product for bulk upload",
+      "49.99",
+      "",
+      "",
+      "northline",
+      "men,tops",
+      "https://example.com/classic-tee-black.jpg",
+      "casual,weekend",
+      "Black",
+      "M",
+      "10",
+      "",
+      "",
+    ],
+    [
+      "SHIRT-001",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "White",
+      "M",
+      "8",
+      "",
+      "https://example.com/classic-tee-white.jpg",
+    ],
   ];
-  const csv = [BULK_PRODUCT_CSV_COLUMNS, exampleRow]
+  const csv = [BULK_PRODUCT_CSV_COLUMNS, ...exampleRows]
     .map((row) => row.map(csvCell).join(","))
     .join("\r\n");
 
@@ -2490,78 +2547,6 @@ const getAdminProductBulkUploadTemplate = async (request) => {
         'attachment; filename="product-bulk-upload-template.csv"',
     },
   });
-};
-
-const getBulkProductRowValue = (row, field) =>
-  typeof row[field] === "string" ? row[field].trim() : "";
-
-const validateBulkProductRow = async (
-  row,
-  rowNumber,
-  context,
-  seenDesignCodes,
-) => {
-  const requiredFields = [
-    "name",
-    "description",
-    "price",
-    "brandSlug",
-    "categorySlugs",
-    "designCode",
-    "color",
-    "size",
-    "stock",
-  ];
-  const values = Object.fromEntries(
-    BULK_PRODUCT_CSV_COLUMNS.map((field) => [
-      field,
-      getBulkProductRowValue(row, field),
-    ]),
-  );
-  const missingField = requiredFields.find((field) => !values[field]);
-  if (missingField) return { error: `${missingField} is required` };
-
-  const price = Number(values.price);
-  if (!Number.isFinite(price)) return { error: "price must be a number" };
-
-  const stock = Number(values.stock);
-  if (!Number.isInteger(stock) || stock < 0) {
-    return { error: "stock must be a non-negative integer" };
-  }
-
-  if (seenDesignCodes.has(values.designCode)) {
-    return { error: "designCode is duplicated in this CSV" };
-  }
-  seenDesignCodes.add(values.designCode);
-  if (context.existingDesignCodes.has(values.designCode)) {
-    return { error: "designCode is already used by an existing product" };
-  }
-
-  const brand = context.brandsBySlug.get(values.brandSlug);
-  if (!brand) return { error: `brandSlug "${values.brandSlug}" was not found` };
-
-  const categorySlugs = [
-    ...new Set(
-      values.categorySlugs.split(",").map((slug) => slug.trim()).filter(Boolean),
-    ),
-  ];
-  const categoryIds = [];
-  for (const slug of categorySlugs) {
-    const category = context.categoriesBySlug.get(slug);
-    if (!category) return { error: `categorySlugs "${slug}" was not found` };
-    categoryIds.push(category.id);
-  }
-  if (categoryIds.length === 0) {
-    return { error: "categorySlugs must include at least one category" };
-  }
-
-  return {
-    values,
-    brand,
-    categoryIds,
-    price,
-    stock,
-  };
 };
 
 const bulkProductImport = async (request) => {
@@ -2604,128 +2589,244 @@ const bulkProductImport = async (request) => {
     );
   }
 
-  const dataRows = rows.slice(1);
-  const designCodes = dataRows
-    .map((row) =>
-      getBulkProductRowValue(
-        Object.fromEntries(
-          BULK_PRODUCT_CSV_COLUMNS.map((field, index) => [field, row[index]]),
-        ),
-        "designCode",
-      ),
-    )
-    .filter(Boolean);
-  const [brands, categories, tags, existingVariants] = await Promise.all([
-    prisma.brand.findMany({ select: { id: true, slug: true } }),
-    prisma.category.findMany({ select: { id: true, slug: true } }),
-    prisma.tag.findMany({ select: { id: true, slug: true } }),
-    prisma.variant.findMany({
-      where: { sku: { in: designCodes } },
-      select: { sku: true },
-    }),
-  ]);
-  const context = {
-    brandsBySlug: new Map(brands.map((brand) => [brand.slug, brand])),
-    categoriesBySlug: new Map(categories.map((category) => [category.slug, category])),
-    tagsBySlug: new Map(tags.map((tag) => [tag.slug, tag])),
-    existingDesignCodes: new Set(
-      existingVariants.map((variant) => variant.sku),
-    ),
-  };
+  const summary = { totalRows: rows.length - 1, productsCreated: 0, variantsCreated: 0, failed: [], warnings: [] };
 
-  const summary = {
-    totalRows: dataRows.length,
-    created: 0,
-    failed: [],
-    warnings: [],
-  };
-  const seenDesignCodes = new Set();
-  for (const [index, row] of dataRows.entries()) {
+  // --- Pass 1: parse + group by productKey, preserving first-seen order ---
+  const groups = new Map(); // productKey -> entries[]
+  rows.slice(1).forEach((row, index) => {
     const rowNumber = index + 2;
-    const values = Object.fromEntries(
-      BULK_PRODUCT_CSV_COLUMNS.map((field, fieldIndex) => [
-        field,
-        row[fieldIndex],
-      ]),
-    );
     if (row.length !== BULK_PRODUCT_CSV_COLUMNS.length) {
       summary.failed.push({
         row: rowNumber,
         error: `Expected ${BULK_PRODUCT_CSV_COLUMNS.length} columns, received ${row.length}`,
       });
-      continue;
+      return;
     }
-
-    const validated = await validateBulkProductRow(
-      values,
-      rowNumber,
-      context,
-      seenDesignCodes,
+    const values = Object.fromEntries(
+      BULK_PRODUCT_CSV_COLUMNS.map((field, fieldIndex) => [
+        field,
+        typeof row[fieldIndex] === "string" ? row[fieldIndex].trim() : "",
+      ]),
     );
-    if (validated.error) {
-      summary.failed.push({ row: rowNumber, error: validated.error });
+    if (!values.productKey) {
+      summary.failed.push({ row: rowNumber, error: "productKey is required" });
+      return;
+    }
+    if (!groups.has(values.productKey)) groups.set(values.productKey, []);
+    groups.get(values.productKey).push({ rowNumber, values });
+  });
+
+  const [brands, categories, tags] = await Promise.all([
+    prisma.brand.findMany({ select: { id: true, slug: true } }),
+    prisma.category.findMany({ select: { id: true, slug: true } }),
+    prisma.tag.findMany({ select: { id: true, slug: true } }),
+  ]);
+  const brandsBySlug = new Map(brands.map((brand) => [brand.slug, brand]));
+  const categoriesBySlug = new Map(categories.map((category) => [category.slug, category]));
+  const tagsBySlug = new Map(tags.map((tag) => [tag.slug, tag]));
+
+  // --- Pass 2: validate each group into a creation plan ---
+  const failGroup = (entries, error) => {
+    for (const entry of entries) summary.failed.push({ row: entry.rowNumber, error });
+  };
+
+  const plans = [];
+  for (const [productKey, entries] of groups) {
+    const primary = entries[0].values;
+
+    const missing = ["name", "description", "price", "brandSlug", "categorySlugs"].filter(
+      (field) => !primary[field],
+    );
+    if (missing.length) {
+      failGroup(entries, `productKey "${productKey}": ${missing.join(", ")} required on its first row`);
       continue;
     }
 
-    const tagSlugs = validated.values.tagSlugs
-      ? [
-          ...new Set(
-            validated.values.tagSlugs
-              .split(",")
-              .map((slug) => slug.trim())
-              .filter(Boolean),
-          ),
-        ]
-      : [];
-    const tagIds = [];
-    for (const tagSlug of tagSlugs) {
-      const tag = context.tagsBySlug.get(tagSlug);
-      if (tag) {
-        tagIds.push(tag.id);
-      } else {
-        summary.warnings.push({
-          row: rowNumber,
-          warning: `Tag slug "${tagSlug}" was not found and was skipped`,
-        });
+    const price = Number(primary.price);
+    if (!Number.isFinite(price)) {
+      failGroup(entries, `productKey "${productKey}": price must be a number`);
+      continue;
+    }
+
+    let discountPercent = null;
+    if (primary.discountPercent) {
+      discountPercent = Number(primary.discountPercent);
+      if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+        failGroup(entries, `productKey "${productKey}": discountPercent must be between 0 and 100`);
+        continue;
       }
     }
 
+    const brand = brandsBySlug.get(primary.brandSlug);
+    if (!brand) {
+      failGroup(entries, `productKey "${productKey}": brandSlug "${primary.brandSlug}" was not found`);
+      continue;
+    }
+
+    const categorySlugs = [
+      ...new Set(primary.categorySlugs.split(",").map((slug) => slug.trim()).filter(Boolean)),
+    ];
+    const categoryIds = [];
+    const missingCategorySlug = categorySlugs.find((slug) => !categoriesBySlug.has(slug));
+    if (missingCategorySlug) {
+      failGroup(entries, `productKey "${productKey}": categorySlugs "${missingCategorySlug}" was not found`);
+      continue;
+    }
+    for (const slug of categorySlugs) categoryIds.push(categoriesBySlug.get(slug).id);
+    if (categoryIds.length === 0) {
+      failGroup(entries, `productKey "${productKey}": categorySlugs must include at least one category`);
+      continue;
+    }
+
+    const tagSlugs = primary.tagSlugs
+      ? [...new Set(primary.tagSlugs.split(",").map((slug) => slug.trim()).filter(Boolean))]
+      : [];
+    const tagIds = [];
+    for (const slug of tagSlugs) {
+      const tag = tagsBySlug.get(slug);
+      if (tag) tagIds.push(tag.id);
+      else summary.warnings.push({ row: entries[0].rowNumber, warning: `Tag slug "${slug}" was not found and was skipped` });
+    }
+
+    // Later rows may repeat a product-level field — it must match, not diverge.
+    const mismatch = entries.slice(1).find((entry) =>
+      BULK_PRODUCT_LEVEL_FIELDS.some((field) => entry.values[field] && entry.values[field] !== primary[field]),
+    );
+    if (mismatch) {
+      const field = BULK_PRODUCT_LEVEL_FIELDS.find(
+        (candidate) => mismatch.values[candidate] && mismatch.values[candidate] !== primary[candidate],
+      );
+      failGroup(
+        entries,
+        `productKey "${productKey}": ${field} on row ${mismatch.rowNumber} differs from the first row — leave it blank to inherit, or make it match`,
+      );
+      continue;
+    }
+
+    // Variant rows — every row in the group contributes one.
+    const seenComboKeys = new Set();
+    const variantPlans = [];
+    const variantError = entries
+      .map((entry) => {
+        const v = entry.values;
+        if (!v.color || !v.size || !v.stock) {
+          return { row: entry.rowNumber, error: "color, size and stock are required on every row" };
+        }
+        const stock = Number(v.stock);
+        if (!Number.isInteger(stock) || stock < 0) {
+          return { row: entry.rowNumber, error: "stock must be a non-negative integer" };
+        }
+        const comboKey = `${v.color.toLowerCase()}|${v.size.toLowerCase()}`;
+        if (seenComboKeys.has(comboKey)) {
+          return { row: entry.rowNumber, error: `duplicate color+size ("${v.color}" / "${v.size}") for productKey "${productKey}"` };
+        }
+        seenComboKeys.add(comboKey);
+        variantPlans.push({
+          rowNumber: entry.rowNumber,
+          color: v.color,
+          size: v.size,
+          stock,
+          explicitSku: v.sku || null,
+          images: v.variantImageUrls
+            ? v.variantImageUrls.split(",").map((url) => url.trim()).filter(Boolean)
+            : [],
+        });
+        return null;
+      })
+      .find(Boolean);
+    if (variantError) {
+      failGroup(entries, variantError.error);
+      continue;
+    }
+
+    plans.push({
+      productKey,
+      rowNumbers: entries.map((entry) => entry.rowNumber),
+      name: primary.name,
+      description: primary.description,
+      price,
+      discountPercent,
+      featured: parseBulkBoolean(primary.featured),
+      brandId: brand.id,
+      categoryIds,
+      imageUrl: primary.imageUrl || null,
+      tagIds,
+      variantPlans,
+    });
+  }
+
+  // --- Pass 3: resolve SKUs across the whole batch (globally unique) ---
+  const explicitSkus = plans.flatMap((plan) =>
+    plan.variantPlans.filter((vp) => vp.explicitSku).map((vp) => vp.explicitSku),
+  );
+  const existingSkuRows = explicitSkus.length
+    ? await prisma.variant.findMany({ where: { sku: { in: explicitSkus } }, select: { sku: true } })
+    : [];
+  const existingSkuSet = new Set(existingSkuRows.map((variant) => variant.sku));
+  const claimedSkus = new Set();
+
+  for (const plan of plans) {
+    for (const vp of plan.variantPlans) {
+      if (vp.explicitSku) {
+        if (existingSkuSet.has(vp.explicitSku) || claimedSkus.has(vp.explicitSku)) {
+          summary.failed.push({ row: vp.rowNumber, error: `sku "${vp.explicitSku}" is already in use` });
+          plan.failed = true;
+          continue;
+        }
+        vp.sku = vp.explicitSku;
+      } else {
+        const base = `${slugify(plan.name)}-${slugify(vp.color)}-${slugify(vp.size)}`
+          .toUpperCase()
+          .slice(0, 60);
+        let candidate = base;
+        let suffix = 2;
+        while (existingSkuSet.has(candidate) || claimedSkus.has(candidate)) {
+          candidate = `${base}-${suffix}`;
+          suffix += 1;
+        }
+        vp.sku = candidate;
+      }
+      claimedSkus.add(vp.sku);
+    }
+  }
+
+  // --- Pass 4: create — one transaction per product, so a problem with one
+  // color/size in a group doesn't leave that product half-created. ---
+  for (const plan of plans) {
+    if (plan.failed) continue; // a variant in this group already recorded its own failure above
     try {
       await prisma.$transaction(async (transaction) => {
-        const productId = crypto.randomUUID();
         await transaction.product.create({
           data: {
-            id: productId,
-            name: validated.values.name,
-            description: validated.values.description,
-            basePrice: validated.price,
-            brandId: validated.brand.id,
-            categories: {
-              create: validated.categoryIds.map((categoryId) => ({ categoryId })),
-            },
+            id: crypto.randomUUID(),
+            name: plan.name,
+            description: plan.description,
+            basePrice: plan.price,
+            discountPercent: plan.discountPercent,
+            featured: plan.featured,
+            imageUrl: plan.imageUrl,
+            brandId: plan.brandId,
+            categories: { create: plan.categoryIds.map((categoryId) => ({ categoryId })) },
+            tags: { create: plan.tagIds.map((tagId) => ({ tagId })) },
             variants: {
-              create: {
+              create: plan.variantPlans.map((vp) => ({
                 id: crypto.randomUUID(),
-                color: validated.values.color,
-                size: validated.values.size,
-                sku: validated.values.designCode,
-                stock: validated.stock,
-                images: [],
-              },
-            },
-            tags: {
-              create: tagIds.map((tagId) => ({ tagId })),
+                color: vp.color,
+                size: vp.size,
+                sku: vp.sku,
+                stock: vp.stock,
+                images: vp.images,
+              })),
             },
           },
         });
       });
-      summary.created += 1;
+      summary.productsCreated += 1;
+      summary.variantsCreated += plan.variantPlans.length;
     } catch (error) {
       const reason =
-        error?.code === "P2002"
-          ? "designCode is already used by an existing product"
-          : "could not create product";
-      summary.failed.push({ row: rowNumber, error: reason });
+        error?.code === "P2002" ? "a generated SKU collided unexpectedly — try again" : "could not create product";
+      for (const rowNumber of plan.rowNumbers) summary.failed.push({ row: rowNumber, error: reason });
     }
   }
 

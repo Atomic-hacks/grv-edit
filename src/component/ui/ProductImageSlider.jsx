@@ -11,11 +11,17 @@ const ProductImageSlider = ({ images = [], alt = "" }) => {
   const imageRef = useRef(null);
   const imageSetKey = images.join("|");
 
-  // Reset to the first image when the image set changes (e.g. new variant selected)
+  // Reset to the first image when the image set changes (e.g. new variant
+  // selected) — but loadedImages is a per-URL cache, not per-set state, so
+  // it's never wiped here. Two variants commonly share the same fallback
+  // photo (product.imageUrl when a variant has none of its own); wiping the
+  // cache on every switch meant that shared URL's <img> — already loaded,
+  // never remounted since its key (the URL) didn't change — could never
+  // fire onLoad again, leaving it stuck at opacity-0 under a skeleton that
+  // never turns off.
   useEffect(() => {
     setIndex(0);
     setDirection(0);
-    setLoadedImages({});
   }, [imageSetKey]);
 
   const activeImage = images[index];

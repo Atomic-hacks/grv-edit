@@ -82,10 +82,23 @@ const AdminBulkUpload = () => {
             className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
           />
           <span className="mt-2 block text-xs text-[var(--ink-500)]">
-            Columns: name, description, price, brandSlug, categorySlugs,
-            designCode, color, size, stock, tagSlugs. categorySlugs is a
-            comma-separated list — any mix of major categories and
-            subcategories, e.g. "women,accessories,bags".
+            Columns: productKey, name, description, price, discountPercent,
+            featured, brandSlug, categorySlugs, imageUrl, tagSlugs, color,
+            size, stock, sku, variantImageUrls.
+          </span>
+          <span className="mt-2 block text-xs text-[var(--ink-500)]">
+            One row is one color/size, not one product — give every row for
+            the same product the same <strong>productKey</strong> (any short
+            code you choose, e.g. "SHIRT-001") and they'll become variants
+            of a single product. Only fill in name/description/price/
+            brandSlug/categorySlugs/imageUrl/tagSlugs/discountPercent/
+            featured on that product's <em>first</em> row — leave them blank
+            on the rest. <strong>sku</strong> is optional and generated for
+            you when left blank. <strong>categorySlugs</strong> and{" "}
+            <strong>tagSlugs</strong> are comma-separated (e.g.
+            "women,accessories,bags"), and so is{" "}
+            <strong>variantImageUrls</strong> if a color needs more than one
+            photo.
           </span>
         </label>
         <button
@@ -99,7 +112,7 @@ const AdminBulkUpload = () => {
 
       {result && (
         <section className="mt-10 space-y-6">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <div className="border border-[var(--line)] p-4">
               <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
                 Total rows
@@ -108,13 +121,19 @@ const AdminBulkUpload = () => {
             </div>
             <div className="border border-[var(--line)] p-4">
               <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
-                Created
+                Products created
               </p>
-              <p className="mt-2 text-2xl font-semibold">{result.created}</p>
+              <p className="mt-2 text-2xl font-semibold">{result.productsCreated}</p>
             </div>
             <div className="border border-[var(--line)] p-4">
               <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
-                Failed
+                Variants created
+              </p>
+              <p className="mt-2 text-2xl font-semibold">{result.variantsCreated}</p>
+            </div>
+            <div className="border border-[var(--line)] p-4">
+              <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
+                Failed rows
               </p>
               <p className="mt-2 text-2xl font-semibold">
                 {result.failed.length}

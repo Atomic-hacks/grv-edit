@@ -9,6 +9,15 @@ import InlineNotice from "../component/ui/InlineNotice";
 import SubmitButton from "../component/ui/SubmitButton";
 import Spinner from "../component/ui/Spinner";
 
+const slugify = (name) =>
+  name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
+const SIZE_PRESETS = ["XS", "S", "M", "L", "XL", "XXL"];
+
 const emptyForm = {
   name: "",
   description: "",
@@ -19,8 +28,6 @@ const emptyForm = {
   archived: false,
   featured: false,
 };
-
-const emptyVariantForm = { color: "", size: "", sku: "", stock: "10", imageUrl: "" };
 
 /**
  * One continuous flow, on one page: details, which categories this belongs
@@ -108,10 +115,26 @@ const AdminProductForm = () => {
   const [tags, setTags] = useState([]);
   const [selectedTagIds, setSelectedTagIds] = useState([]);
   const [variants, setVariants] = useState([]);
-  const [variantForm, setVariantForm] = useState(emptyVariantForm);
   const [stockDrafts, setStockDrafts] = useState({});
   const [variantSavingId, setVariantSavingId] = useState(null);
   const [variantAction, setVariantAction] = useState(null);
+  const [existingImageUploadingId, setExistingImageUploadingId] = useState(null);
+  // The variant matrix: one row per color, one column per size — fills in
+  // the "red has 5 in XL and 2 in SM, blue has 6 in XL and 2 in SM" case in
+  // one submit instead of eight separate "add variant" round trips.
+  const [matrixSizes, setMatrixSizes] = useState([]);
+  const [sizeDraft, setSizeDraft] = useState("");
+  const [matrixRows, setMatrixRows] = useState([
+    { key: "row-0", color: "", imageFile: null, imagePreviewUrl: "", stocks: {} },
+  ]);
+  const [matrixSubmitting, setMatrixSubmitting] = useState(false);
+  const [matrixError, setMatrixError] = useState("");
+  const [matrixNotice, setMatrixNotice] = useState("");
+  // Quick-fill: for the common case of "every color has the exact same
+  // sizes and stock" — copies an existing color's size/stock breakdown
+  // onto new rows instead of the admin re-typing it per color.
+  const [quickFillSourceColor, setQuickFillSourceColor] = useState("");
+  const [quickFillColorsInput, setQuickFillColorsInput] = useState("");
   const [loading, setLoading] = useState(isEditingExisting);
   const [saving, setSaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
@@ -272,40 +295,211 @@ const AdminProductForm = () => {
     }
   };
 
-  const updateVariantField = (event) => {
-    const { name, value } = event.target;
-    setVariantForm((current) => ({ ...current, [name]: value }));
+  const addMatrixSize = (rawSize) => {
+    const size = rawSize.trim();
+    if (!size) return;
+    setMatrixSizes((current) => (current.includes(size) ? current : [...current, size]));
   };
 
-  const createVariant = async (event) => {
-    event.preventDefault();
-    setVariantSavingId("new");
-    setVariantAction("saving");
+  const removeMatrixSize = (size) => {
+    setMatrixSizes((current) => current.filter((item) => item !== size));
+    setMatrixRows((current) =>
+      current.map((row) => {
+        const { [size]: _removed, ...rest } = row.stocks;
+        return { ...row, stocks: rest };
+      }),
+    );
+  };
+
+  const togglePresetSize = (size) =>
+    matrixSizes.includes(size) ? removeMatrixSize(size) : addMatrixSize(size);
+
+  const addMatrixRow = () =>
+    setMatrixRows((current) => [
+      ...current,
+      { key: `row-${Date.now()}`, color: "", imageFile: null, imagePreviewUrl: "", stocks: {} },
+    ]);
+
+  const removeMatrixRow = (key) =>
+    setMatrixRows((current) => {
+      const row = current.find((item) => item.key === key);
+      if (row?.imagePreviewUrl) URL.revokeObjectURL(row.imagePreviewUrl);
+      return current.filter((item) => item.key !== key);
+    });
+
+  const updateMatrixRowColor = (key, color) =>
+    setMatrixRows((current) => current.map((row) => (row.key === key ? { ...row, color } : row)));
+
+  const updateMatrixRowImage = (key, file) =>
+    setMatrixRows((current) =>
+      current.map((row) => {
+        if (row.key !== key) return row;
+        if (row.imagePreviewUrl) URL.revokeObjectURL(row.imagePreviewUrl);
+        return { ...row, imageFile: file, imagePreviewUrl: file ? URL.createObjectURL(file) : "" };
+      }),
+    );
+
+  const updateMatrixCell = (key, size, value) =>
+    setMatrixRows((current) =>
+      current.map((row) =>
+        row.key === key ? { ...row, stocks: { ...row.stocks, [size]: value } } : row,
+      ),
+    );
+
+  const matrixVariantCount = matrixRows.reduce(
+    (total, row) =>
+      total + matrixSizes.filter((size) => (row.stocks[size] ?? "").trim() !== "").length,
+    0,
+  );
+
+  // Every color this product already has, in first-seen order — the
+  // choices for "copy sizes/stock from".
+  const existingColors = [...new Set(variants.map((variant) => variant.color))];
+
+  const applyQuickFillColors = () => {
+    const sourceColor = quickFillSourceColor || existingColors[0];
+    if (!sourceColor) return;
+
+    const newColorNames = [
+      ...new Set(quickFillColorsInput.split(",").map((name) => name.trim()).filter(Boolean)),
+    ].filter(
+      (name) => !existingColors.some((color) => color.toLowerCase() === name.toLowerCase()),
+    );
+    if (newColorNames.length === 0) return;
+
+    // size -> stock for the source color, deduped (a color should never
+    // have two variants of the same size, but don't trust that blindly).
+    const sizeStock = new Map();
+    for (const variant of variants) {
+      if (variant.color !== sourceColor) continue;
+      if (!sizeStock.has(variant.size)) sizeStock.set(variant.size, variant.stock);
+    }
+    if (sizeStock.size === 0) return;
+
+    setMatrixSizes((current) => {
+      const next = [...current];
+      for (const size of sizeStock.keys()) if (!next.includes(size)) next.push(size);
+      return next;
+    });
+
+    const stocksTemplate = Object.fromEntries(
+      [...sizeStock.entries()].map(([size, stock]) => [size, String(stock)]),
+    );
+    setMatrixRows((current) => {
+      // Replace the untouched starter row instead of leaving it sitting
+      // there blank alongside the new pre-filled ones.
+      const base =
+        current.length === 1 && !current[0].color && Object.keys(current[0].stocks).length === 0
+          ? []
+          : current;
+      const newRows = newColorNames.map((color, index) => ({
+        key: `row-${Date.now()}-${index}`,
+        color,
+        imageFile: null,
+        imagePreviewUrl: "",
+        stocks: { ...stocksTemplate },
+      }));
+      return [...base, ...newRows];
+    });
+
+    setQuickFillColorsInput("");
+  };
+
+  // Each color is uploaded once and the resulting URL reused across every
+  // size created for it — a shirt in one color shouldn't upload the same
+  // photo five times over.
+  const submitMatrixVariants = async () => {
+    setMatrixError("");
+    setMatrixNotice("");
+    const rowsToProcess = matrixRows.filter(
+      (row) =>
+        row.color.trim() &&
+        matrixSizes.some((size) => (row.stocks[size] ?? "").trim() !== ""),
+    );
+    if (rowsToProcess.length === 0) {
+      setMatrixError("Add a color and at least one size's stock count first.");
+      return;
+    }
+
+    setMatrixSubmitting(true);
+    const failures = [];
+    let createdCount = 0;
+
+    for (const row of rowsToProcess) {
+      let imageUrl = null;
+      if (row.imageFile) {
+        try {
+          const body = new FormData();
+          body.append("file", row.imageFile);
+          const uploadResult = await request("/api/admin/upload-image", { method: "POST", body });
+          imageUrl = uploadResult.url;
+        } catch (uploadError) {
+          failures.push(`${row.color}: photo upload failed — ${uploadError.message}`);
+        }
+      }
+
+      for (const size of matrixSizes) {
+        const raw = (row.stocks[size] ?? "").trim();
+        if (!raw) continue;
+        const stock = Number(raw);
+        if (!Number.isInteger(stock) || stock < 0) {
+          failures.push(`${row.color} / ${size}: stock must be a whole number, 0 or more`);
+          continue;
+        }
+        const sku = `${slugify(form.name)}-${slugify(row.color)}-${slugify(size)}`
+          .toUpperCase()
+          .slice(0, 64);
+        try {
+          const variant = await request(`/api/admin/products/${productId}/variants`, {
+            method: "POST",
+            body: JSON.stringify({ color: row.color.trim(), size, sku, stock }),
+          });
+          const savedVariant = imageUrl
+            ? await request(`/api/admin/variants/${variant.id}/images`, {
+                method: "POST",
+                body: JSON.stringify({ url: imageUrl }),
+              })
+            : variant;
+          setVariants((current) => [...current, savedVariant]);
+          setStockDrafts((current) => ({ ...current, [savedVariant.id]: String(savedVariant.stock) }));
+          createdCount += 1;
+          // Clear the cell so re-submitting after fixing a failure elsewhere
+          // in the grid doesn't try to create this one a second time.
+          updateMatrixCell(row.key, size, "");
+        } catch (variantError) {
+          failures.push(`${row.color} / ${size}: ${variantError.message}`);
+        }
+      }
+    }
+
+    setMatrixSubmitting(false);
+    if (createdCount > 0) {
+      setMatrixNotice(`Created ${createdCount} variant${createdCount === 1 ? "" : "s"}.`);
+      await queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
+    }
+    if (failures.length > 0) {
+      setMatrixError(failures.join(" · "));
+    }
+  };
+
+  const uploadVariantImage = async (variantId, file) => {
+    setExistingImageUploadingId(variantId);
     setError("");
     try {
-      const variant = await request(`/api/admin/products/${productId}/variants`, {
+      const body = new FormData();
+      body.append("file", file);
+      const uploadResult = await request("/api/admin/upload-image", { method: "POST", body });
+      const updatedVariant = await request(`/api/admin/variants/${variantId}/images`, {
         method: "POST",
-        body: JSON.stringify({
-          color: variantForm.color,
-          size: variantForm.size,
-          sku: variantForm.sku,
-          stock: Number(variantForm.stock),
-        }),
+        body: JSON.stringify({ url: uploadResult.url }),
       });
-      const savedVariant = variantForm.imageUrl.trim()
-        ? await request(`/api/admin/variants/${variant.id}/images`, {
-            method: "POST",
-            body: JSON.stringify({ url: variantForm.imageUrl.trim() }),
-          })
-        : variant;
-      setVariants((current) => [...current, savedVariant]);
-      setStockDrafts((current) => ({ ...current, [savedVariant.id]: String(savedVariant.stock) }));
-      setVariantForm(emptyVariantForm);
-    } catch (variantError) {
-      setError(variantError.message);
+      setVariants((current) =>
+        current.map((item) => (item.id === updatedVariant.id ? updatedVariant : item)),
+      );
+    } catch (uploadError) {
+      setError(uploadError.message);
     } finally {
-      setVariantSavingId(null);
-      setVariantAction(null);
+      setExistingImageUploadingId(null);
     }
   };
 
@@ -575,47 +769,186 @@ const AdminProductForm = () => {
             </p>
           </div>
 
-          <form onSubmit={createVariant} className="mt-6 grid gap-3 border-b border-[var(--line)] pb-6 md:grid-cols-[1fr_0.8fr_1fr_0.7fr_1.4fr_auto] md:items-end">
-            {[["color", "Color"], ["size", "Size"], ["sku", "SKU"]].map(([name, label]) => (
-              <label key={name} className="text-sm">
-                <span className="mb-2 block font-medium">{label}</span>
+          {/* One row per color, one column per size — covers "red has 5 in
+              XL and 2 in SM, blue has 6 in XL and 2 in SM" in a single
+              submit. SKUs are generated; the color's photo is uploaded
+              once and reused across every size created for it. */}
+          <div className="mt-6 border border-[var(--line)] p-4">
+            <p className="text-sm font-medium">Add variants</p>
+            <p className="mt-1 text-xs text-[var(--ink-500)]">
+              Fill in a stock number for every color/size combination that exists — leave the rest blank.
+            </p>
+
+            <div className="mt-4">
+              <span className="mb-2 block text-xs font-medium uppercase tracking-[0.1em] text-[var(--ink-500)]">
+                Sizes
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {SIZE_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => togglePresetSize(preset)}
+                    className={`border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      matrixSizes.includes(preset)
+                        ? "border-[var(--ink-900)] bg-[var(--ink-900)] text-white"
+                        : "border-[var(--line)] text-[var(--ink-700)] hover:border-[var(--ink-900)]"
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+                {matrixSizes
+                  .filter((size) => !SIZE_PRESETS.includes(size))
+                  .map((size) => (
+                    <span
+                      key={size}
+                      className="flex items-center gap-1.5 border border-[var(--ink-900)] bg-[var(--ink-900)] px-3 py-1.5 text-xs font-medium text-white"
+                    >
+                      {size}
+                      <button type="button" onClick={() => removeMatrixSize(size)} aria-label={`Remove size ${size}`}>
+                        ×
+                      </button>
+                    </span>
+                  ))}
                 <input
-                  required
-                  name={name}
-                  value={variantForm[name]}
-                  onChange={updateVariantField}
-                  className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+                  type="text"
+                  value={sizeDraft}
+                  onChange={(event) => setSizeDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === ",") {
+                      event.preventDefault();
+                      addMatrixSize(sizeDraft);
+                      setSizeDraft("");
+                    }
+                  }}
+                  placeholder="Other size (e.g. 42, 5XL) — Enter to add"
+                  className="border border-[var(--line)] px-3 py-1.5 text-xs outline-none focus:border-[var(--ink-900)]"
                 />
-              </label>
-            ))}
-            <label className="text-sm">
-              <span className="mb-2 block font-medium">Stock</span>
-              <input
-                required
-                min="0"
-                step="1"
-                type="number"
-                name="stock"
-                value={variantForm.stock}
-                onChange={updateVariantField}
-                className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
-              />
-            </label>
-            <label className="text-sm">
-              <span className="mb-2 block font-medium">Image URL</span>
-              <input
-                type="text"
-                name="imageUrl"
-                value={variantForm.imageUrl}
-                onChange={updateVariantField}
-                placeholder="https://..."
-                className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
-              />
-            </label>
-            <SubmitButton type="submit" loading={variantSavingId === "new"} loadingLabel="Saving">
-              Add variant
-            </SubmitButton>
-          </form>
+              </div>
+            </div>
+
+            {existingColors.length > 0 && (
+              <div className="mt-5 border border-dashed border-[var(--line)] p-3">
+                <p className="text-xs font-medium">Quick-fill more colors</p>
+                <p className="mt-1 text-xs text-[var(--ink-500)]">
+                  For colors that carry the exact same sizes and stock as one already on this
+                  product — copies it onto new rows below instead of you re-typing it.
+                </p>
+                <div className="mt-3 flex flex-wrap items-end gap-3">
+                  <label className="text-sm">
+                    <span className="mb-1.5 block text-xs font-medium">Copy sizes/stock from</span>
+                    <select
+                      value={quickFillSourceColor || existingColors[0]}
+                      onChange={(event) => setQuickFillSourceColor(event.target.value)}
+                      className="border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--ink-900)]"
+                    >
+                      {existingColors.map((color) => (
+                        <option key={color} value={color}>{color}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="min-w-48 flex-1 text-sm">
+                    <span className="mb-1.5 block text-xs font-medium">New colors (comma-separated)</span>
+                    <input
+                      type="text"
+                      value={quickFillColorsInput}
+                      onChange={(event) => setQuickFillColorsInput(event.target.value)}
+                      placeholder="Red, Blue, Green"
+                      className="w-full border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-[var(--ink-900)]"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={applyQuickFillColors}
+                    disabled={!quickFillColorsInput.trim()}
+                    className="border border-[var(--ink-900)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--ink-900)] transition-colors hover:bg-[var(--ink-900)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Fill in rows
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 space-y-5">
+              {matrixRows.map((row) => (
+                <div key={row.key} className="border-t border-[var(--line)] pt-4">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="text-sm">
+                      <span className="mb-1.5 block text-xs font-medium">Color</span>
+                      <input
+                        value={row.color}
+                        onChange={(event) => updateMatrixRowColor(row.key, event.target.value)}
+                        className="w-40 border border-[var(--line)] px-3 py-2 outline-none focus:border-[var(--ink-900)]"
+                      />
+                    </label>
+                    <label className="cursor-pointer border border-[var(--line)] px-3 py-2 text-xs hover:border-[var(--ink-900)]">
+                      {row.imagePreviewUrl ? "Change photo" : "Add photo"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        onChange={(event) => updateMatrixRowImage(row.key, event.target.files?.[0] || null)}
+                      />
+                    </label>
+                    {row.imagePreviewUrl && (
+                      <img src={row.imagePreviewUrl} alt="" className="h-12 w-10 object-cover" />
+                    )}
+                    {matrixRows.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeMatrixRow(row.key)}
+                        className="text-xs text-red-700 underline underline-offset-4"
+                      >
+                        Remove row
+                      </button>
+                    )}
+                  </div>
+                  {matrixSizes.length === 0 ? (
+                    <p className="mt-3 text-xs text-[var(--ink-500)]">Add at least one size above to enter stock.</p>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      {matrixSizes.map((size) => (
+                        <label key={size} className="text-sm">
+                          <span className="mb-1.5 block text-xs font-medium">{size}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={row.stocks[size] ?? ""}
+                            onChange={(event) => updateMatrixCell(row.key, size, event.target.value)}
+                            placeholder="—"
+                            className="w-20 border border-[var(--line)] px-2 py-2 outline-none focus:border-[var(--ink-900)]"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-[var(--line)] pt-4">
+              <button
+                type="button"
+                onClick={addMatrixRow}
+                className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--ink-700)] underline underline-offset-4 hover:text-[var(--ink-900)]"
+              >
+                + Add another color
+              </button>
+              <SubmitButton
+                type="button"
+                onClick={submitMatrixVariants}
+                loading={matrixSubmitting}
+                loadingLabel="Creating"
+                disabled={matrixVariantCount === 0}
+              >
+                Create {matrixVariantCount || ""} variant{matrixVariantCount === 1 ? "" : "s"}
+              </SubmitButton>
+            </div>
+            {matrixError && <InlineNotice tone="error" className="mt-4">{matrixError}</InlineNotice>}
+            {matrixNotice && <InlineNotice tone="success" className="mt-4">{matrixNotice}</InlineNotice>}
+          </div>
 
           <div className="mt-6 space-y-2 border-t border-[var(--ink-900)] pt-2">
             {variants.length === 0 && (
@@ -633,13 +966,35 @@ const AdminProductForm = () => {
                   <span className="shrink-0 text-[var(--ink-700)]">{variant.stock} in stock</span>
                 </summary>
                 <div className="grid gap-5 border-t border-[var(--line)] py-5 md:grid-cols-[auto_1fr]">
-                  {variant.images?.[0] ? (
-                    <img src={variant.images[0]} alt="" className="h-28 w-24 object-cover" />
-                  ) : (
-                    <div className="flex h-28 w-24 items-center justify-center bg-[var(--surface-muted)] text-center text-xs text-[var(--ink-300)]">
-                      No image
-                    </div>
-                  )}
+                  <div className="flex flex-col items-start gap-2">
+                    {variant.images?.[0] ? (
+                      <img src={variant.images[0]} alt="" className="h-28 w-24 object-cover" />
+                    ) : (
+                      <div className="flex h-28 w-24 items-center justify-center bg-[var(--surface-muted)] text-center text-xs text-[var(--ink-300)]">
+                        No image
+                      </div>
+                    )}
+                    <label className="cursor-pointer text-xs text-[var(--ink-700)] underline underline-offset-4 hover:text-[var(--ink-900)]">
+                      {existingImageUploadingId === variant.id ? (
+                        <Spinner label="Uploading" />
+                      ) : variant.images?.[0] ? (
+                        "Add another photo"
+                      ) : (
+                        "Upload photo"
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        disabled={existingImageUploadingId !== null}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = "";
+                          if (file) uploadVariantImage(variant.id, file);
+                        }}
+                      />
+                    </label>
+                  </div>
                   <div className="flex flex-wrap items-end gap-4">
                     <label className="text-sm">
                       <span className="mb-2 block font-medium">Stock</span>
