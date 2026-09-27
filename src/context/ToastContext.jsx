@@ -18,10 +18,10 @@ export const ToastProvider = ({ children }) => {
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
   }, []);
 
-  const showToast = useCallback((message) => {
+  const showToast = useCallback((message, { duration = 2500 } = {}) => {
     setToast({ id: Date.now(), message });
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-    timeoutRef.current = window.setTimeout(() => setToast(null), 2500);
+    timeoutRef.current = window.setTimeout(() => setToast(null), duration);
   }, []);
 
   useEffect(
@@ -36,11 +36,11 @@ export const ToastProvider = ({ children }) => {
       {children}
       {toast && (
         <div
-          className="fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-4 border border-black bg-black px-4 py-3 text-sm text-white shadow-lg"
+          className="fixed bottom-6 left-1/2 z-[60] flex w-[calc(100%-2.5rem)] max-w-md -translate-x-1/2 items-center gap-4 border border-black bg-black px-4 py-3 text-sm text-white shadow-lg"
           role="status"
           aria-live="polite"
         >
-          <span>{toast.message}</span>
+          <span className="min-w-0 flex-1">{toast.message}</span>
           <button
             type="button"
             onClick={dismissToast}

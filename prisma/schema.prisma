@@ -122,6 +122,8 @@ model Order {
   emailEvents               OrderEmailEvent[]
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
+
+  @@index([userId])
 }
 
 // One row per (order, email type). The unique constraint is the dedupe
@@ -261,6 +263,7 @@ enum NotificationType {
   WISHLIST_SALE
   WISHLIST_LOW_STOCK
   WAITLIST_RESTOCK
+  BRAND_FEATURED_PRODUCT
 }
 
 model JournalPost {
@@ -425,6 +428,7 @@ model ProductTag {
   tag       Tag     @relation(fields: [tagId], references: [id])
 
   @@id([productId, tagId])
+  @@index([tagId])
 }
 
 model Product {
@@ -433,7 +437,6 @@ model Product {
   description     String
   basePrice       Float
   discountPercent Float?
-  status          ProductStatus     @default(ACTIVE)
   createdAt       DateTime          @default(now())
   imageUrl        String?
   // Editorial pick, toggled by hand — unlike "new," this is a deliberate
@@ -448,11 +451,6 @@ model Product {
   wishlists       Wishlist[]
 
   @@index([brandId])
-}
-
-enum ProductStatus {
-  ACTIVE
-  ARCHIVED
 }
 
 model Variant {

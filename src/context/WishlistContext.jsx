@@ -1,12 +1,14 @@
 import React, { createContext, useContext } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "./AuthContext";
+import { useToast } from "./ToastContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
 
 const WishlistContext = createContext(null);
 
 export const WishlistProvider = ({ children }) => {
   const { user, session } = useAuth();
+  const { showToast } = useToast();
   const queryClient = useQueryClient();
   const wishlistQuery = useQuery({
     queryKey: ["wishlist", user?.id],
@@ -60,6 +62,7 @@ export const WishlistProvider = ({ children }) => {
       await queryClient.invalidateQueries({
         queryKey: ["wishlist", user.id],
       });
+      showToast(`Unfollowed ${brand.name}`);
       return;
     }
 
@@ -74,6 +77,10 @@ export const WishlistProvider = ({ children }) => {
     await queryClient.invalidateQueries({
       queryKey: ["wishlist", user.id],
     });
+    showToast(
+      `Following ${brand.name} — you'll get an email when they launch something featured.`,
+      { duration: 4000 },
+    );
   };
 
   return (

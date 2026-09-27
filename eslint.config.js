@@ -31,6 +31,7 @@ export default defineConfig([
       "src/server/**/*.js",
       "src/api/**/*.js",
       "prisma/**/*.js",
+      "scripts/**/*.js",
       "vite.config.js",
     ],
     languageOptions: {

@@ -1,5 +1,6 @@
 import { prisma as defaultPrisma } from "./prisma.js";
 import { sendEmail as defaultSendEmail } from "./sendEmail.js";
+import { FROM_INFO } from "./emailSenders.js";
 import {
   orderCreatedEmail,
   orderPaidEmail,
@@ -135,6 +136,7 @@ export const sendOrderEmail = async (
       to: order.user.email,
       subject: template.subject(order),
       html: template.render(order),
+      from: FROM_INFO,
     });
 
     if (result?.sent) {

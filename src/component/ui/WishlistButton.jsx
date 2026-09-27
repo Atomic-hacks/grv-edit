@@ -61,7 +61,15 @@ const WishlistButton = ({ product, brand, className = "", icon = "heart" }) => {
       type="button"
       onClick={handleClick}
       disabled={pending}
-      aria-label={saved ? "Remove from wishlist" : "Save to wishlist"}
+      aria-label={
+        brand
+          ? saved
+            ? "Unfollow this brand"
+            : "Follow this brand for launch alerts"
+          : saved
+            ? "Remove from wishlist"
+            : "Save to wishlist"
+      }
       aria-pressed={saved}
       className={`flex h-10 w-10 items-center justify-center text-[var(--ink-900)] transition-transform duration-200 [filter:drop-shadow(0_1px_2px_rgba(255,255,255,0.9))] hover:scale-110 active:scale-95 disabled:cursor-wait disabled:opacity-60 ${className}`}
     >

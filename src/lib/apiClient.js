@@ -49,6 +49,7 @@ export const buildProductParams = ({
   styleTag,
   brandId,
   tag,
+  tagAll,
   size,
   color,
   featured,
@@ -66,6 +67,7 @@ export const buildProductParams = ({
   appendValues(searchParams, "style", styleTag);
   appendValues(searchParams, "brand", brandId);
   appendValues(searchParams, "tag", tag);
+  appendValues(searchParams, "tagAll", tagAll);
   appendValues(searchParams, "size", size);
   appendValues(searchParams, "color", color);
   if (featured) searchParams.set("featured", "true");

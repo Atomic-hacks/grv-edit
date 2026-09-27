@@ -4,6 +4,7 @@ import { getCurrentUser } from "../server/getCurrentUser.js";
 import { requireAdmin } from "../server/requireAdmin.js";
 import { getSupabaseAdmin } from "../server/supabaseAdmin.js";
 import { sendEmail } from "../server/sendEmail.js";
+import { FROM_INFO, FROM_NOREPLY, FROM_SUPPORT } from "../server/emailSenders.js";
 import {
   queueOrderEmail,
   EMAIL_TYPE_FOR_STATUS,
@@ -105,6 +106,20 @@ const serializeFirstOrderPromo = (promo, user) => ({
 });
 
 const sendVerificationCode = async (request) => {
+  // Per-user cooldown below already stops one account from being spammed;
+  // this catches the other shape of abuse — one IP hammering many
+  // different (real) userIds to burn through the Resend quota.
+  const limit = await checkRateLimit(`send-verification:${clientIp(request)}`, {
+    max: 5,
+    windowMs: 60_000,
+  });
+  if (!limit.allowed) {
+    return jsonResponse(
+      { error: "Too many requests. Please wait a moment and try again." },
+      429,
+    );
+  }
+
   let user = await getCurrentUser(request);
   if (!user) {
     const body = await request.json().catch(() => ({}));
@@ -166,6 +181,7 @@ const sendVerificationCode = async (request) => {
     to: user.email,
     subject: "Confirm your GRV email",
     html: verificationCodeEmail(code),
+    from: FROM_NOREPLY,
   });
   if (!sent.sent) {
     const status = sent.statusCode === 429 ? 429 : 502;
@@ -261,6 +277,11 @@ const notificationEmailContent = {
     message: (productName) =>
       `${productName} is back in stock. Your wait is over.`,
   },
+  BRAND_FEATURED_PRODUCT: {
+    subject: "New from a brand you follow",
+    message: (productName) =>
+      `${productName} just launched — a new featured piece from a brand you follow.`,
+  },
 };
 
 const sendNotificationEmail = async (
@@ -283,6 +304,7 @@ const sendNotificationEmail = async (
         message: content.message(productName),
         productUrl,
       }),
+      from: FROM_INFO,
     });
 
     if (emailSent.sent) {
@@ -502,6 +524,7 @@ const replyToAdminContactSubmission = async (request, id) => {
       originalMessage: submission.message,
       replyBody,
     }),
+    from: FROM_SUPPORT,
   });
 
   if (!result?.sent) {
@@ -839,7 +862,6 @@ const serializeProduct = (product) => {
     description: product.description,
     basePrice: product.basePrice,
     discountPercent: product.discountPercent,
-    status: product.status,
     createdAt: product.createdAt,
     imageUrl: product.imageUrl,
     isNew: isProductNew(product.createdAt),
@@ -954,6 +976,17 @@ const buildProductsWhere = async (url) => {
       OR: tags.map((value) => ({
         tags: { some: { tag: { slug: { equals: value, mode: "insensitive" } } } },
       })),
+    });
+  }
+
+  // Shop By's multi-select: "Casual" (Style) + "Weekend" (Occasion)
+  // narrows to products carrying both, not either — a separate,
+  // AND-across-values param from `tag` above (which OR's), since the two
+  // pages want opposite combining behavior for the same underlying facet.
+  const tagsAll = filterValues(params, "tagAll");
+  for (const value of tagsAll) {
+    and.push({
+      tags: { some: { tag: { slug: { equals: value, mode: "insensitive" } } } },
     });
   }
 
@@ -1394,7 +1427,13 @@ const deleteAdminBrand = async (request, id) => {
     );
   }
 
-  await prisma.brand.delete({ where: { id } });
+  await prisma.$transaction([
+    // Same orphan risk as deleteAdminProduct — Wishlist.brandId is
+    // nullable/SET NULL, so this must be cleaned up explicitly rather
+    // than left for the database to null out silently.
+    prisma.wishlist.deleteMany({ where: { brandId: id } }),
+    prisma.brand.delete({ where: { id } }),
+  ]);
   return jsonResponse({ deleted: true, id });
 };
 
@@ -1764,7 +1803,7 @@ const handleAdminTagRequest = async (request, segments) => {
 // Includes descendants via the same tree-walk browsing uses, so a
 // homepage block pointed at "Lifestyle" (no children) or at a major
 // category with subcategories both work the same way.
-const publicProductArchivedFilter = { archived: false, status: "ACTIVE" };
+const publicProductArchivedFilter = { archived: false };
 
 const getCategoryWithProducts = async (where) => {
   const category = await prisma.category.findFirst({ where });
@@ -2980,6 +3019,13 @@ const createAdminProduct = async (request) => {
     },
     include: adminProductInclude,
   });
+  if (product.featured) {
+    await notifyBrandFollowersOnFeaturedProduct(prisma, {
+      brandId: product.brandId,
+      productId: product.id,
+      productName: product.name,
+    });
+  }
   return jsonResponse(serializeAdminProduct(product), 201);
 };
 
@@ -3003,6 +3049,7 @@ const updateAdminProduct = async (request, id) => {
       id: true,
       name: true,
       basePrice: true,
+      featured: true,
       variants: { select: { stock: true } },
     },
   });
@@ -3063,6 +3110,14 @@ const updateAdminProduct = async (request, id) => {
       }
     }
 
+    if (input.data.featured === true && !existingProduct.featured) {
+      await notifyBrandFollowersOnFeaturedProduct(transaction, {
+        brandId: updatedProduct.brandId,
+        productId: id,
+        productName: updatedProduct.name,
+      });
+    }
+
     return updatedProduct;
   });
   return jsonResponse(serializeAdminProduct(product));
@@ -3072,8 +3127,29 @@ const deleteAdminProduct = async (request, id) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
+  // OrderItem keeps productId as a plain string, not a real foreign key
+  // (it has to survive the product being deleted, for exactly this
+  // reason) — so the database will never stop this delete on its own.
+  // Once a product has been ordered, deleting it would permanently erase
+  // that line's name/image from a real customer's order history and
+  // receipts. Archive it instead.
+  const orderItemCount = await prisma.orderItem.count({ where: { productId: id } });
+  if (orderItemCount > 0) {
+    return jsonResponse(
+      {
+        error: `${orderItemCount} past order${orderItemCount === 1 ? "" : "s"} reference this product. Archive it instead of deleting so order history stays intact.`,
+      },
+      409,
+    );
+  }
+
   await prisma.$transaction([
     prisma.productTag.deleteMany({ where: { productId: id } }),
+    // Wishlist.productId is nullable and ON DELETE SET NULL at the DB
+    // level (it's shared with the brand-follow feature) — without this,
+    // deleting a favorited product leaves a ghost Wishlist row with
+    // neither productId nor brandId set, invisible in the UI forever.
+    prisma.wishlist.deleteMany({ where: { productId: id } }),
     prisma.product.delete({ where: { id } }),
   ]);
   return jsonResponse({ deleted: true, id });
@@ -3169,6 +3245,35 @@ const notifyWaitlistEntriesOnRestock = async (
     data: { status: "NOTIFIED" },
   });
   return waitingEntries.length;
+};
+
+// "Follow" a brand (the same heart/save action as favoriting a product,
+// just on a Brand instead) and get emailed the moment that brand launches
+// a featured product — this is what turns a follow into something more
+// than a bookmark.
+const notifyBrandFollowersOnFeaturedProduct = async (
+  transaction,
+  { brandId, productId, productName },
+) => {
+  const followers = await transaction.wishlist.findMany({
+    where: { brandId },
+    select: { userId: true },
+  });
+  if (followers.length === 0) return 0;
+
+  for (const { userId } of followers) {
+    await createNotificationAndSendEmail(
+      transaction,
+      {
+        userId,
+        productId,
+        type: "BRAND_FEATURED_PRODUCT",
+        message: `${productName} just launched from a brand you follow.`,
+      },
+      productName,
+    );
+  }
+  return followers.length;
 };
 
 const listAdminProductVariants = async (request, productId) => {
@@ -3280,7 +3385,15 @@ const deleteAdminVariant = async (request, id) => {
     );
   }
 
-  await prisma.variant.delete({ where: { id } });
+  // WaitlistEntry.variantId is ON DELETE RESTRICT and there is no admin
+  // screen to clear these by hand — without this, a variant with anyone
+  // waiting on it becomes permanently undeletable. Once the variant is
+  // gone there is nothing left to notify those entries about, so they're
+  // cleared along with it rather than left to block the delete forever.
+  await prisma.$transaction([
+    prisma.waitlistEntry.deleteMany({ where: { variantId: id } }),
+    prisma.variant.delete({ where: { id } }),
+  ]);
   return jsonResponse({ deleted: true, id });
 };
 
@@ -3626,6 +3739,7 @@ const sendAdminOrderAlert = async (order) => {
         total: formatPrice(order.total),
         itemCount,
       }),
+      from: FROM_INFO,
     });
 
     if (!emailSent.sent) console.error("Admin order alert failed", order.id);

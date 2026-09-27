@@ -3,6 +3,7 @@ import { prisma as defaultPrisma } from "./prisma.js";
 import { sendEmail as defaultSendEmail } from "./sendEmail.js";
 import { campaignEmail } from "./campaignEmailTemplates.js";
 import { siteUrl } from "./emailTemplates.js";
+import { FROM_INFO } from "./emailSenders.js";
 
 const unsubscribeUrl = (token) =>
   `${siteUrl()}/unsubscribe?token=${encodeURIComponent(token)}`;
@@ -150,6 +151,7 @@ export const sendCampaign = async (
             products,
             unsubscribeUrl: unsubscribeUrl(token),
           }),
+          from: FROM_INFO,
         });
         if (result?.sent) sentCount += 1;
         else {

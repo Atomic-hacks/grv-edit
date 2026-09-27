@@ -27,6 +27,7 @@ import Catalogues from "./catalog/Catalogues";
 import NewArrivals from "./shop/NewArrivals";
 import CategoryPage from "./catalog/CategoryPage";
 import ArchivePage from "./catalog/ArchivePage";
+import NotFound from "./NotFound";
 import ShopBy from "./shop/ShopBy";
 import SignUp from "./auth/SignUp";
 import LogIn from "./auth/LogIn";
@@ -248,12 +249,14 @@ const AppLayout = () => {
                   <Route path="campaigns" element={<AdminCampaigns />} />
                   <Route path="campaigns/new" element={<AdminCampaignForm />} />
                   <Route path="campaigns/:id" element={<AdminCampaignForm />} />
+                  <Route path="*" element={<NotFound />} />
                 </Route>
                 </Routes>
               </React.Suspense>
             </AdminRoute>
           }
         />
+        <Route path="*" element={<NotFound />} />
       </Routes>
       </Motion.div>
       </React.Suspense>

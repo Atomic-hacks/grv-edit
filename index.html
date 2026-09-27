@@ -4,7 +4,33 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GRV.</title>
+    <title>GRV — Contemporary fashion</title>
+    <meta
+      name="description"
+      content="GRV is a contemporary fashion label — shop women's and men's ready-to-wear, footwear and accessories."
+    />
+    <!-- Site-wide only: this is a client-rendered SPA with no per-page
+         server rendering, so every route currently shares this same
+         title/description/image rather than each product or category
+         page having its own. Most social-preview crawlers and some
+         search engines don't execute JavaScript, so a client-side
+         per-page update wouldn't reach them anyway — doing this properly
+         needs prerendering or SSR, not a bigger index.html. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="GRV" />
+    <meta property="og:title" content="GRV — Contemporary fashion" />
+    <meta
+      property="og:description"
+      content="Shop women's and men's ready-to-wear, footwear and accessories."
+    />
+    <meta property="og:image" content="/img/log.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="GRV — Contemporary fashion" />
+    <meta
+      name="twitter:description"
+      content="Shop women's and men's ready-to-wear, footwear and accessories."
+    />
+    <meta name="twitter:image" content="/img/log.png" />
   </head>
   <body>
     <div id="root"></div>

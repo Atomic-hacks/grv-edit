@@ -7,6 +7,7 @@ import {
 } from "./emailTemplates.js";
 import { retryFailedOrderEmails } from "./orderEmails.js";
 import { processDueCampaigns } from "./campaigns.js";
+import { FROM_INFO } from "./emailSenders.js";
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
@@ -103,6 +104,7 @@ export const runReminderChecks = async ({
         to: cart.user.email,
         subject: "You left something in your Goody Bag",
         html: formatCartEmail(cart, productsById),
+        from: FROM_INFO,
       });
       if (!sent?.sent)
         throw new Error(
@@ -127,6 +129,10 @@ export const runReminderChecks = async ({
       where: {
         createdAt: { lt: new Date(now.getTime() - THREE_DAYS) },
         reminderSent: false,
+        // A followed brand has no product to remind about — only product
+        // favorites (productId set) belong in this "still thinking about
+        // it?" pass.
+        productId: { not: null },
       },
       select: {
         id: true,
@@ -146,6 +152,7 @@ export const runReminderChecks = async ({
         to: wishlist.user.email,
         subject: "Still thinking about it?",
         html: formatWishlistEmail(wishlist),
+        from: FROM_INFO,
       });
       if (!sent?.sent) {
         errors.push(

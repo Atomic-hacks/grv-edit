@@ -16,34 +16,36 @@ import { useCart } from "../context/CartContext";
 // yet (Site Images admin, key "shopby-<slug>") — never a broken image.
 const FALLBACK_TINTS = ["#e8e3dc", "#ddE3e0", "#e3dde3", "#e0e3dd", "#e3e0dd"];
 
-const ThemeCard = ({ filterType, tags, image, tint, activeTag, onSelectTag }) => (
+const ThemeCard = ({ filterType, tags, image, tint, selectedSlugs, onToggleTag }) => (
   <div className="relative overflow-hidden">
     <div
-      className="relative aspect-4/3 w-full overflow-hidden sm:aspect-16/10"
+      className="relative aspect-[5/4] w-full overflow-hidden sm:aspect-[4/3]"
       style={{ backgroundColor: tint }}
     >
       {image && (
         <img src={image} alt="" className="h-full w-full object-cover" loading="lazy" />
       )}
       <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/55 via-black/5 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 p-4 sm:p-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/80">
+      <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80">
           Shop by
         </p>
-        <h2 className="mt-1 text-2xl font-semibold text-white sm:text-3xl">
+        <h2 className="mt-0.5 text-lg font-semibold text-white sm:text-xl">
           {filterType.name}
         </h2>
         {/* Every value is visible at once — nothing hidden behind a click
-            just to see the menu. */}
-        <div className="mt-4 flex flex-wrap gap-2">
+            just to see the menu. Multi-select: pick as many as apply, here
+            and on other cards, and they combine to narrow the results. */}
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
           {tags.map((tag) => {
-            const isActive = activeTag === tag.slug;
+            const isActive = selectedSlugs.includes(tag.slug);
             return (
               <button
                 key={tag.id}
                 type="button"
-                onClick={() => onSelectTag(tag)}
-                className={`border px-3.5 py-2 text-[12px] font-medium transition-colors ${
+                onClick={() => onToggleTag(tag.slug)}
+                aria-pressed={isActive}
+                className={`border px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
                   isActive
                     ? "border-white bg-white text-[var(--ink-900)]"
                     : "border-white/70 text-white hover:border-white hover:bg-white/10"
@@ -63,7 +65,7 @@ const ShopBy = () => {
   const { addToCart } = useCart();
   const siteImages = useSiteImages();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTagSlug = searchParams.get("tag") || "";
+  const selectedSlugs = searchParams.getAll("tags");
 
   const filterTypesQuery = useQuery({
     queryKey: ["filter-types"],
@@ -82,19 +84,28 @@ const ShopBy = () => {
       }),
   });
   const productsQuery = useQuery({
-    queryKey: ["products", { tag: activeTagSlug }],
-    queryFn: () => fetchProducts({ tag: activeTagSlug, pageSize: 60 }),
-    enabled: Boolean(activeTagSlug),
+    queryKey: ["products", { tagAll: selectedSlugs }],
+    queryFn: () => fetchProducts({ tagAll: selectedSlugs, pageSize: 60 }),
+    enabled: selectedSlugs.length > 0,
   });
 
   const filterTypes = filterTypesQuery.data || [];
   const tags = tagsQuery.data || [];
-  const activeTag = tags.find((tag) => tag.slug === activeTagSlug) || null;
+  const selectedTags = selectedSlugs
+    .map((slug) => tags.find((tag) => tag.slug === slug))
+    .filter(Boolean);
   const loading = filterTypesQuery.isPending || tagsQuery.isPending;
   const error = filterTypesQuery.error || tagsQuery.error;
 
-  const selectTag = (tag) => setSearchParams({ tag: tag.slug });
-  const clearTag = () => setSearchParams({});
+  const toggleTag = (slug) => {
+    const next = selectedSlugs.includes(slug)
+      ? selectedSlugs.filter((value) => value !== slug)
+      : [...selectedSlugs, slug];
+    const params = new URLSearchParams();
+    next.forEach((value) => params.append("tags", value));
+    setSearchParams(params);
+  };
+  const clearTags = () => setSearchParams({});
 
   return (
     <main className="min-h-screen bg-white">
@@ -103,20 +114,22 @@ const ShopBy = () => {
           className="pt-4"
           items={[
             { label: "Home", to: "/" },
-            { label: "Shop by", to: activeTag ? "/shop-by" : undefined },
-            ...(activeTag ? [{ label: activeTag.name }] : []),
+            { label: "Shop by", to: selectedTags.length ? "/shop-by" : undefined },
+            ...(selectedTags.length
+              ? [{ label: selectedTags.map((tag) => tag.name).join(" + ") }]
+              : []),
           ]}
         />
         <header className="pt-6 md:pt-8">
           <p className="eyebrow">Curated discovery</p>
           <h1 className="display-title mt-2">Shop by</h1>
           <p className="body-text mt-4">
-            Pick a mood, an occasion, the weather — find pieces that fit the brief.
+            Pick a mood, an occasion, the weather — combine as many as fit the brief.
           </p>
         </header>
 
         {loading ? (
-          <div className="mt-10 grid gap-4 sm:grid-cols-2">
+          <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <ProductGridSkeleton count={4} />
           </div>
         ) : error ? (
@@ -129,7 +142,7 @@ const ShopBy = () => {
             }}
           />
         ) : (
-          <div className="mt-10 grid gap-4 sm:grid-cols-2">
+          <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {filterTypes.map((filterType, index) => {
               const typeTags = tags.filter((tag) => tag.filterType?.slug === filterType.slug);
               if (typeTags.length === 0) return null;
@@ -140,27 +153,37 @@ const ShopBy = () => {
                   tags={typeTags}
                   image={siteImages[`shopby-${filterType.slug}`]}
                   tint={FALLBACK_TINTS[index % FALLBACK_TINTS.length]}
-                  activeTag={activeTagSlug}
-                  onSelectTag={selectTag}
+                  selectedSlugs={selectedSlugs}
+                  onToggleTag={toggleTag}
                 />
               );
             })}
           </div>
         )}
 
-        {activeTag && (
+        {selectedTags.length > 0 && (
           <section className="mt-16 border-t border-[var(--line)] pt-10">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="eyebrow">{activeTag.filterType?.name}</p>
-                <h2 className="section-title mt-1.5">{activeTag.name}</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="eyebrow shrink-0">Showing</p>
+                {selectedTags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleTag(tag.slug)}
+                    className="flex items-center gap-1.5 border border-[var(--ink-900)] bg-[var(--ink-900)] px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)]"
+                  >
+                    {tag.name}
+                    <span aria-hidden="true">×</span>
+                  </button>
+                ))}
               </div>
               <button
                 type="button"
-                onClick={clearTag}
+                onClick={clearTags}
                 className="text-[11px] uppercase tracking-[0.1em] text-[var(--ink-500)] underline underline-offset-4 transition-colors hover:text-[var(--ink-900)]"
               >
-                Browse a different theme
+                Clear all
               </button>
             </div>
 
@@ -173,7 +196,9 @@ const ShopBy = () => {
                 onRetry={() => productsQuery.refetch()}
               />
             ) : (productsQuery.data || []).length === 0 ? (
-              <p className="meta-text mt-8">No products are tagged with this yet — check back soon.</p>
+              <p className="meta-text mt-8">
+                Nothing matches every one of these together yet — try removing one.
+              </p>
             ) : (
               <div className="mt-8 product-grid">
                 {(productsQuery.data || []).map((product) => {
