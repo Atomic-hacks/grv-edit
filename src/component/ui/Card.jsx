@@ -1,7 +1,6 @@
 import React, { useLayoutEffect, useRef, useState } from "react";
 import WishlistButton from "./WishlistButton";
 import { getOptimizedImageUrl } from "../../lib/imageHelpers";
-import Spinner from "./Spinner";
 import DiscountPrice from "./DiscountPrice";
 
 const Card = ({
@@ -13,13 +12,11 @@ const Card = ({
   category,
   details,
   badge,
-  onQuickAdd,
   product,
 }) => {
   const primaryImage = img || "/img/short.png";
   const secondaryImage = hoverImg || "/img/sweatshirt.png";
   const [loadedImages, setLoadedImages] = useState({});
-  const [quickAddPending, setQuickAddPending] = useState(false);
   const primaryImageRef = useRef(null);
   const secondaryImageRef = useRef(null);
 
@@ -48,17 +45,6 @@ const Card = ({
   // Only cross-fade when there is genuinely a second shot to show. Fading to
   // a duplicate of the same image just made cards flicker on hover.
   const hasSecondImage = secondaryImage !== primaryImage;
-
-  const handleQuickAdd = async (event) => {
-    event.stopPropagation();
-    if (quickAddPending) return;
-    setQuickAddPending(true);
-    try {
-      await onQuickAdd?.();
-    } finally {
-      window.setTimeout(() => setQuickAddPending(false), 300);
-    }
-  };
 
   // The label line above the name: a badge wins, otherwise the taxonomy the
   // shopper filtered by. Keeps every card's first line doing the same job.
@@ -115,22 +101,6 @@ const Card = ({
             onError={() => markImageLoaded(secondaryImage)}
             className="pointer-events-none absolute inset-0 h-full w-full object-cover object-top opacity-0 transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.02] group-hover:opacity-100"
           />
-        )}
-
-        {/* Quick add. Slides up out of the image edge on pointer devices; on
-            touch it stays put, where hover would otherwise make it
-            unreachable. */}
-        {onQuickAdd && (
-          <button
-            type="button"
-            onClick={handleQuickAdd}
-            disabled={quickAddPending}
-            aria-busy={quickAddPending}
-            aria-label={`Quick add ${title}`}
-            className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-center gap-2 bg-black/90 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white transition-[transform,opacity,background-color] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-black disabled:cursor-wait disabled:opacity-80 lg:translate-y-full lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
-          >
-            {quickAddPending ? <Spinner label="Adding" /> : "Quick add"}
-          </button>
         )}
       </div>
 
