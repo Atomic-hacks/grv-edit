@@ -57,6 +57,7 @@ const Account = React.lazy(() => import("./account/Account"));
 const AccountSettings = React.lazy(() => import("./account/AccountSettings"));
 const OrderDetail = React.lazy(() => import("./account/OrderDetail"));
 const ReportIssue = React.lazy(() => import("./account/ReportIssue"));
+const Welcome = React.lazy(() => import("./auth/Welcome"));
 
 // Admin is lazy-loaded: it is ~23 screens that no shopper ever opens,
 // and bundling it with the storefront made every visitor download it.
@@ -201,6 +202,7 @@ const AppLayout = () => {
             />
             <Route path="/account/orders/:id" element={<OrderDetail />} />
             <Route path="/account/report-issue" element={<ReportIssue />} />
+            <Route path="/welcome" element={<Welcome />} />
             <Route path="/wishlist" element={<Wishlist />} />
             <Route path="/cart" element={<CartPage />} />
             <Route path="/checkout" element={<Checkout />} />

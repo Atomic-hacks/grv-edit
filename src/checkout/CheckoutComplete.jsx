@@ -8,10 +8,8 @@ import RecentlyViewedRail from "../component/section/RecentlyViewedRail";
 import StoreSupport from "../component/section/StoreSupport";
 import InlineNotice from "../component/ui/InlineNotice";
 
-const MAX_ATTEMPTS = 4;
+const MAX_ATTEMPTS = 6;
 const RETRY_DELAY = 2500;
-const PENDING_ORDER_KEY = "grv_pending_order_id";
-const CLEARED_ORDER_KEY = "grv_cart_cleared_order_id";
 
 const CheckoutCompleteContent = () => {
   const [searchParams] = useSearchParams();
@@ -23,7 +21,7 @@ const CheckoutCompleteContent = () => {
     orderId: null,
     error: "",
   });
-  const clearedOrderRef = useRef(false);
+  const clearedCartRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,37 +45,31 @@ const CheckoutCompleteContent = () => {
         if (cancelled) return;
 
         if (data.status === "PAID") {
-          const savedOrderId = localStorage.getItem(PENDING_ORDER_KEY);
-          const alreadyCleared =
-            localStorage.getItem(CLEARED_ORDER_KEY) === data.orderId;
-          if (
-            savedOrderId === data.orderId &&
-            !alreadyCleared &&
-            !clearedOrderRef.current
-          ) {
+          if (!clearedCartRef.current) {
+            clearedCartRef.current = true;
             clearCart();
-            clearedOrderRef.current = true;
-            localStorage.setItem(CLEARED_ORDER_KEY, data.orderId);
-            localStorage.removeItem(PENDING_ORDER_KEY);
           }
           setResult({ status: "PAID", orderId: data.orderId, error: "" });
           return;
         }
 
-        if (
-          data.status === "FAILED" ||
-          (data.paystackStatus && data.paystackStatus !== "success")
-        ) {
+        // Paystack has definitively confirmed nothing was charged — safe to
+        // invite a retry.
+        if (data.status === "FAILED") {
           setResult({
             status: "FAILED",
-            orderId: data.orderId,
-            error: "Your payment was not completed.",
+            orderId: null,
+            error: "Your payment was not completed. Nothing was charged.",
           });
           return;
         }
 
+        // Still PENDING — this covers both "Paystack hasn't settled yet"
+        // and "our own request to Paystack hit a hiccup". Neither means the
+        // payment failed, so we just keep polling instead of ever showing
+        // an error for it.
         if (attempt < MAX_ATTEMPTS - 1) {
-          setResult({ status: "PENDING", orderId: data.orderId, error: "" });
+          setResult({ status: "PENDING", orderId: null, error: "" });
           retryTimer = window.setTimeout(
             () => checkPayment(attempt + 1),
             RETRY_DELAY,
@@ -85,12 +77,11 @@ const CheckoutCompleteContent = () => {
           return;
         }
 
-        setResult({
-          status: "PENDING",
-          orderId: data.orderId,
-          error:
-            "Payment is still being confirmed. Please check again shortly.",
-        });
+        // Exhausted our polling window without a definitive answer. This is
+        // deliberately NOT "FAILED" — the payment may still complete a
+        // moment later via the webhook, and inviting a retry here risks a
+        // double charge. Point them at their orders instead of "try again."
+        setResult({ status: "UNKNOWN", orderId: null, error: "" });
       } catch (requestError) {
         if (cancelled) return;
         if (attempt < MAX_ATTEMPTS - 1) {
@@ -101,9 +92,9 @@ const CheckoutCompleteContent = () => {
           return;
         }
         setResult({
-          status: "FAILED",
+          status: "UNKNOWN",
           orderId: null,
-          error: requestError.message || "Unable to verify your payment.",
+          error: requestError.message || "",
         });
       }
     };
@@ -150,12 +141,39 @@ const CheckoutCompleteContent = () => {
               </Link>
             </div>
           </>
+        ) : result.status === "UNKNOWN" ? (
+          <>
+            <h1 className="mt-4 text-4xl font-semibold">
+              Still confirming your payment
+            </h1>
+            <p className="body-text mt-4">
+              This is taking longer than usual. If you were charged, you'll get
+              an email confirmation shortly and the order will show up in your
+              account — please check there before trying again.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                to="/account?section=orders"
+                className="inline-flex bg-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-(--color-accent-orange)"
+              >
+                Check my orders
+              </Link>
+              <Link
+                to="/shop"
+                className="inline-flex border border-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
+              >
+                Continue shopping
+              </Link>
+            </div>
+          </>
         ) : (
           <>
-            <h1 className="mt-4 text-4xl font-semibold">Payment didn't go through</h1>
+            <h1 className="mt-4 text-4xl font-semibold">
+              Payment didn't go through
+            </h1>
             <p className="body-text mt-4">
-              Nothing was charged. You can try again from your bag, or check
-              the order for details on what happened.
+              Nothing was charged. Your Goody Bag is still here — you can try
+              again whenever you're ready.
             </p>
             {result.error && (
               <InlineNotice tone="error" className="mt-4">
@@ -169,19 +187,8 @@ const CheckoutCompleteContent = () => {
               >
                 Back to bag
               </Link>
-              {result.orderId && (
-                <Link
-                  to={`/account/orders/${result.orderId}`}
-                  className="inline-flex border border-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
-                >
-                  View order
-                </Link>
-              )}
             </div>
           </>
-        )}
-        {result.status === "PENDING" && result.error && (
-          <p className="mt-6 text-sm text-gray-600">{result.error}</p>
         )}
       </div>
       {result.status === "PAID" && (

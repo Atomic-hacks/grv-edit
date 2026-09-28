@@ -50,6 +50,7 @@ const CheckoutContent = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState(emptyForm);
   const [selectedAddressId, setSelectedAddressId] = useState(null);
+  const [saveAsDefaultAddress, setSaveAsDefaultAddress] = useState(false);
   const [error, setError] = useState("");
   const [needsVerification, setNeedsVerification] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -156,7 +157,27 @@ const CheckoutContent = () => {
       delete addressPayload.countryCode;
       delete addressPayload.addressLine2;
       delete addressPayload.useAsBilling;
-      const { authorization_url: authorizationUrl, orderId } = await request(
+
+      // Only for a freshly-typed address — one already picked from the
+      // saved list is, by definition, already saved.
+      if (saveAsDefaultAddress && !selectedAddressId) {
+        try {
+          await request("/api/account/addresses", {
+            method: "POST",
+            body: JSON.stringify({
+              label: "Default",
+              isDefault: true,
+              ...addressPayload,
+            }),
+          });
+        } catch (saveAddressError) {
+          // Not placing the order over a saved-address hiccup — the
+          // checkout itself still goes through.
+          console.error("Save default address failed", saveAddressError);
+        }
+      }
+
+      const { authorization_url: authorizationUrl } = await request(
         "/api/checkout/initialize",
         {
           method: "POST",
@@ -171,7 +192,6 @@ const CheckoutContent = () => {
           }),
         },
       );
-      localStorage.setItem("grv_pending_order_id", orderId);
       window.location.href = authorizationUrl;
     } catch (requestError) {
       // An unverified email is a fixable problem, not a dead end — it gets
@@ -278,7 +298,22 @@ const CheckoutContent = () => {
               onChange={setForm}
               idPrefix="checkout-address"
             />
-            <InlineNotice tone="error" className="mt-5">{error}</InlineNotice>
+            {!selectedAddressId && (
+              <label className="mt-4 flex items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={saveAsDefaultAddress}
+                  onChange={(event) =>
+                    setSaveAsDefaultAddress(event.target.checked)
+                  }
+                  className="h-4 w-4 accent-black"
+                />
+                Save as default address for other orders
+              </label>
+            )}
+            <InlineNotice tone="error" className="mt-5">
+              {error}
+            </InlineNotice>
             {needsVerification && (
               <div className="mt-5 border border-[var(--line)] bg-[var(--surface-muted)] p-5">
                 <p className="text-[13px] font-semibold text-[var(--ink-900)]">

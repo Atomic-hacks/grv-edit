@@ -18,12 +18,17 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public."User" (id, email, name, role)
+  -- OAuth providers (Google, etc.) already verify the email address
+  -- themselves before Supabase ever creates this row, so there is nothing
+  -- for our own 6-digit code flow to add — only password sign-ups start
+  -- unverified and go through /confirm-email.
+  insert into public."User" (id, email, name, role, "emailVerified")
   values (
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data ->> 'name', ''),
-    'CUSTOMER'
+    'CUSTOMER',
+    coalesce(new.raw_app_meta_data ->> 'provider', 'email') <> 'email'
   )
   on conflict (id) do nothing;
   return new;

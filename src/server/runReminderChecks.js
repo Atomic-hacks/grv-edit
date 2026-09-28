@@ -211,11 +211,30 @@ export const runReminderChecks = async ({
     console.error(message);
   }
 
+  // Abandoned checkout attempts (closed the Paystack tab, never came back)
+  // never became an Order and never will — sweep them so they don't sit
+  // around indefinitely. Two hours is generous; a real payment resolves in
+  // seconds to minutes.
+  let pendingCheckoutsSwept = 0;
+  try {
+    const result = await prismaClient.pendingCheckout.deleteMany({
+      where: {
+        createdAt: { lt: new Date(now.getTime() - 2 * 60 * 60 * 1000) },
+      },
+    });
+    pendingCheckoutsSwept = result.count;
+  } catch (error) {
+    const message = `Pending checkout sweep failed: ${error instanceof Error ? error.message : String(error)}`;
+    errors.push(message);
+    console.error(message);
+  }
+
   return {
     cartsReminded,
     wishlistsReminded,
     orderEmailRetries,
     campaignsSent: campaignsSent.length,
+    pendingCheckoutsSwept,
     errors,
   };
 };

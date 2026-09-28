@@ -29,7 +29,7 @@ import { supportReplyEmail } from "../server/orderEmailTemplates.js";
 import { checkRateLimit, clientIp } from "../server/rateLimit.js";
 import {
   verifyPaystackSignature,
-  claimOrderForPayment,
+  claimPendingCheckout,
 } from "../server/paystack.js";
 import { formatPrice } from "../lib/productHelpers.js";
 import { getRegionForState, NIGERIAN_REGIONS } from "../lib/nigeriaRegions.js";
@@ -3986,27 +3986,37 @@ const initializeCheckout = async (request) => {
     subtotalAfterFirstOrderDiscount - discountAmount + shippingFee,
   );
 
-  const order = await prisma.order.create({
-    data: {
-      userId: user.id,
-      total: orderTotal,
-      discountId: discount?.id,
-      discountAmount,
-      firstOrderDiscountPercent,
-      firstOrderDiscountAmount,
-      firstOrderFreeShipping,
-      shippingFee,
-      shippingAmount: shippingFee,
-      paystackReference: `pending-${crypto.randomUUID()}`,
-      fullName: body.fullName.trim(),
-      country: body.country.trim(),
-      phone: body.phone.trim(),
-      address: body.address.trim(),
-      city: body.city.trim(),
-      state: body.state.trim(),
-      postalCode: body.postalCode.trim(),
-      items: { create: orderItems },
-    },
+  // Nothing is written to the Order table yet — only once Paystack confirms
+  // payment (in finalizeOrderFromReference) does a real Order get created.
+  // Until then, this checkout attempt's only trace is this row, keyed by
+  // the reference we're about to hand Paystack.
+  const checkoutPayload = {
+    userId: user.id,
+    total: orderTotal,
+    discountId: discount?.id ?? null,
+    discountAmount,
+    firstOrderDiscountPercent,
+    firstOrderDiscountAmount,
+    firstOrderFreeShipping,
+    shippingFee,
+    shippingAmount: shippingFee,
+    fullName: body.fullName.trim(),
+    country: body.country.trim(),
+    phone: body.phone.trim(),
+    address: body.address.trim(),
+    city: body.city.trim(),
+    state: body.state.trim(),
+    postalCode: body.postalCode.trim(),
+    items: orderItems,
+  };
+  const reference = `grv_${crypto.randomUUID()}`;
+
+  // Only the newest attempt for this customer matters — clear out any
+  // earlier checkout attempts they abandoned or that failed, rather than
+  // letting them pile up.
+  await prisma.pendingCheckout.deleteMany({ where: { userId: user.id } });
+  await prisma.pendingCheckout.create({
+    data: { reference, userId: user.id, payload: checkoutPayload },
   });
 
   try {
@@ -4019,10 +4029,18 @@ const initializeCheckout = async (request) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          reference,
           amount: Math.round(orderTotal * 100),
           currency: "NGN",
           email: user.email,
           callback_url: `${new URL(request.url).origin}/checkout/complete`,
+          // Explicit rather than left to account defaults: Paystack's test
+          // mode shows every channel regardless of what a live account is
+          // actually provisioned for, so this doesn't turn a channel on by
+          // itself — bank_transfer specifically still requires Paystack to
+          // activate it for the account — but it means nothing here needs
+          // to change once they do.
+          channels: ["card", "bank", "bank_transfer", "ussd", "qr"],
         }),
       },
     );
@@ -4035,7 +4053,9 @@ const initializeCheckout = async (request) => {
         amount: Math.round(orderTotal * 100),
         hasEmail: Boolean(user.email),
       });
-      await prisma.order.delete({ where: { id: order.id } });
+      await prisma.pendingCheckout
+        .delete({ where: { reference } })
+        .catch(() => {});
       return jsonResponse(
         {
           error:
@@ -4047,20 +4067,14 @@ const initializeCheckout = async (request) => {
       );
     }
 
-    const updatedOrder = await prisma.order.update({
-      where: { id: order.id },
-      data: { paystackReference: paystackBody.data.reference },
-    });
-    if (!updatedOrder) {
-      return jsonResponse({ error: "Unable to save payment reference" }, 500);
-    }
-    queueOrderEmail(order.id, "ORDER_CREATED");
     return jsonResponse({
       authorization_url: paystackBody.data.authorization_url,
-      orderId: order.id,
+      reference,
     });
   } catch (error) {
-    await prisma.order.delete({ where: { id: order.id } }).catch(() => {});
+    await prisma.pendingCheckout
+      .delete({ where: { reference } })
+      .catch(() => {});
     console.error("Paystack checkout initialization failed", error);
     return jsonResponse({ error: "Unable to initialize payment" }, 502);
   }
@@ -4176,71 +4190,93 @@ const processRestockNotificationsBestEffort = async (restockedVariants) => {
   }
 };
 
-const markOrderAsPaid = async (reference) => {
-  let transitionedToPaid = false;
+// Creates the real Order the instant Paystack confirms payment — the only
+// moment an Order ever comes into existence. Called from both the webhook
+// and the customer's return-from-Paystack verification; whichever gets
+// there first wins the claim (see claimPendingCheckout), the other finds
+// nothing left to claim and falls through to look up the Order that
+// resulted, so both call sites can safely call this for the same
+// reference without creating (or decrementing stock) twice.
+const finalizeOrderFromReference = async (reference) => {
+  const existingOrder = await prisma.order.findUnique({
+    where: { paystackReference: reference },
+    include: { items: true, user: { select: { email: true } } },
+  });
+  if (existingOrder) return { order: existingOrder, created: false };
+
   const notificationsToProcess = [];
-  const paidOrder = await prisma.$transaction(async (transaction) => {
-    const order = await transaction.order.findUnique({
-      where: { paystackReference: reference },
-      include: { items: true },
+  let createdOrder = null;
+
+  await prisma.$transaction(async (transaction) => {
+    // Read the payload before claiming — claimPendingCheckout deletes the
+    // row, so it has to happen after we've captured what's in it.
+    const pending = await transaction.pendingCheckout.findUnique({
+      where: { reference },
     });
-    if (!order) {
-      console.warn("Paystack payment order not found", reference);
-      return null;
-    }
+    if (!pending) return;
 
-    if (order.status === "PAID") return order;
-    if (order.status !== "PENDING") return order;
+    const claimed = await claimPendingCheckout(transaction, reference);
+    // Lost a race with a concurrent call that claimed it first — there's
+    // nothing here to create; the caller re-checks for the resulting Order.
+    if (!claimed) return;
 
-    // Claim the order before changing stock so webhook retries and verification
-    // requests cannot both finalize the same payment.
-    const claimed = await claimOrderForPayment(transaction, order.id);
-    if (!claimed) {
-      return transaction.order.findUnique({
-        where: { id: order.id },
-        include: { items: true },
-      });
-    }
-    transitionedToPaid = true;
-
-    await transaction.order.update({
-      where: { id: order.id },
-      data: { fulfillmentStatus: "PAYMENT_CONFIRMED" },
+    const payload = pending.payload;
+    createdOrder = await transaction.order.create({
+      data: {
+        userId: payload.userId,
+        total: payload.total,
+        discountId: payload.discountId,
+        discountAmount: payload.discountAmount,
+        firstOrderDiscountPercent: payload.firstOrderDiscountPercent,
+        firstOrderDiscountAmount: payload.firstOrderDiscountAmount,
+        firstOrderFreeShipping: payload.firstOrderFreeShipping,
+        shippingFee: payload.shippingFee,
+        shippingAmount: payload.shippingAmount,
+        status: "PAID",
+        fulfillmentStatus: "PAYMENT_CONFIRMED",
+        paystackReference: reference,
+        fullName: payload.fullName,
+        country: payload.country,
+        phone: payload.phone,
+        address: payload.address,
+        city: payload.city,
+        state: payload.state,
+        postalCode: payload.postalCode,
+        items: { create: payload.items },
+      },
+      include: { items: true, user: { select: { email: true } } },
     });
+
     await transaction.orderFulfillmentEvent.create({
-      data: { orderId: order.id, status: "PAYMENT_CONFIRMED" },
+      data: { orderId: createdOrder.id, status: "PAYMENT_CONFIRMED" },
     });
 
-    if (order.discountId) {
+    if (payload.discountId) {
       await transaction.discount.update({
-        where: { id: order.discountId },
+        where: { id: payload.discountId },
         data: { usedCount: { increment: 1 } },
       });
     }
 
     if (
-      order.firstOrderDiscountPercent !== null ||
-      order.firstOrderFreeShipping
+      payload.firstOrderDiscountPercent !== null ||
+      payload.firstOrderFreeShipping
     ) {
       await transaction.user.updateMany({
-        where: { id: order.userId, firstOrderPromoUsed: false },
+        where: { id: payload.userId, firstOrderPromoUsed: false },
         data: { firstOrderPromoUsed: true },
       });
     }
 
-    for (const item of order.items) {
+    for (const item of createdOrder.items) {
       const variant = await transaction.variant.findUnique({
         where: { id: item.variantId },
-        select: {
-          id: true,
-          stock: true,
-          product: { select: { name: true } },
-        },
+        select: { id: true, stock: true, product: { select: { name: true } } },
       });
       if (!variant) {
         console.error(
           "Serious warning: paid order references a missing variant",
-          { orderId: order.id, variantId: item.variantId },
+          { orderId: createdOrder.id, variantId: item.variantId },
         );
         continue;
       }
@@ -4248,7 +4284,7 @@ const markOrderAsPaid = async (reference) => {
         console.error(
           "Serious warning: stock race caused paid order to go below zero",
           {
-            orderId: order.id,
+            orderId: createdOrder.id,
             variantId: item.variantId,
             stock: variant.stock,
             quantity: item.quantity,
@@ -4270,53 +4306,69 @@ const markOrderAsPaid = async (reference) => {
           where: { productId: item.productId },
           select: { userId: true },
         });
-
-        if (wishlists.length > 0) {
-          for (const { userId } of wishlists) {
-            const notification = await transaction.notification.create({
-              data: {
-                userId,
-                productId: item.productId,
-                type: "WISHLIST_LOW_STOCK",
-                message: `${variant.product.name} is almost sold out!`,
-              },
-              select: { id: true },
-            });
-            notificationsToProcess.push({
-              notificationId: notification.id,
-              productName: variant.product.name,
-            });
-          }
+        for (const { userId } of wishlists) {
+          const notification = await transaction.notification.create({
+            data: {
+              userId,
+              productId: item.productId,
+              type: "WISHLIST_LOW_STOCK",
+              message: `${variant.product.name} is almost sold out!`,
+            },
+            select: { id: true },
+          });
+          notificationsToProcess.push({
+            notificationId: notification.id,
+            productName: variant.product.name,
+          });
         }
       }
     }
-
-    return transaction.order.findUnique({
-      where: { id: order.id },
-      include: { items: true, user: { select: { email: true } } },
-    });
   });
 
-  if (transitionedToPaid && paidOrder) {
-    // Fire and forget so order completion never depends on email providers.
-    queueOrderEmail(paidOrder.id, "ORDER_PAID");
-    void sendAdminOrderAlert(paidOrder).catch((error) => {
-      console.error("Admin order alert failed", {
-        orderId: paidOrder.id,
+  if (!createdOrder) {
+    // Someone else's transaction is (or already has) creating this order —
+    // give it a moment to land, then hand back whatever exists.
+    for (let attempt = 0; attempt < 5 && !createdOrder; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      createdOrder = await prisma.order.findUnique({
+        where: { paystackReference: reference },
+        include: { items: true, user: { select: { email: true } } },
+      });
+    }
+    return { order: createdOrder, created: false };
+  }
+
+  // Fire and forget so order completion never depends on email providers.
+  queueOrderEmail(createdOrder.id, "ORDER_PAID");
+  void sendAdminOrderAlert(createdOrder).catch((error) => {
+    console.error("Admin order alert failed", {
+      orderId: createdOrder.id,
+      error,
+    });
+  });
+  void processOrderPaidNotificationsBestEffort(notificationsToProcess).catch(
+    (error) => {
+      console.error("Order notification batch failed", {
+        orderId: createdOrder.id,
         error,
       });
-    });
-    void processOrderPaidNotificationsBestEffort(notificationsToProcess).catch(
-      (error) => {
-        console.error("Order notification batch failed", {
-          orderId: paidOrder.id,
-          error,
-        });
-      },
-    );
-  }
-  return paidOrder;
+    },
+  );
+
+  return { order: createdOrder, created: true };
 };
+
+// Terminal Paystack transaction states — nothing was charged, so it's safe
+// to tell the customer to try again. Anything else (ongoing, queued,
+// pay-offline, or a transient failure just reaching Paystack at all) is
+// reported as PENDING instead: we simply don't know yet, and saying
+// "failed" when the payment might still land a few seconds later (via the
+// webhook) risks a customer retrying and paying twice.
+const PAYSTACK_TERMINAL_FAILURE_STATUSES = new Set([
+  "failed",
+  "abandoned",
+  "reversed",
+]);
 
 const verifyCheckout = async (request, url) => {
   const user = await getCurrentUser(request);
@@ -4331,53 +4383,72 @@ const verifyCheckout = async (request, url) => {
     return jsonResponse({ error: "Payment reference is required" }, 400);
   }
 
-  const order = await prisma.order.findFirst({
+  // An Order only ever exists once payment is confirmed — if one's already
+  // here, this is a repeat check (page refresh, a second poll) and there's
+  // nothing left to do.
+  const existingOrder = await prisma.order.findFirst({
     where: { paystackReference: reference, userId: user.id },
     select: { id: true, status: true },
   });
-  if (!order) return jsonResponse({ error: "Order not found" }, 404);
-
-  if (order.status === "PAID") {
-    return jsonResponse({ orderId: order.id, status: order.status });
-  }
-
-  if (order.status === "PENDING") {
-    const paystackResponse = await fetch(
-      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        },
-      },
-    );
-    const paystackBody = await paystackResponse.json().catch(() => null);
-    if (!paystackResponse.ok || !paystackBody?.status || !paystackBody.data) {
-      return jsonResponse(
-        { error: paystackBody?.message || "Unable to verify payment" },
-        502,
-      );
-    }
-
-    if (paystackBody.data.status === "success") {
-      const paidOrder = await markOrderAsPaid(reference);
-      return jsonResponse({
-        orderId: paidOrder?.id || order.id,
-        status: paidOrder?.status || order.status,
-        paystackStatus: paystackBody.data.status,
-      });
-    }
-
+  if (existingOrder) {
     return jsonResponse({
-      orderId: order.id,
-      status: order.status,
-      paystackStatus: paystackBody.data.status,
+      orderId: existingOrder.id,
+      status: existingOrder.status,
     });
   }
 
-  return jsonResponse({
-    orderId: order.id,
-    status: order.status,
+  const pending = await prisma.pendingCheckout.findFirst({
+    where: { reference, userId: user.id },
+    select: { reference: true },
   });
+  if (!pending) {
+    // Could genuinely be unknown, or a concurrent webhook call just barely
+    // beat us to claiming it — check once more before giving up.
+    const justCreated = await prisma.order.findFirst({
+      where: { paystackReference: reference, userId: user.id },
+      select: { id: true, status: true },
+    });
+    if (justCreated) {
+      return jsonResponse({
+        orderId: justCreated.id,
+        status: justCreated.status,
+      });
+    }
+    return jsonResponse({ error: "Checkout session not found" }, 404);
+  }
+
+  let paystackBody;
+  try {
+    const paystackResponse = await fetch(
+      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+      {
+        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      },
+    );
+    paystackBody = await paystackResponse.json().catch(() => null);
+    if (!paystackResponse.ok || !paystackBody?.status || !paystackBody.data) {
+      // Paystack itself errored or hasn't settled the transaction yet — not
+      // proof of failure, just not resolved. Keep the checkout session
+      // alive and let the frontend poll again.
+      return jsonResponse({ status: "PENDING" });
+    }
+  } catch (error) {
+    console.error("Paystack verify request failed", { reference, error });
+    return jsonResponse({ status: "PENDING" });
+  }
+
+  if (paystackBody.data.status === "success") {
+    const { order } = await finalizeOrderFromReference(reference);
+    if (!order) return jsonResponse({ status: "PENDING" });
+    return jsonResponse({ orderId: order.id, status: order.status });
+  }
+
+  if (PAYSTACK_TERMINAL_FAILURE_STATUSES.has(paystackBody.data.status)) {
+    await prisma.pendingCheckout.deleteMany({ where: { reference } });
+    return jsonResponse({ status: "FAILED" });
+  }
+
+  return jsonResponse({ status: "PENDING" });
 };
 
 const orderItemInclude = {
@@ -5268,6 +5339,18 @@ const handlePaystackWebhook = async (request) => {
     return jsonResponse({ ok: true });
   }
 
+  // Explicit terminal failure/abandonment — nothing to finalize, just clear
+  // the in-flight checkout attempt so it isn't left sitting around.
+  if (event.event === "charge.failed") {
+    const failedReference = event.data?.reference;
+    if (typeof failedReference === "string" && failedReference) {
+      await prisma.pendingCheckout.deleteMany({
+        where: { reference: failedReference },
+      });
+    }
+    return jsonResponse({ ok: true });
+  }
+
   if (event.event !== "charge.success") return jsonResponse({ ok: true });
 
   const reference = event.data?.reference;
@@ -5275,7 +5358,7 @@ const handlePaystackWebhook = async (request) => {
     return jsonResponse({ error: "Missing payment reference" }, 400);
   }
 
-  await markOrderAsPaid(reference);
+  await finalizeOrderFromReference(reference);
 
   // A webhook has no browser session, so it cannot identify which persisted
   // cart should be cleared after checkout.

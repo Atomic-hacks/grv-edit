@@ -74,7 +74,7 @@ const Hero = () => {
 
   return (
     <>
-      <section className="relative h-screen w-full overflow-hidden text-white bg-[#161616]">
+      <section className="relative flex h-screen w-full flex-col items-center justify-center overflow-hidden bg-[#161616] text-white">
         {/* Background Video, admin-configurable via Site Images: hero-video */}
         <video
           key={siteImages["hero-video"] || "/videos/hero.mp4"}
@@ -90,9 +90,9 @@ const Hero = () => {
         <div className="absolute inset-0 z-20 bg-gradient-to-b from-transparent via-black/50 to-transparent" />
 
         {/* Main Content */}
-        <nav className="relative z-30 flex flex-col items-center justify-center text-center mt-48 md:mt-72">
+        <nav className="relative z-30 mt-16 flex flex-col items-center justify-center text-center md:mt-24">
           <AnimatedPageTitle
-            img="/img/logofinal.png"
+            img="/img/logowhite.png"
             className="uppercase tracking-[3px] text-4xl md:text-8xl font-normal mb-8 text-white"
           />
 

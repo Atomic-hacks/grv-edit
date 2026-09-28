@@ -147,6 +147,22 @@ model Order {
   @@index([userId])
 }
 
+// A checkout attempt in flight. Created the moment Paystack is initialized;
+// consumed (deleted) in the same transaction that creates the real Order,
+// the instant payment is confirmed. A row that's never claimed — a decline,
+// an abandoned tab, a retry after failure — is the only trace a failed
+// attempt leaves, and it's swept by a cron a few hours later. There is
+// deliberately no "pending order" a customer, or anyone else, could ever
+// see: nothing is written to the Order table until money has moved.
+model PendingCheckout {
+  reference String   @id
+  userId    String   @db.Uuid
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
 enum FulfillmentStatus {
   PLACED
   PAYMENT_CONFIRMED

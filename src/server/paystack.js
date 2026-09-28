@@ -27,20 +27,19 @@ export const verifyPaystackSignature = (
 };
 
 /**
- * Claims a PENDING order for payment, atomically.
+ * Claims a checkout attempt for finalization, atomically.
  *
- * This is the single point that decides whether a given payment gets
- * processed. The webhook and the customer's return-from-Paystack
- * verification both call it for the same order, often within the same
- * second; the conditional updateMany means exactly one of them sees
- * `true` and goes on to decrement stock. Everything downstream —
- * stock, discount usage counters, the first-order promo flag — depends
- * on this returning true only once.
+ * A row only exists here while payment is in flight; the webhook and the
+ * customer's return-from-Paystack verification both try to claim the same
+ * reference, often within the same second. The delete is the claim: it can
+ * only ever succeed once for a given reference (the row is gone after),
+ * so exactly one caller goes on to create the Order — everything
+ * downstream (stock, discount usage, the first-order promo flag) depends
+ * on that.
  */
-export const claimOrderForPayment = async (transaction, orderId) => {
-  const claim = await transaction.order.updateMany({
-    where: { id: orderId, status: "PENDING" },
-    data: { status: "PAID" },
+export const claimPendingCheckout = async (transaction, reference) => {
+  const claim = await transaction.pendingCheckout.deleteMany({
+    where: { reference },
   });
   return claim.count > 0;
 };

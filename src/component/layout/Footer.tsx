@@ -47,25 +47,51 @@ const footerColumns = [
   },
 ];
 
-
 // One minimal outline icon per network, drawn inline so no icon library is
 // needed for three glyphs. Add a case here when a network is added above.
 const SOCIAL_ICONS: Record<string, React.ReactNode> = {
   instagram: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      aria-hidden="true"
+    >
       <rect x="3" y="3" width="18" height="18" rx="5" />
       <circle cx="12" cy="12" r="4.2" />
       <circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none" />
     </svg>
   ),
   tiktok: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M14 3v11.2a3.3 3.3 0 1 1-3.3-3.3" />
       <path d="M14 3a5.2 5.2 0 0 0 5 5" />
     </svg>
   ),
   pinterest: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
       <circle cx="12" cy="12" r="9" />
       <path d="M9.5 17.5 12 8.2a2.6 2.6 0 0 1 5 1c0 2.1-1 4.3-3 4.3-.9 0-1.5-.5-1.7-1.1" />
     </svg>
@@ -137,7 +163,11 @@ const Footer = () => (
     </div>
 
     <div className="mx-auto mt-20 flex w-full max-w-[var(--content-max)] items-start justify-between gap-4">
-      <img src="/img/logofinal.png" className="w-64 h-14 md:h-18 md:w-80 " alt="GRV Logo" />
+      <img
+        src="/img/logowhite.png"
+        className="w-64 h-14 md:h-18 md:w-80 "
+        alt="GRV Logo"
+      />
       <p className="text-[9px] uppercase tracking-[0.14em] text-neutral-500 md:text-[11px]">
         Made by @grvhq
       </p>
@@ -150,9 +180,7 @@ const Footer = () => (
       >
         Privacy policy
       </Link>
-      <span>
-        © {new Date().getFullYear()} GRV. All rights reserved.
-      </span>
+      <span>© {new Date().getFullYear()} GRV. All rights reserved.</span>
     </div>
   </footer>
 );

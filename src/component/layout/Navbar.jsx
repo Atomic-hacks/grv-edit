@@ -78,7 +78,10 @@ const MobileNavNode = ({ node, depth, openIds, toggleOpen, onNavigate }) => {
   const isOpen = openIds.has(node.id);
   return (
     <div>
-      <div className="flex items-center justify-between py-2" style={{ paddingLeft: (depth - 1) * 14 }}>
+      <div
+        className="flex items-center justify-between py-2"
+        style={{ paddingLeft: (depth - 1) * 14 }}
+      >
         <Link
           to={node.href}
           onClick={onNavigate}
@@ -274,7 +277,11 @@ const Navbar = () => {
   // nests children arbitrarily deep, this just gives each node its URL.
   const withHref = (node, parentPath) => {
     const href = `${parentPath}/${node.slug}`;
-    return { ...node, href, children: node.children.map((child) => withHref(child, href)) };
+    return {
+      ...node,
+      href,
+      children: node.children.map((child) => withHref(child, href)),
+    };
   };
 
   const navLinks = [
@@ -484,7 +491,11 @@ const Navbar = () => {
           className="hidden lg:block absolute left-1/2 -translate-x-1/2"
         >
           <span>
-            <img className="h-10 w-auto xl:h-12" src="/img/log.png" alt="GRV" />
+            <img
+              className="h-6 w-auto xl:h-8"
+              src="/img/logoblack.png"
+              alt="GRV"
+            />
           </span>
         </Link>
 
@@ -525,9 +536,9 @@ const Navbar = () => {
           className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 lg:hidden"
         >
           <img
-            src="/img/log.png"
+            src="/img/logoblack.png"
             alt="GRV"
-            className="h-11 w-24 object-contain"
+            className="h-6 object-contain"
           />
         </Link>
 
@@ -758,7 +769,11 @@ const Navbar = () => {
             >
               <div className="sticky top-0 z-10 flex place-items-center justify-between border-b border-gray-200 bg-white px-6 py-5">
                 <span className="text-xl font-bold tracking-tight">
-                  <img src="/img/log.png" alt="GRV" className="h-12 w-26" />
+                  <img
+                    src="/img/logoblack.png"
+                    alt="GRV"
+                    className="h-6 "
+                  />
                 </span>
                 <button
                   type="button"

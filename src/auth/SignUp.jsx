@@ -9,7 +9,12 @@ const SignUp = () => {
   const { signUp } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const returnTo = searchParams.get("returnTo") || "/account";
+  // Arriving on this page is a "create an account" intent, so — unless
+  // something specific brought them here (checkout redirecting to sign up
+  // first, say) — both the password and Google paths land on the welcome
+  // screen rather than silently on the homepage. Logging back in later
+  // (LogIn.jsx) still defaults straight to /account.
+  const returnTo = searchParams.get("returnTo") || "/welcome";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
