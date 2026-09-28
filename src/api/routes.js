@@ -1271,7 +1271,6 @@ const listProductFilters = async (url) => {
 const listNewArrivals = async () => {
   const products = await prisma.product.findMany({
     where: {
-      status: "ACTIVE",
       archived: false,
       createdAt: { gte: new Date(Date.now() - NEW_PRODUCT_WINDOW_MS) },
     },
@@ -3293,9 +3292,6 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
   }
   if (data.archived !== undefined && typeof data.archived !== "boolean") {
     return { error: "archived must be a boolean" };
-  }
-  if (data.archived !== undefined) {
-    data.status = data.archived ? "ARCHIVED" : "ACTIVE";
   }
 
   let categoryIds;

@@ -9,7 +9,7 @@ const EASE = [0.22, 1, 0.36, 1];
 const AnimatedPageTitle = ({ img, title, subtitle, className = "" }) => {
   return (
     <div className="z-10">
-      {img && <img src={img} alt={title} className="mx-auto w-40" />}
+      {img && <img src={img} alt={title} className="mx-auto w-64" />}
       <div className="overflow-hidden">
         <Motion.h1
           className={`display-title ${className}`}

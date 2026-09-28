@@ -26,33 +26,77 @@ import WishlistButton from "./component/ui/WishlistButton";
 import Spinner from "./component/ui/Spinner";
 import DiscountPrice from "./component/ui/DiscountPrice";
 
+// Fashion-specific names that aren't valid CSS color keywords (mustard,
+// sage, off-white, camel...) — everything else (magenta, teal, olive,
+// khaki, salmon, chocolate, and 140+ others) is resolved automatically
+// below via the browser's own CSS color parser, so this list only needs to
+// cover the gap rather than reinvent the whole color name space.
 const COLOR_SWATCHES = {
-  black: "#111111",
-  white: "#ffffff",
   grey: "#9ca3af",
-  gray: "#9ca3af",
-  blue: "#2563eb",
-  navy: "#1e3a8a",
-  red: "#dc2626",
-  green: "#16a34a",
-  brown: "#92400e",
-  beige: "#d6c3a5",
+  offwhite: "#f2ede4",
+  "off-white": "#f2ede4",
+  "off white": "#f2ede4",
+  ecru: "#f2ede4",
   cream: "#f5f5dc",
-  yellow: "#eab308",
-  orange: "#ea580c",
-  pink: "#ec4899",
-  purple: "#9333ea",
+  ivory: "#fffff0",
+  beige: "#d6c3a5",
+  sand: "#dcc7a1",
+  stone: "#ccc4b8",
+  taupe: "#b3a495",
+  camel: "#c19a6b",
+  tan: "#d2b48c",
+  khaki: "#c3b091",
+  mustard: "#d9a441",
+  gold: "#d4af37",
+  rust: "#b7410e",
+  terracotta: "#c1622b",
+  burgundy: "#7b1e2b",
+  wine: "#722030",
+  maroon: "#7f1734",
+  brick: "#a83e2c",
+  sage: "#9caf88",
+  olive: "#6b6b3a",
+  forest: "#1f4d2c",
+  emerald: "#046a38",
+  mint: "#98d8c1",
+  teal: "#12736b",
+  turquoise: "#30bfae",
+  navy: "#1e3a8a",
+  denim: "#2f4a6b",
+  cobalt: "#1e4fbf",
+  indigo: "#3b2f7a",
+  lavender: "#b9a6d9",
+  lilac: "#c9a8e0",
+  plum: "#7d3c6b",
+  mauve: "#a4788f",
+  blush: "#f0c2c2",
+  salmon: "#f28a7d",
+  coral: "#f2735a",
+  rose: "#e5738a",
+  magenta: "#c22a86",
+  fuchsia: "#c22a86",
+  charcoal: "#3a3a3a",
+  mocha: "#6f4a37",
+  chocolate: "#4a2f22",
+  brown: "#92400e",
+};
+
+// Some names ("mustard", "sage") only make sense with the manual table
+// above; anything the browser's CSS engine already understands on its own
+// (the ~150 standard CSS named colors, plus hex/rgb/hsl) is resolved
+// without needing an entry here at all.
+const isValidCssColor = (value) => {
+  if (typeof CSS !== "undefined" && typeof CSS.supports === "function") {
+    return CSS.supports("color", value);
+  }
+  return false;
 };
 
 const getColorSwatch = (color) => {
   const normalizedColor = color.trim().toLowerCase();
-  const colorValue = COLOR_SWATCHES[normalizedColor];
-  const supportsCssColor =
-    normalizedColor.startsWith("#") ||
-    normalizedColor.startsWith("rgb") ||
-    normalizedColor.startsWith("hsl");
-
-  return colorValue || (supportsCssColor ? normalizedColor : "#d1d5db");
+  const mapped = COLOR_SWATCHES[normalizedColor];
+  if (mapped) return mapped;
+  return isValidCssColor(normalizedColor) ? normalizedColor : "#d1d5db";
 };
 
 const ProductDetail = () => {
@@ -107,7 +151,10 @@ const ProductDetail = () => {
   }, [product]);
 
   useEffect(() => {
-    if (waitlistQuery.error) setWaitlistError("Couldn't check your waitlist status. Refresh the page to try again.");
+    if (waitlistQuery.error)
+      setWaitlistError(
+        "Couldn't check your waitlist status. Refresh the page to try again.",
+      );
   }, [waitlistQuery.error]);
 
   const leafCategory = getLeafCategory(product);
@@ -117,11 +164,13 @@ const ProductDetail = () => {
     enabled: Boolean(leafCategory),
   });
 
-  const { data: brandProductsData, isPending: brandProductsPending } = useQuery({
-    queryKey: ["products", { brandId: product?.brandId }],
-    queryFn: () => fetchProducts({ brandId: product.brandId }),
-    enabled: Boolean(product?.brandId),
-  });
+  const { data: brandProductsData, isPending: brandProductsPending } = useQuery(
+    {
+      queryKey: ["products", { brandId: product?.brandId }],
+      queryFn: () => fetchProducts({ brandId: product.brandId }),
+      enabled: Boolean(product?.brandId),
+    },
+  );
 
   // The PDP's continuation varies by what there actually is to show: a
   // carousel needs enough siblings to be worth scrolling, a brand with too
@@ -130,7 +179,8 @@ const ProductDetail = () => {
   const hasBrandCarousel =
     Boolean(product?.brandId) &&
     !brandProductsPending &&
-    (brandProductsData || []).filter((item) => item.id !== product.id).length >= 4;
+    (brandProductsData || []).filter((item) => item.id !== product.id).length >=
+      4;
   const { data: brandDetail } = useQuery({
     queryKey: ["brand", product?.brandId],
     queryFn: () => fetchBrandBySlug(product.brandId),
@@ -250,7 +300,9 @@ const ProductDetail = () => {
         queryKey: ["waitlist", user.id],
       });
     } catch (requestError) {
-      setWaitlistError(requestError.message || "Couldn't join the waitlist. Please try again.");
+      setWaitlistError(
+        requestError.message || "Couldn't join the waitlist. Please try again.",
+      );
     } finally {
       setWaitlistPending(false);
     }

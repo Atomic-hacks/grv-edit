@@ -44,7 +44,7 @@ export const bulkSetProductArchived = async (request) => {
   if (eligibleIds.length) {
     await prisma.product.updateMany({
       where: { id: { in: eligibleIds } },
-      data: { archived, status: archived ? "ARCHIVED" : "ACTIVE" },
+      data: { archived },
     });
   }
 

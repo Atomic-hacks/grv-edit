@@ -137,11 +137,9 @@ const Footer = () => (
     </div>
 
     <div className="mx-auto mt-20 flex w-full max-w-[var(--content-max)] items-start justify-between gap-4">
-      <h2 className="text-6xl leading-none tracking-[-0.03em] md:text-8xl">
-        GRV.
-      </h2>
+      <img src="/img/logofinal.png" className="w-64 h-14 md:h-18 md:w-80 " alt="GRV Logo" />
       <p className="text-[9px] uppercase tracking-[0.14em] text-neutral-500 md:text-[11px]">
-        Made by GRVic @
+        Made by @grvhq
       </p>
     </div>
 
