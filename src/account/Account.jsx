@@ -11,6 +11,7 @@ import AccountSettings from "./AccountSettings";
 
 const SECTIONS = [
   ["orders", "Orders and returns"],
+  ["cases", "Refunds & complaints"],
   ["addresses", "Address book"],
   ["details", "Details and security"],
 ];
@@ -94,7 +95,9 @@ const OrdersList = () => {
       )}
 
       {orders?.length > 0 && (
-        <div className={`mt-5 divide-y divide-[var(--line)] border-x border-b border-[var(--line)] ${isRefetching ? "opacity-60" : ""}`}>
+        <div
+          className={`mt-5 divide-y divide-[var(--line)] border-x border-b border-[var(--line)] ${isRefetching ? "opacity-60" : ""}`}
+        >
           {orders.map((order) => (
             <Link
               key={order.id}
@@ -135,6 +138,100 @@ const OrdersList = () => {
   );
 };
 
+const ISSUE_TYPE_LABELS = {
+  REFUND_REQUEST: "Refund request",
+  WRONG_ITEM: "Wrong item received",
+  MISSING_ITEM: "Missing item",
+  DAMAGED_ITEM: "Damaged item",
+  ITEM_NOT_AS_DESCRIBED: "Item not as described",
+  PACKAGE_NOT_RECEIVED: "Package not received",
+  DELIVERY_ISSUE: "Delivery issue",
+  PAYMENT_ISSUE: "Payment issue",
+  OTHER: "Other complaint",
+};
+
+const CasesList = () => {
+  const { user, session } = useAuth();
+  const {
+    data: cases,
+    isPending,
+    error,
+  } = useQuery({
+    queryKey: ["cases", user?.id],
+    queryFn: () => createAuthenticatedRequest(session)("/api/cases"),
+    enabled: Boolean(user && session),
+  });
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-baseline justify-between gap-4 border-b border-[var(--line)] pb-5">
+        <h2 className="text-2xl font-semibold">Refunds & complaints</h2>
+        <Link
+          to="/account/report-issue"
+          className="border border-[var(--ink-900)] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
+        >
+          Report an issue
+        </Link>
+      </div>
+
+      {error && (
+        <InlineNotice tone="error" className="mt-5">
+          {error.message || "Couldn't load your requests."}
+        </InlineNotice>
+      )}
+
+      {isPending && (
+        <div className="mt-5 space-y-3" aria-hidden="true">
+          {Array.from({ length: 2 }, (_, index) => (
+            <div key={index} className="border border-[var(--line)] p-5">
+              <div className="skeleton h-4 w-28" />
+              <div className="skeleton mt-3 h-3 w-20" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {cases?.length === 0 && (
+        <div className="mt-8 flex flex-col items-start gap-3 border border-[var(--line)] px-6 py-10">
+          <p className="section-title">No requests yet</p>
+          <p className="meta-text">
+            If something's wrong with an order, let us know and we'll follow up
+            by email.
+          </p>
+        </div>
+      )}
+
+      {cases?.length > 0 && (
+        <div className="mt-5 divide-y divide-[var(--line)] border-x border-b border-[var(--line)]">
+          {cases.map((supportCase) => (
+            <div
+              key={supportCase.id}
+              className="flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5"
+            >
+              <span>
+                <span className="block text-[13px] font-semibold">
+                  {supportCase.reference} ·{" "}
+                  {ISSUE_TYPE_LABELS[supportCase.issueType] ||
+                    supportCase.issueType}
+                </span>
+                <span className="meta-text mt-1 block">
+                  {formatDate(supportCase.createdAt)}
+                  {supportCase.orderId
+                    ? ` · Order #${supportCase.orderId}`
+                    : ""}
+                </span>
+              </span>
+              <span className="inline-flex border border-[var(--line)] bg-[var(--surface-muted)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--ink-700)]">
+                {supportCase.status.replace(/_/g, " ")}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Account = () => {
   const { user, appUser, signOut } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -158,7 +255,9 @@ const Account = () => {
             {user?.email && <span>{user.email}</span>}
             {memberSince && (
               <span className="flex items-center gap-1.5">
-                <span aria-hidden="true" className="text-[var(--ink-300)]">·</span>
+                <span aria-hidden="true" className="text-[var(--ink-300)]">
+                  ·
+                </span>
                 Member since {memberSince}
               </span>
             )}
@@ -203,6 +302,11 @@ const Account = () => {
           {section === "orders" && (
             <FadeIn>
               <OrdersList />
+            </FadeIn>
+          )}
+          {section === "cases" && (
+            <FadeIn>
+              <CasesList />
             </FadeIn>
           )}
           {(section === "addresses" || section === "details") && (

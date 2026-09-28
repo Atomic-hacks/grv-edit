@@ -17,6 +17,173 @@ const transitionsByStatus = {
   SHIPPED: ["DELIVERED", "CANCELLED"],
 };
 
+const FULFILLMENT_STATUSES = [
+  "PLACED",
+  "PAYMENT_CONFIRMED",
+  "PROCESSING",
+  "READY_TO_SHIP",
+  "SHIPPED",
+  "IN_TRANSIT",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+  "DELIVERY_FAILED",
+  "CANCELLED",
+  "RETURNED",
+];
+
+const toDateInputValue = (value) =>
+  value ? new Date(value).toISOString().slice(0, 10) : "";
+
+const FulfillmentEditor = ({ order, request, onUpdated }) => {
+  const fulfillment = order.fulfillment || {};
+  const [form, setForm] = useState({
+    fulfillmentStatus: fulfillment.status || "PLACED",
+    courierName: fulfillment.courierName || "",
+    trackingNumber: fulfillment.trackingNumber || "",
+    trackingUrl: fulfillment.trackingUrl || "",
+    shippingDate: toDateInputValue(fulfillment.shippingDate),
+    estimatedDeliveryDate: toDateInputValue(fulfillment.estimatedDeliveryDate),
+    deliveryNotes: fulfillment.deliveryNotes || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const update = (field) => (event) =>
+    setForm((current) => ({ ...current, [field]: event.target.value }));
+
+  const save = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const updated = await request(
+        `/api/admin/orders/${encodeURIComponent(order.id)}/fulfillment`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            ...form,
+            shippingDate: form.shippingDate || null,
+            estimatedDeliveryDate: form.estimatedDeliveryDate || null,
+          }),
+        },
+      );
+      onUpdated(updated);
+    } catch (saveError) {
+      setError(saveError.message || "Unable to update fulfilment.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="mt-8 border border-[var(--line)] p-6">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--ink-500)]">
+        Shipment & tracking
+      </h2>
+      {error && (
+        <p
+          role="alert"
+          className="mt-4 border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          {error}
+        </p>
+      )}
+      <form onSubmit={save} className="mt-4 grid gap-4 sm:grid-cols-2">
+        <label className="text-sm">
+          <span className="mb-1.5 block font-medium">Fulfilment status</span>
+          <select
+            value={form.fulfillmentStatus}
+            onChange={update("fulfillmentStatus")}
+            className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+          >
+            {FULFILLMENT_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {status.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1.5 block font-medium">Courier / carrier</span>
+          <input
+            value={form.courierName}
+            onChange={update("courierName")}
+            className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1.5 block font-medium">Tracking number</span>
+          <input
+            value={form.trackingNumber}
+            onChange={update("trackingNumber")}
+            className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1.5 block font-medium">Tracking URL</span>
+          <input
+            value={form.trackingUrl}
+            onChange={update("trackingUrl")}
+            className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1.5 block font-medium">Shipping date</span>
+          <input
+            type="date"
+            value={form.shippingDate}
+            onChange={update("shippingDate")}
+            className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1.5 block font-medium">Estimated delivery</span>
+          <input
+            type="date"
+            value={form.estimatedDeliveryDate}
+            onChange={update("estimatedDeliveryDate")}
+            className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+          />
+        </label>
+        <label className="text-sm sm:col-span-2">
+          <span className="mb-1.5 block font-medium">
+            Delivery notes (visible to customer)
+          </span>
+          <textarea
+            value={form.deliveryNotes}
+            onChange={update("deliveryNotes")}
+            rows={2}
+            className="w-full border border-[var(--line)] bg-white px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+          />
+        </label>
+        <div className="sm:col-span-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? <Spinner label="Saving" /> : "Save fulfilment"}
+          </button>
+        </div>
+      </form>
+
+      {fulfillment.events?.length > 0 && (
+        <div className="mt-6 space-y-2 border-t border-[var(--line)] pt-4 text-xs">
+          {fulfillment.events.map((event, index) => (
+            <div
+              key={index}
+              className="flex justify-between text-[var(--ink-500)]"
+            >
+              <span>{event.status.replace(/_/g, " ")}</span>
+              <span>{formatDate(event.createdAt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+};
+
 const AdminOrderDetail = () => {
   const { id } = useParams();
   const { session } = useAuth();
@@ -69,7 +236,10 @@ const AdminOrderDetail = () => {
   if (loading) {
     return (
       <main className="mx-auto max-w-5xl px-6 py-20">
-        <Spinner label="Loading order" className="text-sm text-[var(--ink-500)]" />
+        <Spinner
+          label="Loading order"
+          className="text-sm text-[var(--ink-500)]"
+        />
       </main>
     );
   }
@@ -169,7 +339,9 @@ const AdminOrderDetail = () => {
                 {order.customer.name || "Unnamed customer"}
               </Link>
               <br />
-              <span className="text-[var(--ink-700)]">{order.customer.email}</span>
+              <span className="text-[var(--ink-700)]">
+                {order.customer.email}
+              </span>
             </p>
           </section>
 
@@ -235,6 +407,27 @@ const AdminOrderDetail = () => {
               {order.shippingAddress.city}, {order.shippingAddress.state}
             </p>
           </section>
+
+          <FulfillmentEditor
+            order={order}
+            request={request}
+            onUpdated={(fulfillmentResult) =>
+              setOrder((current) => ({
+                ...current,
+                fulfillment: {
+                  status: fulfillmentResult.fulfillmentStatus,
+                  courierName: fulfillmentResult.courierName,
+                  trackingNumber: fulfillmentResult.trackingNumber,
+                  trackingUrl: fulfillmentResult.trackingUrl,
+                  shippingDate: fulfillmentResult.shippingDate,
+                  estimatedDeliveryDate:
+                    fulfillmentResult.estimatedDeliveryDate,
+                  deliveryNotes: fulfillmentResult.deliveryNotes,
+                  events: fulfillmentResult.fulfillmentEvents,
+                },
+              }))
+            }
+          />
         </>
       )}
     </main>

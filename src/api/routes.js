@@ -4,7 +4,11 @@ import { getCurrentUser } from "../server/getCurrentUser.js";
 import { requireAdmin } from "../server/requireAdmin.js";
 import { getSupabaseAdmin } from "../server/supabaseAdmin.js";
 import { sendEmail } from "../server/sendEmail.js";
-import { FROM_INFO, FROM_NOREPLY, FROM_SUPPORT } from "../server/emailSenders.js";
+import {
+  FROM_INFO,
+  FROM_NOREPLY,
+  FROM_SUPPORT,
+} from "../server/emailSenders.js";
 import {
   queueOrderEmail,
   EMAIL_TYPE_FOR_STATUS,
@@ -32,6 +36,17 @@ import { getRegionForState, NIGERIAN_REGIONS } from "../lib/nigeriaRegions.js";
 import { v2 as cloudinary } from "cloudinary";
 import { parse } from "csv-parse/sync";
 import { randomInt, timingSafeEqual } from "node:crypto";
+import { recordAdminAction } from "../server/auditLog.js";
+import {
+  handleCaseRequest,
+  handleAdminCaseRequest,
+  applyPaystackRefundEvent,
+} from "./handlers/cases.js";
+import { handleAdminFulfillmentRequest } from "./handlers/fulfillment.js";
+import { getAdminAnalytics } from "./handlers/analytics.js";
+import { handleAdminExportRequest } from "./handlers/exports.js";
+import { handleAdminStaffRequest } from "./handlers/staff.js";
+import { handleAdminProductBulkRequest } from "./handlers/productBulk.js";
 
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -210,7 +225,10 @@ const verifyEmail = async (request) => {
 
   const now = new Date();
   const invalidResponse = () =>
-    jsonResponse({ error: "That verification code is invalid or expired" }, 400);
+    jsonResponse(
+      { error: "That verification code is invalid or expired" },
+      400,
+    );
 
   // Look up the caller's one active (unused, unexpired) code regardless of
   // what they submitted, so a wrong guess still counts against the same
@@ -588,7 +606,9 @@ const campaignInputFrom = (body) => {
 
   const audience = text(body.audience) || "CUSTOMERS";
   if (!CAMPAIGN_AUDIENCES.includes(audience)) {
-    return { error: `audience must be one of ${CAMPAIGN_AUDIENCES.join(", ")}` };
+    return {
+      error: `audience must be one of ${CAMPAIGN_AUDIENCES.join(", ")}`,
+    };
   }
 
   let scheduledFor = null;
@@ -609,7 +629,9 @@ const campaignInputFrom = (body) => {
       ctaLabel: text(body.ctaLabel) || null,
       ctaUrl: text(body.ctaUrl) || null,
       featuredProductIds: Array.isArray(body.featuredProductIds)
-        ? body.featuredProductIds.filter((id) => typeof id === "string").slice(0, 3)
+        ? body.featuredProductIds
+            .filter((id) => typeof id === "string")
+            .slice(0, 3)
         : [],
       audience,
       scheduledFor,
@@ -678,9 +700,13 @@ const updateAdminCampaign = async (request, id) => {
   });
   if (!existing) return jsonResponse({ error: "Campaign not found" }, 404);
   // A campaign that has gone out is a record of what was sent, not a draft.
-  if (!["DRAFT", "SCHEDULED", "CANCELLED", "FAILED"].includes(existing.status)) {
+  if (
+    !["DRAFT", "SCHEDULED", "CANCELLED", "FAILED"].includes(existing.status)
+  ) {
     return jsonResponse(
-      { error: `A campaign that is ${existing.status} can no longer be edited` },
+      {
+        error: `A campaign that is ${existing.status} can no longer be edited`,
+      },
       409,
     );
   }
@@ -820,7 +846,11 @@ const isProductNew = (createdAt) =>
 const productInclude = {
   variants: true,
   categories: {
-    include: { category: { select: { id: true, name: true, slug: true, parentId: true } } },
+    include: {
+      category: {
+        select: { id: true, name: true, slug: true, parentId: true },
+      },
+    },
   },
   tags: {
     include: {
@@ -902,7 +932,9 @@ const getCategoryAndDescendantIds = async (idOrSlug) => {
   const all = await prisma.category.findMany({
     select: { id: true, slug: true, parentId: true },
   });
-  const target = all.find((category) => category.id === idOrSlug || category.slug === idOrSlug);
+  const target = all.find(
+    (category) => category.id === idOrSlug || category.slug === idOrSlug,
+  );
   if (!target) return [];
 
   const childrenOf = new Map();
@@ -965,7 +997,9 @@ const buildProductsWhere = async (url) => {
   if (styleTags.length) {
     and.push({
       OR: styleTags.map((value) => ({
-        tags: { some: { tag: { slug: { equals: value, mode: "insensitive" } } } },
+        tags: {
+          some: { tag: { slug: { equals: value, mode: "insensitive" } } },
+        },
       })),
     });
   }
@@ -974,7 +1008,9 @@ const buildProductsWhere = async (url) => {
   if (tags.length) {
     and.push({
       OR: tags.map((value) => ({
-        tags: { some: { tag: { slug: { equals: value, mode: "insensitive" } } } },
+        tags: {
+          some: { tag: { slug: { equals: value, mode: "insensitive" } } },
+        },
       })),
     });
   }
@@ -1030,8 +1066,18 @@ const buildProductsWhere = async (url) => {
         { name: { contains: query, mode: "insensitive" } },
         { brand: { name: { contains: query, mode: "insensitive" } } },
         { description: { contains: query, mode: "insensitive" } },
-        { categories: { some: { category: { name: { contains: query, mode: "insensitive" } } } } },
-        { tags: { some: { tag: { name: { contains: query, mode: "insensitive" } } } } },
+        {
+          categories: {
+            some: {
+              category: { name: { contains: query, mode: "insensitive" } },
+            },
+          },
+        },
+        {
+          tags: {
+            some: { tag: { name: { contains: query, mode: "insensitive" } } },
+          },
+        },
         {
           variants: {
             some: {
@@ -1102,16 +1148,7 @@ const listProducts = async (url) => {
 // moment a product uses it. Counts respect every *other* active filter
 // but not the facet's own, which is what lets a shopper widen a
 // selection without the options disappearing underneath them.
-const CLOTHING_SIZE_ORDER = [
-  "XXS",
-  "XS",
-  "S",
-  "M",
-  "L",
-  "XL",
-  "XXL",
-  "XXXL",
-];
+const CLOTHING_SIZE_ORDER = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 
 const compareSizes = (a, b) => {
   const numericA = Number(a);
@@ -1134,9 +1171,7 @@ const compareSizes = (a, b) => {
 // "Red" and "red" are the same colour to a shopper even when they were
 // typed differently at product-entry time.
 const titleCase = (value) =>
-  value
-    .toLowerCase()
-    .replace(/\b\w/g, (character) => character.toUpperCase());
+  value.toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase());
 
 const listProductFilters = async (url) => {
   const where = await buildProductsWhere(url);
@@ -1148,7 +1183,15 @@ const listProductFilters = async (url) => {
         brandId: true,
         brand: { select: { id: true, name: true } },
         tags: {
-          select: { tag: { select: { name: true, slug: true, filterType: { select: { slug: true } } } } },
+          select: {
+            tag: {
+              select: {
+                name: true,
+                slug: true,
+                filterType: { select: { slug: true } },
+              },
+            },
+          },
         },
         variants: { select: { size: true, color: true, stock: true } },
       },
@@ -1189,17 +1232,21 @@ const listProductFilters = async (url) => {
   // Variant facets are per-product, not per-variant: a product with three
   // black variants counts once against "Black".
   const sizes = tally(
-    products.flatMap((product) => [
-      ...new Set(product.variants.map((variant) => variant.size)),
-    ].map((size) => ({ value: size }))),
+    products.flatMap((product) =>
+      [...new Set(product.variants.map((variant) => variant.size))].map(
+        (size) => ({ value: size }),
+      ),
+    ),
   ).sort((a, b) => compareSizes(a.value, b.value));
 
   const colors = tally(
-    products.flatMap((product) => [
-      ...new Set(
-        product.variants.map((variant) => titleCase(variant.color || "")),
-      ),
-    ].map((color) => ({ value: color }))),
+    products.flatMap((product) =>
+      [
+        ...new Set(
+          product.variants.map((variant) => titleCase(variant.color || "")),
+        ),
+      ].map((color) => ({ value: color })),
+    ),
   ).sort((a, b) => a.label.localeCompare(b.label));
 
   const inStockCount = products.filter((product) =>
@@ -1358,6 +1405,68 @@ const uploadImage = async (request) => {
   }
 };
 
+// Same shape as uploadImage, for the hero video and any other site video.
+// Kept as a separate endpoint (rather than branching on file.type inside
+// uploadImage) because Cloudinary needs resource_type "video" up front, and
+// so the two have independent size limits.
+//
+// Note: Vercel serverless functions cap request bodies at ~4.5MB regardless
+// of plan. A video much larger than that will fail here with a 413 before
+// this code ever runs — encode the hero video accordingly (short loop,
+// compressed) or move this to a direct browser-to-Cloudinary upload if
+// larger files are needed.
+const MAX_VIDEO_BYTES = 4 * 1024 * 1024;
+
+const uploadVideo = async (request) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file");
+    if (!file || typeof file.arrayBuffer !== "function") {
+      return jsonResponse({ error: "A file field is required" }, 400);
+    }
+    if (!file.type?.startsWith("video/")) {
+      return jsonResponse({ error: "The file must be a video" }, 400);
+    }
+    if (file.size > MAX_VIDEO_BYTES) {
+      return jsonResponse(
+        {
+          error: "Video must be smaller than 4MB (Vercel's request size limit)",
+        },
+        400,
+      );
+    }
+
+    if (!cloudinaryReady) {
+      console.error("Cloudinary credentials are not configured");
+      return jsonResponse({ error: "Video upload is not configured" }, 500);
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const result = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { folder: "grv/video", resource_type: "video" },
+        (error, uploadResult) => {
+          if (error) reject(error);
+          else resolve(uploadResult);
+        },
+      );
+      uploadStream.end(buffer);
+    });
+
+    if (!result?.secure_url) {
+      console.error("Cloudinary returned no secure URL");
+      return jsonResponse({ error: "Video upload returned no URL" }, 502);
+    }
+    return jsonResponse({ url: result.secure_url });
+  } catch (error) {
+    console.error("Cloudinary video upload failed", error);
+    return jsonResponse({ error: "Video upload failed" }, 502);
+  }
+};
+
 const listAdminBrands = async (request) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
@@ -1472,12 +1581,15 @@ const categoryInputFrom = async (body, { partial = false } = {}) => {
   if (body.name !== undefined) data.name = String(body.name).trim();
   if (body.slug !== undefined) data.slug = slugify(String(body.slug));
   else if (body.name !== undefined && !partial) data.slug = slugify(body.name);
-  if (body.description !== undefined) data.description = body.description || null;
+  if (body.description !== undefined)
+    data.description = body.description || null;
   if (body.showInNav !== undefined) data.showInNav = Boolean(body.showInNav);
   if (body.navOrder !== undefined) data.navOrder = Number(body.navOrder) || 0;
-  if (body.showOnHomepage !== undefined) data.showOnHomepage = Boolean(body.showOnHomepage);
+  if (body.showOnHomepage !== undefined)
+    data.showOnHomepage = Boolean(body.showOnHomepage);
   if (body.homepageOrder !== undefined) {
-    data.homepageOrder = body.homepageOrder === null ? null : Number(body.homepageOrder);
+    data.homepageOrder =
+      body.homepageOrder === null ? null : Number(body.homepageOrder);
   }
 
   if (!partial && !data.name) return { error: "name is required" };
@@ -1516,7 +1628,10 @@ const createAdminCategory = async (request) => {
     return jsonResponse(serializeCategory(category), 201);
   } catch (error) {
     if (error?.code === "P2002") {
-      return jsonResponse({ error: "A category with this slug already exists" }, 409);
+      return jsonResponse(
+        { error: "A category with this slug already exists" },
+        409,
+      );
     }
     throw error;
   }
@@ -1539,7 +1654,10 @@ const updateAdminCategory = async (request, id) => {
     const invalidParentIds = await getCategoryAndDescendantIds(id);
     if (invalidParentIds.includes(input.data.parentId)) {
       return jsonResponse(
-        { error: "A category cannot be moved under itself or one of its own subcategories" },
+        {
+          error:
+            "A category cannot be moved under itself or one of its own subcategories",
+        },
         400,
       );
     }
@@ -1552,9 +1670,13 @@ const updateAdminCategory = async (request, id) => {
     });
     return jsonResponse(serializeCategory(category));
   } catch (error) {
-    if (error?.code === "P2025") return jsonResponse({ error: "Category not found" }, 404);
+    if (error?.code === "P2025")
+      return jsonResponse({ error: "Category not found" }, 404);
     if (error?.code === "P2002") {
-      return jsonResponse({ error: "A category with this slug already exists" }, 409);
+      return jsonResponse(
+        { error: "A category with this slug already exists" },
+        409,
+      );
     }
     throw error;
   }
@@ -1564,7 +1686,10 @@ const deleteAdminCategory = async (request, id) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
-  const category = await prisma.category.findUnique({ where: { id }, select: { id: true } });
+  const category = await prisma.category.findUnique({
+    where: { id },
+    select: { id: true },
+  });
   if (!category) return jsonResponse({ error: "Category not found" }, 404);
 
   // Deleting cascades to the whole subtree at the DB level (onDelete:
@@ -1592,7 +1717,8 @@ const handleAdminCategoryRequest = async (request, segments) => {
   if (request.method === "GET" && !id) return listAdminCategories(request);
   if (request.method === "POST" && !id) return createAdminCategory(request);
   if (request.method === "PUT" && id) return updateAdminCategory(request, id);
-  if (request.method === "DELETE" && id) return deleteAdminCategory(request, id);
+  if (request.method === "DELETE" && id)
+    return deleteAdminCategory(request, id);
   return jsonResponse({ error: "Method not allowed" }, 405);
 };
 
@@ -1810,11 +1936,17 @@ const getCategoryWithProducts = async (where) => {
   if (!category) return null;
   const ids = await getCategoryAndDescendantIds(category.id);
   const products = await prisma.product.findMany({
-    where: { ...publicProductArchivedFilter, categories: { some: { categoryId: { in: ids } } } },
+    where: {
+      ...publicProductArchivedFilter,
+      categories: { some: { categoryId: { in: ids } } },
+    },
     include: productInclude,
     orderBy: { createdAt: "desc" },
   });
-  return { ...serializeCategory(category), products: products.map(serializeProduct) };
+  return {
+    ...serializeCategory(category),
+    products: products.map(serializeProduct),
+  };
 };
 
 const getPublicSection = async (slug) => {
@@ -2146,6 +2278,14 @@ const adminOrderSelect = {
   updatedAt: true,
   user: { select: { id: true, name: true, email: true } },
   items: { orderBy: { id: "asc" }, select: adminOrderItemSelect },
+  fulfillmentStatus: true,
+  courierName: true,
+  trackingNumber: true,
+  trackingUrl: true,
+  shippingDate: true,
+  estimatedDeliveryDate: true,
+  deliveryNotes: true,
+  fulfillmentEvents: { orderBy: { createdAt: "asc" } },
 };
 
 const serializeAdminOrder = async (order) => ({
@@ -2168,6 +2308,16 @@ const serializeAdminOrder = async (order) => ({
   createdAt: order.createdAt,
   updatedAt: order.updatedAt,
   items: await enrichAdminOrderItems(order.items),
+  fulfillment: {
+    status: order.fulfillmentStatus,
+    courierName: order.courierName,
+    trackingNumber: order.trackingNumber,
+    trackingUrl: order.trackingUrl,
+    shippingDate: order.shippingDate,
+    estimatedDeliveryDate: order.estimatedDeliveryDate,
+    deliveryNotes: order.deliveryNotes,
+    events: order.fulfillmentEvents || [],
+  },
 });
 
 const listAdminOrders = async (request, url) => {
@@ -2221,23 +2371,21 @@ const getAdminOrder = async (request, id) => {
   return jsonResponse(await serializeAdminOrder(order));
 };
 
-const updateAdminOrderStatus = async (request, id) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+// Order status changes made through the admin "mark shipped/delivered/
+// cancelled" buttons also advance the separate fulfilment timeline, so a
+// customer never sees "Placed" on a delivered order just because nobody
+// touched the fulfilment screen. Admins can still fill in richer fulfilment
+// detail (courier, tracking) separately via the fulfilment endpoint.
+const FULFILLMENT_STATUS_FOR_ORDER_STATUS = {
+  SHIPPED: "SHIPPED",
+  DELIVERED: "DELIVERED",
+  CANCELLED: "CANCELLED",
+};
 
-  const body = await request.json();
-  const allowedStatuses = ["SHIPPED", "DELIVERED", "CANCELLED"];
-  if (
-    typeof body.status !== "string" ||
-    !allowedStatuses.includes(body.status) ||
-    Object.keys(body).some((key) => key !== "status")
-  ) {
-    return jsonResponse(
-      { error: "status must be SHIPPED, DELIVERED, or CANCELLED" },
-      400,
-    );
-  }
-
+// Core order-status transition: validates, restocks on cancellation, and
+// returns either an { error, status } pair or { order, restockedVariants }.
+// Shared by the single-order and bulk-status endpoints below.
+const applyOrderStatusChange = async (id, status) => {
   const restockedVariants = [];
 
   const result = await prisma.$transaction(async (transaction) => {
@@ -2251,17 +2399,14 @@ const updateAdminOrderStatus = async (request, id) => {
     });
     if (!order) return { error: "Order not found", status: 404 };
 
-    if (
-      body.status === "CANCELLED" &&
-      !["PAID", "SHIPPED"].includes(order.status)
-    ) {
+    if (status === "CANCELLED" && !["PAID", "SHIPPED"].includes(order.status)) {
       return {
         error: `Only PAID or SHIPPED orders can be cancelled; this order is ${order.status}`,
         status: 409,
       };
     }
 
-    if (body.status === "CANCELLED") {
+    if (status === "CANCELLED") {
       const quantitiesByVariant = new Map();
       for (const item of order.items) {
         quantitiesByVariant.set(
@@ -2311,40 +2456,137 @@ const updateAdminOrderStatus = async (request, id) => {
 
     const updatedOrder = await transaction.order.update({
       where: { id },
-      data: { status: body.status },
+      data: {
+        status,
+        fulfillmentStatus:
+          FULFILLMENT_STATUS_FOR_ORDER_STATUS[status] ?? undefined,
+      },
       select: adminOrderSelect,
     });
-    return { order: updatedOrder };
+    if (FULFILLMENT_STATUS_FOR_ORDER_STATUS[status]) {
+      await transaction.orderFulfillmentEvent.create({
+        data: {
+          orderId: id,
+          status: FULFILLMENT_STATUS_FOR_ORDER_STATUS[status],
+        },
+      });
+    }
+    return { order: updatedOrder, restockedVariants };
   });
 
-  if (result.error) return jsonResponse({ error: result.error }, result.status);
+  return result;
+};
 
-  // The status change is committed at this point, so the customer is owed
-  // the matching email. sendOrderEmail dedupes on (order, type), which is
-  // what stops an admin flipping a status back and forth from sending the
-  // same notification twice.
-  const emailType = EMAIL_TYPE_FOR_STATUS[body.status];
+// The status change is committed by the time this runs, so the customer is
+// owed the matching email. sendOrderEmail dedupes on (order, type), which is
+// what stops an admin flipping a status back and forth from sending the
+// same notification twice.
+const dispatchOrderStatusSideEffects = (id, status, restockedVariants) => {
+  const emailType = EMAIL_TYPE_FOR_STATUS[status];
   if (emailType) queueOrderEmail(id, emailType);
 
-  if (body.status === "CANCELLED" && restockedVariants.length > 0) {
+  if (status === "CANCELLED" && restockedVariants?.length > 0) {
     void processRestockNotificationsBestEffort(restockedVariants).catch(
       (error) => {
         console.error("Restock notification batch failed", {
-          orderId: result.order.id,
+          orderId: id,
           error,
         });
       },
     );
   }
+};
+
+const updateAdminOrderStatus = async (request, id) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const body = await request.json();
+  const allowedStatuses = ["SHIPPED", "DELIVERED", "CANCELLED"];
+  if (
+    typeof body.status !== "string" ||
+    !allowedStatuses.includes(body.status) ||
+    Object.keys(body).some((key) => key !== "status")
+  ) {
+    return jsonResponse(
+      { error: "status must be SHIPPED, DELIVERED, or CANCELLED" },
+      400,
+    );
+  }
+
+  const result = await applyOrderStatusChange(id, body.status);
+  if (result.error) return jsonResponse({ error: result.error }, result.status);
+
+  dispatchOrderStatusSideEffects(id, body.status, result.restockedVariants);
+  await recordAdminAction({
+    actorId: guard.user.id,
+    action: "order.status_changed",
+    entityType: "Order",
+    entityId: id,
+    newState: { status: body.status },
+  });
   return jsonResponse(await serializeAdminOrder(result.order));
+};
+
+// Bulk order status updates reuse exactly the same per-order validation and
+// stock/email side effects as the single-order endpoint above — a bulk
+// action is just this, looped, with per-order failures reported rather than
+// aborting the whole batch.
+const bulkUpdateAdminOrderStatus = async (request) => {
+  const guard = await requireAdmin(request);
+  if (!guard.ok) return jsonResponse(guard.body, guard.status);
+
+  const body = await request.json();
+  const ids = Array.isArray(body.ids)
+    ? body.ids.filter((id) => typeof id === "string")
+    : [];
+  const allowedStatuses = ["SHIPPED", "DELIVERED", "CANCELLED"];
+  if (!ids.length)
+    return jsonResponse({ error: "ids must be a non-empty array" }, 400);
+  if (!allowedStatuses.includes(body.status)) {
+    return jsonResponse(
+      { error: "status must be SHIPPED, DELIVERED, or CANCELLED" },
+      400,
+    );
+  }
+
+  const succeeded = [];
+  const failed = [];
+  for (const id of ids) {
+    const result = await applyOrderStatusChange(id, body.status);
+    if (result.error) {
+      failed.push({ id, error: result.error });
+      continue;
+    }
+    dispatchOrderStatusSideEffects(id, body.status, result.restockedVariants);
+    succeeded.push(id);
+  }
+
+  await recordAdminAction({
+    actorId: guard.user.id,
+    action: "order.bulk_status_changed",
+    entityType: "Order",
+    entityId: succeeded.join(","),
+    newState: { status: body.status, count: succeeded.length },
+  });
+  return jsonResponse({ updated: succeeded.length, failed });
 };
 
 const handleAdminOrderRequest = async (request, segments, url) => {
   const id = segments[3] ? decodeURIComponent(segments[3]) : null;
+  if (request.method === "PUT" && id === "bulk-status") {
+    return bulkUpdateAdminOrderStatus(request);
+  }
+  if (request.method === "PUT" && id === "bulk-fulfillment") {
+    return handleAdminFulfillmentRequest(request, segments);
+  }
   if (request.method === "GET" && !id) return listAdminOrders(request, url);
   if (request.method === "GET" && id) return getAdminOrder(request, id);
   if (request.method === "PUT" && id && segments[4] === "status") {
     return updateAdminOrderStatus(request, id);
+  }
+  if (id && segments[4] === "fulfillment") {
+    return handleAdminFulfillmentRequest(request, segments);
   }
   return jsonResponse({ error: "Method not allowed" }, 405);
 };
@@ -2462,7 +2704,11 @@ const handleAdminCustomerRequest = async (request, segments, url) => {
 const adminProductInclude = {
   brand: { select: { id: true, name: true } },
   categories: {
-    include: { category: { select: { id: true, name: true, slug: true, parentId: true } } },
+    include: {
+      category: {
+        select: { id: true, name: true, slug: true, parentId: true },
+      },
+    },
   },
   variants: true,
   tags: {
@@ -2525,7 +2771,11 @@ const csvCell = (value) => {
 };
 
 const parseBulkBoolean = (value) =>
-  ["true", "1", "yes", "y"].includes(String(value ?? "").trim().toLowerCase());
+  ["true", "1", "yes", "y"].includes(
+    String(value ?? "")
+      .trim()
+      .toLowerCase(),
+  );
 
 const getAdminProductBulkUploadTemplate = async (request) => {
   const guard = await requireAdmin(request);
@@ -2628,7 +2878,13 @@ const bulkProductImport = async (request) => {
     );
   }
 
-  const summary = { totalRows: rows.length - 1, productsCreated: 0, variantsCreated: 0, failed: [], warnings: [] };
+  const summary = {
+    totalRows: rows.length - 1,
+    productsCreated: 0,
+    variantsCreated: 0,
+    failed: [],
+    warnings: [],
+  };
 
   // --- Pass 1: parse + group by productKey, preserving first-seen order ---
   const groups = new Map(); // productKey -> entries[]
@@ -2661,23 +2917,33 @@ const bulkProductImport = async (request) => {
     prisma.tag.findMany({ select: { id: true, slug: true } }),
   ]);
   const brandsBySlug = new Map(brands.map((brand) => [brand.slug, brand]));
-  const categoriesBySlug = new Map(categories.map((category) => [category.slug, category]));
+  const categoriesBySlug = new Map(
+    categories.map((category) => [category.slug, category]),
+  );
   const tagsBySlug = new Map(tags.map((tag) => [tag.slug, tag]));
 
   // --- Pass 2: validate each group into a creation plan ---
   const failGroup = (entries, error) => {
-    for (const entry of entries) summary.failed.push({ row: entry.rowNumber, error });
+    for (const entry of entries)
+      summary.failed.push({ row: entry.rowNumber, error });
   };
 
   const plans = [];
   for (const [productKey, entries] of groups) {
     const primary = entries[0].values;
 
-    const missing = ["name", "description", "price", "brandSlug", "categorySlugs"].filter(
-      (field) => !primary[field],
-    );
+    const missing = [
+      "name",
+      "description",
+      "price",
+      "brandSlug",
+      "categorySlugs",
+    ].filter((field) => !primary[field]);
     if (missing.length) {
-      failGroup(entries, `productKey "${productKey}": ${missing.join(", ")} required on its first row`);
+      failGroup(
+        entries,
+        `productKey "${productKey}": ${missing.join(", ")} required on its first row`,
+      );
       continue;
     }
 
@@ -2690,50 +2956,92 @@ const bulkProductImport = async (request) => {
     let discountPercent = null;
     if (primary.discountPercent) {
       discountPercent = Number(primary.discountPercent);
-      if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
-        failGroup(entries, `productKey "${productKey}": discountPercent must be between 0 and 100`);
+      if (
+        !Number.isFinite(discountPercent) ||
+        discountPercent < 0 ||
+        discountPercent > 100
+      ) {
+        failGroup(
+          entries,
+          `productKey "${productKey}": discountPercent must be between 0 and 100`,
+        );
         continue;
       }
     }
 
     const brand = brandsBySlug.get(primary.brandSlug);
     if (!brand) {
-      failGroup(entries, `productKey "${productKey}": brandSlug "${primary.brandSlug}" was not found`);
+      failGroup(
+        entries,
+        `productKey "${productKey}": brandSlug "${primary.brandSlug}" was not found`,
+      );
       continue;
     }
 
     const categorySlugs = [
-      ...new Set(primary.categorySlugs.split(",").map((slug) => slug.trim()).filter(Boolean)),
+      ...new Set(
+        primary.categorySlugs
+          .split(",")
+          .map((slug) => slug.trim())
+          .filter(Boolean),
+      ),
     ];
     const categoryIds = [];
-    const missingCategorySlug = categorySlugs.find((slug) => !categoriesBySlug.has(slug));
+    const missingCategorySlug = categorySlugs.find(
+      (slug) => !categoriesBySlug.has(slug),
+    );
     if (missingCategorySlug) {
-      failGroup(entries, `productKey "${productKey}": categorySlugs "${missingCategorySlug}" was not found`);
+      failGroup(
+        entries,
+        `productKey "${productKey}": categorySlugs "${missingCategorySlug}" was not found`,
+      );
       continue;
     }
-    for (const slug of categorySlugs) categoryIds.push(categoriesBySlug.get(slug).id);
+    for (const slug of categorySlugs)
+      categoryIds.push(categoriesBySlug.get(slug).id);
     if (categoryIds.length === 0) {
-      failGroup(entries, `productKey "${productKey}": categorySlugs must include at least one category`);
+      failGroup(
+        entries,
+        `productKey "${productKey}": categorySlugs must include at least one category`,
+      );
       continue;
     }
 
     const tagSlugs = primary.tagSlugs
-      ? [...new Set(primary.tagSlugs.split(",").map((slug) => slug.trim()).filter(Boolean))]
+      ? [
+          ...new Set(
+            primary.tagSlugs
+              .split(",")
+              .map((slug) => slug.trim())
+              .filter(Boolean),
+          ),
+        ]
       : [];
     const tagIds = [];
     for (const slug of tagSlugs) {
       const tag = tagsBySlug.get(slug);
       if (tag) tagIds.push(tag.id);
-      else summary.warnings.push({ row: entries[0].rowNumber, warning: `Tag slug "${slug}" was not found and was skipped` });
+      else
+        summary.warnings.push({
+          row: entries[0].rowNumber,
+          warning: `Tag slug "${slug}" was not found and was skipped`,
+        });
     }
 
     // Later rows may repeat a product-level field — it must match, not diverge.
-    const mismatch = entries.slice(1).find((entry) =>
-      BULK_PRODUCT_LEVEL_FIELDS.some((field) => entry.values[field] && entry.values[field] !== primary[field]),
-    );
+    const mismatch = entries
+      .slice(1)
+      .find((entry) =>
+        BULK_PRODUCT_LEVEL_FIELDS.some(
+          (field) =>
+            entry.values[field] && entry.values[field] !== primary[field],
+        ),
+      );
     if (mismatch) {
       const field = BULK_PRODUCT_LEVEL_FIELDS.find(
-        (candidate) => mismatch.values[candidate] && mismatch.values[candidate] !== primary[candidate],
+        (candidate) =>
+          mismatch.values[candidate] &&
+          mismatch.values[candidate] !== primary[candidate],
       );
       failGroup(
         entries,
@@ -2749,15 +3057,24 @@ const bulkProductImport = async (request) => {
       .map((entry) => {
         const v = entry.values;
         if (!v.color || !v.size || !v.stock) {
-          return { row: entry.rowNumber, error: "color, size and stock are required on every row" };
+          return {
+            row: entry.rowNumber,
+            error: "color, size and stock are required on every row",
+          };
         }
         const stock = Number(v.stock);
         if (!Number.isInteger(stock) || stock < 0) {
-          return { row: entry.rowNumber, error: "stock must be a non-negative integer" };
+          return {
+            row: entry.rowNumber,
+            error: "stock must be a non-negative integer",
+          };
         }
         const comboKey = `${v.color.toLowerCase()}|${v.size.toLowerCase()}`;
         if (seenComboKeys.has(comboKey)) {
-          return { row: entry.rowNumber, error: `duplicate color+size ("${v.color}" / "${v.size}") for productKey "${productKey}"` };
+          return {
+            row: entry.rowNumber,
+            error: `duplicate color+size ("${v.color}" / "${v.size}") for productKey "${productKey}"`,
+          };
         }
         seenComboKeys.add(comboKey);
         variantPlans.push({
@@ -2767,7 +3084,10 @@ const bulkProductImport = async (request) => {
           stock,
           explicitSku: v.sku || null,
           images: v.variantImageUrls
-            ? v.variantImageUrls.split(",").map((url) => url.trim()).filter(Boolean)
+            ? v.variantImageUrls
+                .split(",")
+                .map((url) => url.trim())
+                .filter(Boolean)
             : [],
         });
         return null;
@@ -2796,10 +3116,15 @@ const bulkProductImport = async (request) => {
 
   // --- Pass 3: resolve SKUs across the whole batch (globally unique) ---
   const explicitSkus = plans.flatMap((plan) =>
-    plan.variantPlans.filter((vp) => vp.explicitSku).map((vp) => vp.explicitSku),
+    plan.variantPlans
+      .filter((vp) => vp.explicitSku)
+      .map((vp) => vp.explicitSku),
   );
   const existingSkuRows = explicitSkus.length
-    ? await prisma.variant.findMany({ where: { sku: { in: explicitSkus } }, select: { sku: true } })
+    ? await prisma.variant.findMany({
+        where: { sku: { in: explicitSkus } },
+        select: { sku: true },
+      })
     : [];
   const existingSkuSet = new Set(existingSkuRows.map((variant) => variant.sku));
   const claimedSkus = new Set();
@@ -2807,16 +3132,23 @@ const bulkProductImport = async (request) => {
   for (const plan of plans) {
     for (const vp of plan.variantPlans) {
       if (vp.explicitSku) {
-        if (existingSkuSet.has(vp.explicitSku) || claimedSkus.has(vp.explicitSku)) {
-          summary.failed.push({ row: vp.rowNumber, error: `sku "${vp.explicitSku}" is already in use` });
+        if (
+          existingSkuSet.has(vp.explicitSku) ||
+          claimedSkus.has(vp.explicitSku)
+        ) {
+          summary.failed.push({
+            row: vp.rowNumber,
+            error: `sku "${vp.explicitSku}" is already in use`,
+          });
           plan.failed = true;
           continue;
         }
         vp.sku = vp.explicitSku;
       } else {
-        const base = `${slugify(plan.name)}-${slugify(vp.color)}-${slugify(vp.size)}`
-          .toUpperCase()
-          .slice(0, 60);
+        const base =
+          `${slugify(plan.name)}-${slugify(vp.color)}-${slugify(vp.size)}`
+            .toUpperCase()
+            .slice(0, 60);
         let candidate = base;
         let suffix = 2;
         while (existingSkuSet.has(candidate) || claimedSkus.has(candidate)) {
@@ -2845,7 +3177,9 @@ const bulkProductImport = async (request) => {
             featured: plan.featured,
             imageUrl: plan.imageUrl,
             brandId: plan.brandId,
-            categories: { create: plan.categoryIds.map((categoryId) => ({ categoryId })) },
+            categories: {
+              create: plan.categoryIds.map((categoryId) => ({ categoryId })),
+            },
             tags: { create: plan.tagIds.map((tagId) => ({ tagId })) },
             variants: {
               create: plan.variantPlans.map((vp) => ({
@@ -2864,8 +3198,11 @@ const bulkProductImport = async (request) => {
       summary.variantsCreated += plan.variantPlans.length;
     } catch (error) {
       const reason =
-        error?.code === "P2002" ? "a generated SKU collided unexpectedly — try again" : "could not create product";
-      for (const rowNumber of plan.rowNumbers) summary.failed.push({ row: rowNumber, error: reason });
+        error?.code === "P2002"
+          ? "a generated SKU collided unexpectedly — try again"
+          : "could not create product";
+      for (const rowNumber of plan.rowNumbers)
+        summary.failed.push({ row: rowNumber, error: reason });
     }
   }
 
@@ -2963,12 +3300,17 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
 
   let categoryIds;
   if (body.categoryIds !== undefined) {
-    if (!Array.isArray(body.categoryIds) || body.categoryIds.some((id) => typeof id !== "string")) {
+    if (
+      !Array.isArray(body.categoryIds) ||
+      body.categoryIds.some((id) => typeof id !== "string")
+    ) {
       return { error: "categoryIds must be an array of category IDs" };
     }
     categoryIds = [...new Set(body.categoryIds)];
     if (categoryIds.length > 0) {
-      const count = await prisma.category.count({ where: { id: { in: categoryIds } } });
+      const count = await prisma.category.count({
+        where: { id: { in: categoryIds } },
+      });
       if (count !== categoryIds.length) {
         return { error: "One or more categoryIds were not found" };
       }
@@ -3015,7 +3357,9 @@ const createAdminProduct = async (request) => {
     data: {
       id: body.id || crypto.randomUUID(),
       ...input.data,
-      categories: { create: input.categoryIds.map((categoryId) => ({ categoryId })) },
+      categories: {
+        create: input.categoryIds.map((categoryId) => ({ categoryId })),
+      },
     },
     include: adminProductInclude,
   });
@@ -3073,9 +3417,14 @@ const updateAdminProduct = async (request, id) => {
 
   const product = await prisma.$transaction(async (transaction) => {
     if (input.categoryIds !== undefined) {
-      await transaction.productCategory.deleteMany({ where: { productId: id } });
+      await transaction.productCategory.deleteMany({
+        where: { productId: id },
+      });
       await transaction.productCategory.createMany({
-        data: input.categoryIds.map((categoryId) => ({ productId: id, categoryId })),
+        data: input.categoryIds.map((categoryId) => ({
+          productId: id,
+          categoryId,
+        })),
       });
     }
 
@@ -3133,7 +3482,9 @@ const deleteAdminProduct = async (request, id) => {
   // Once a product has been ordered, deleting it would permanently erase
   // that line's name/image from a real customer's order history and
   // receipts. Archive it instead.
-  const orderItemCount = await prisma.orderItem.count({ where: { productId: id } });
+  const orderItemCount = await prisma.orderItem.count({
+    where: { productId: id },
+  });
   if (orderItemCount > 0) {
     return jsonResponse(
       {
@@ -3425,6 +3776,9 @@ const handleAdminVariantRequest = async (request, segments) => {
 
 const handleAdminProductRequest = async (request, segments) => {
   const id = segments[3] ? decodeURIComponent(segments[3]) : null;
+  if (id === "bulk" && segments[4]) {
+    return handleAdminProductBulkRequest(request, segments);
+  }
   if (
     request.method === "POST" &&
     id === "bulk-upload" &&
@@ -3853,6 +4207,14 @@ const markOrderAsPaid = async (reference) => {
     }
     transitionedToPaid = true;
 
+    await transaction.order.update({
+      where: { id: order.id },
+      data: { fulfillmentStatus: "PAYMENT_CONFIRMED" },
+    });
+    await transaction.orderFulfillmentEvent.create({
+      data: { orderId: order.id, status: "PAYMENT_CONFIRMED" },
+    });
+
     if (order.discountId) {
       await transaction.discount.update({
         where: { id: order.discountId },
@@ -4128,14 +4490,46 @@ const getOrder = async (request, id) => {
       postalCode: true,
       createdAt: true,
       items: orderItemInclude,
+      fulfillmentStatus: true,
+      courierName: true,
+      trackingNumber: true,
+      trackingUrl: true,
+      shippingDate: true,
+      estimatedDeliveryDate: true,
+      deliveryNotes: true,
+      fulfillmentEvents: {
+        orderBy: { createdAt: "asc" },
+        select: { status: true, createdAt: true },
+      },
     },
   });
   if (!order) return jsonResponse({ error: "Order not found" }, 404);
 
-  const [enrichedOrder] = await enrichOrderItems([order]);
+  const {
+    fulfillmentStatus,
+    courierName,
+    trackingNumber,
+    trackingUrl,
+    shippingDate,
+    estimatedDeliveryDate,
+    deliveryNotes,
+    fulfillmentEvents,
+    ...rest
+  } = order;
+  const [enrichedOrder] = await enrichOrderItems([rest]);
   return jsonResponse({
     ...enrichedOrder,
     region: getRegionForState(enrichedOrder.state),
+    fulfillment: {
+      status: fulfillmentStatus,
+      courierName,
+      trackingNumber,
+      trackingUrl,
+      shippingDate,
+      estimatedDeliveryDate,
+      deliveryNotes,
+      events: fulfillmentEvents,
+    },
   });
 };
 
@@ -4700,7 +5094,8 @@ const addToWishlist = async (request) => {
   if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
 
   const body = await request.json();
-  const hasProductId = typeof body.productId === "string" && body.productId.trim();
+  const hasProductId =
+    typeof body.productId === "string" && body.productId.trim();
   const hasBrandId = typeof body.brandId === "string" && body.brandId.trim();
   if (!hasProductId && !hasBrandId) {
     return jsonResponse({ error: "productId or brandId is required" }, 400);
@@ -4872,6 +5267,11 @@ const handlePaystackWebhook = async (request) => {
     return jsonResponse({ error: "Invalid webhook payload" }, 400);
   }
 
+  if (event.event === "refund.processed" || event.event === "refund.failed") {
+    await applyPaystackRefundEvent(event);
+    return jsonResponse({ ok: true });
+  }
+
   if (event.event !== "charge.success") return jsonResponse({ ok: true });
 
   const reference = event.data?.reference;
@@ -4890,10 +5290,11 @@ const isVercelCronRequest = (request) => {
   if (request.method !== "GET" || !process.env.CRON_SECRET) return false;
 
   const expected = Buffer.from(`Bearer ${process.env.CRON_SECRET}`, "utf8");
-  const actual = Buffer.from(request.headers.get("authorization") || "", "utf8");
-  return (
-    expected.length === actual.length && timingSafeEqual(expected, actual)
+  const actual = Buffer.from(
+    request.headers.get("authorization") || "",
+    "utf8",
   );
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 };
 
 // --- Route table -----------------------------------------------------
@@ -4957,6 +5358,12 @@ const ROUTES = [
     errorMessage: "Image upload failed",
   },
   {
+    method: "POST",
+    ...path("api", "admin", "upload-video"),
+    handler: ({ request }) => uploadVideo(request),
+    errorMessage: "Video upload failed",
+  },
+  {
     method: "GET",
     ...path("api", "checkout", "verify"),
     handler: ({ request, url }) => verifyCheckout(request, url),
@@ -4967,7 +5374,8 @@ const ROUTES = [
   {
     ...prefix("api", "cart"),
     handler: async ({ request, segments }) => {
-      if (request.method === "GET" && !segments[2]) return getCartItems(request);
+      if (request.method === "GET" && !segments[2])
+        return getCartItems(request);
       if (request.method === "POST" && segments[2] === "sync")
         return syncCart(request);
       return jsonResponse({ error: "Method not allowed" }, 405);
@@ -4978,11 +5386,15 @@ const ROUTES = [
   {
     ...prefix("api", "wishlist"),
     handler: async ({ request, segments }) => {
-      if (request.method === "GET" && !segments[2]) return listWishlist(request);
+      if (request.method === "GET" && !segments[2])
+        return listWishlist(request);
       if (request.method === "POST" && !segments[2])
         return addToWishlist(request);
       if (request.method === "DELETE" && segments[2] === "brand" && segments[3])
-        return removeBrandFromWishlist(request, decodeURIComponent(segments[3]));
+        return removeBrandFromWishlist(
+          request,
+          decodeURIComponent(segments[3]),
+        );
       if (request.method === "DELETE" && segments[2])
         return removeFromWishlist(request, decodeURIComponent(segments[2]));
       return jsonResponse({ error: "Method not allowed" }, 405);
@@ -4992,7 +5404,8 @@ const ROUTES = [
   },
   {
     ...prefix("api", "waitlist"),
-    handler: ({ request, segments }) => handleWaitlistRequest(request, segments),
+    handler: ({ request, segments }) =>
+      handleWaitlistRequest(request, segments),
     errorLog: "Waitlist request failed",
     errorMessage: "Waitlist request failed",
   },
@@ -5121,7 +5534,8 @@ const ROUTES = [
   },
   {
     ...prefix("api", "admin", "discounts"),
-    handler: ({ request, segments }) => handleAdminDiscountRequest(request, segments),
+    handler: ({ request, segments }) =>
+      handleAdminDiscountRequest(request, segments),
     errorMessage: "Discount request failed",
   },
   {
@@ -5155,7 +5569,8 @@ const ROUTES = [
   },
   {
     ...prefix("api", "admin", "brands"),
-    handler: ({ request, segments }) => handleAdminBrandRequest(request, segments),
+    handler: ({ request, segments }) =>
+      handleAdminBrandRequest(request, segments),
     errorMessage: "Brand request failed",
   },
   {
@@ -5172,12 +5587,14 @@ const ROUTES = [
   },
   {
     ...prefix("api", "admin", "tags"),
-    handler: ({ request, segments }) => handleAdminTagRequest(request, segments),
+    handler: ({ request, segments }) =>
+      handleAdminTagRequest(request, segments),
     errorMessage: "Tag request failed",
   },
   {
     ...prefix("api", "admin", "journal"),
-    handler: ({ request, segments }) => handleAdminJournalRequest(request, segments),
+    handler: ({ request, segments }) =>
+      handleAdminJournalRequest(request, segments),
     errorMessage: "Journal request failed",
   },
   {
@@ -5194,13 +5611,44 @@ const ROUTES = [
   },
   {
     ...prefix("api", "admin", "products"),
-    handler: ({ request, segments }) => handleAdminProductRequest(request, segments),
+    handler: ({ request, segments }) =>
+      handleAdminProductRequest(request, segments),
     errorMessage: "Product request failed",
   },
   {
     ...prefix("api", "admin", "variants"),
-    handler: ({ request, segments }) => handleAdminVariantRequest(request, segments),
+    handler: ({ request, segments }) =>
+      handleAdminVariantRequest(request, segments),
     errorMessage: "Variant request failed",
+  },
+  {
+    ...prefix("api", "cases"),
+    handler: ({ request, segments }) => handleCaseRequest(request, segments),
+    errorMessage: "Request failed",
+  },
+  {
+    ...prefix("api", "admin", "cases"),
+    handler: ({ request, segments, url }) =>
+      handleAdminCaseRequest(request, segments, url),
+    errorMessage: "Case request failed",
+  },
+  {
+    method: "GET",
+    ...path("api", "admin", "analytics"),
+    handler: ({ request, url }) => getAdminAnalytics(request, url),
+    errorMessage: "Analytics request failed",
+  },
+  {
+    ...prefix("api", "admin", "export"),
+    handler: ({ request, segments, url }) =>
+      handleAdminExportRequest(request, segments, url),
+    errorMessage: "Export failed",
+  },
+  {
+    ...prefix("api", "admin", "staff"),
+    handler: ({ request, segments }) =>
+      handleAdminStaffRequest(request, segments),
+    errorMessage: "Staff request failed",
   },
   {
     method: "POST",

@@ -1,11 +1,12 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
 
 const AuthContext = createContext(null);
@@ -18,6 +19,7 @@ const rememberAccountOnThisBrowser = () => {
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const appUserQuery = useQuery({
     queryKey: ["me", session?.user?.id],
     queryFn: async () => {
@@ -30,6 +32,15 @@ export const AuthProvider = ({ children }) => {
   });
   const appUser = appUserQuery.data;
   const appUserLoading = appUserQuery.isPending;
+  // Call after any server-side change to the User row (email verification,
+  // profile update) that isn't already reflected in this cached copy —
+  // otherwise the 5-minute staleTime means the page keeps showing the old
+  // value until it happens to expire.
+  const refreshAppUser = useCallback(
+    () =>
+      queryClient.invalidateQueries({ queryKey: ["me", session?.user?.id] }),
+    [queryClient, session?.user?.id],
+  );
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -111,13 +122,14 @@ export const AuthProvider = ({ children }) => {
       user: session?.user ?? null,
       appUser,
       appUserLoading,
+      refreshAppUser,
       loading,
       signUp,
       signIn,
       signInWithGoogle,
       signOut,
     }),
-    [session, appUser, appUserLoading, loading],
+    [session, appUser, appUserLoading, loading, refreshAppUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

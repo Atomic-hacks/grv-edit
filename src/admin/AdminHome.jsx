@@ -32,6 +32,15 @@ const groups = [
     ],
   },
   {
+    name: "Support",
+    description: "Refunds, complaints, and operational analytics.",
+    links: [
+      ["Refunds & Complaints", "/admin/cases"],
+      ["Analytics", "/admin/analytics"],
+      ["Staff & Roles", "/admin/staff"],
+    ],
+  },
+  {
     name: "Content",
     description: "Journal, customer messages and promotional email.",
     links: [
@@ -53,7 +62,9 @@ const StatTile = ({ label, value, loading, to, tone = "neutral" }) => {
       ) : (
         <p
           className={`mt-1.5 text-3xl font-semibold tabular-nums ${
-            tone === "attention" ? "text-(--color-accent-orange)" : "text-[var(--ink-900)]"
+            tone === "attention"
+              ? "text-(--color-accent-orange)"
+              : "text-[var(--ink-900)]"
           }`}
         >
           {value}
@@ -106,12 +117,29 @@ const AdminHome = () => {
     queryFn: () => request("/api/admin/campaigns"),
     enabled: Boolean(session),
   });
+  const refundCasesQuery = useQuery({
+    queryKey: ["admin", "cases", "REFUND"],
+    queryFn: () => request("/api/admin/cases?category=REFUND"),
+    enabled: Boolean(session),
+  });
+  const complaintCasesQuery = useQuery({
+    queryKey: ["admin", "cases", "COMPLAINT"],
+    queryFn: () => request("/api/admin/cases?category=COMPLAINT"),
+    enabled: Boolean(session),
+  });
 
   const orders = ordersQuery.data || [];
   const paidRevenue = orders
-    .filter((order) => order.status !== "PENDING" && order.status !== "FAILED" && order.status !== "CANCELLED")
+    .filter(
+      (order) =>
+        order.status !== "PENDING" &&
+        order.status !== "FAILED" &&
+        order.status !== "CANCELLED",
+    )
     .reduce((sum, order) => sum + Number(order.total || 0), 0);
-  const needsFulfillment = orders.filter((order) => order.status === "PAID").length;
+  const needsFulfillment = orders.filter(
+    (order) => order.status === "PAID",
+  ).length;
   // "Unanswered" is the number that matters operationally: a message can be
   // read and still be waiting on a reply.
   const unansweredMessages = (submissionsQuery.data || []).filter(
@@ -122,6 +150,24 @@ const AdminHome = () => {
   ).length;
   const failedCampaigns = (campaignsQuery.data || []).filter(
     (campaign) => campaign.status === "FAILED",
+  ).length;
+  const pendingRefundStatuses = [
+    "SUBMITTED",
+    "UNDER_REVIEW",
+    "AWAITING_CUSTOMER_INFO",
+    "APPROVED",
+    "REFUND_PROCESSING",
+  ];
+  const openComplaintStatuses = [
+    "SUBMITTED",
+    "UNDER_REVIEW",
+    "AWAITING_CUSTOMER_INFO",
+  ];
+  const pendingRefunds = (refundCasesQuery.data || []).filter((c) =>
+    pendingRefundStatuses.includes(c.status),
+  ).length;
+  const openComplaints = (complaintCasesQuery.data || []).filter((c) =>
+    openComplaintStatuses.includes(c.status),
   ).length;
   // Stock lives on variants, so a product is only out of stock when every
   // one of its variants is.
@@ -134,7 +180,10 @@ const AdminHome = () => {
   const lowStock = products.filter((product) => {
     const variants = product.variants || [];
     if (!variants.length) return false;
-    const total = variants.reduce((sum, variant) => sum + (variant.stock ?? 0), 0);
+    const total = variants.reduce(
+      (sum, variant) => sum + (variant.stock ?? 0),
+      0,
+    );
     return total > 0 && total <= 3;
   }).length;
 
@@ -146,11 +195,15 @@ const AdminHome = () => {
           {appUser?.name ? `Welcome back, ${appUser.name}` : "Admin"}
         </h1>
         <p className="body-text mt-3 text-sm">
-          A snapshot of the storefront, and quick access to everything you manage.
+          A snapshot of the storefront, and quick access to everything you
+          manage.
         </p>
       </FadeIn>
 
-      <FadeIn delay={0.05} className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <FadeIn
+        delay={0.05}
+        className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4"
+      >
         <StatTile
           label="Revenue"
           value={formatPrice(paidRevenue)}
@@ -180,7 +233,10 @@ const AdminHome = () => {
         />
       </FadeIn>
 
-      <FadeIn delay={0.07} className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <FadeIn
+        delay={0.07}
+        className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4"
+      >
         <StatTile
           label="Products"
           value={products.length}
@@ -208,14 +264,34 @@ const AdminHome = () => {
         />
       </FadeIn>
 
+      <FadeIn
+        delay={0.08}
+        className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4"
+      >
+        <StatTile
+          label="Pending refunds"
+          value={pendingRefunds}
+          loading={refundCasesQuery.isPending}
+          to="/admin/cases?category=REFUND"
+          tone={pendingRefunds > 0 ? "attention" : "neutral"}
+        />
+        <StatTile
+          label="Open complaints"
+          value={openComplaints}
+          loading={complaintCasesQuery.isPending}
+          to="/admin/cases?category=COMPLAINT"
+          tone={openComplaints > 0 ? "attention" : "neutral"}
+        />
+      </FadeIn>
+
       {failedCampaigns > 0 && (
         <FadeIn delay={0.09} className="mt-4">
           <Link
             to="/admin/campaigns"
             className="block border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800 transition-colors hover:border-red-700"
           >
-            {failedCampaigns} campaign{failedCampaigns === 1 ? "" : "s"} failed to
-            send and {failedCampaigns === 1 ? "was" : "were"} not delivered.
+            {failedCampaigns} campaign{failedCampaigns === 1 ? "" : "s"} failed
+            to send and {failedCampaigns === 1 ? "was" : "were"} not delivered.
           </Link>
         </FadeIn>
       )}
@@ -228,7 +304,9 @@ const AdminHome = () => {
             className="border border-[var(--line)] p-5 transition-colors duration-200 hover:border-[var(--ink-900)]"
           >
             <h2 className="text-[15px] font-semibold">{group.name}</h2>
-            <p className="meta-text mt-2 leading-relaxed">{group.description}</p>
+            <p className="meta-text mt-2 leading-relaxed">
+              {group.description}
+            </p>
             <div className="mt-5 space-y-0.5 border-t border-[var(--line)] pt-4">
               {group.links.map(([label, to]) => (
                 <Link

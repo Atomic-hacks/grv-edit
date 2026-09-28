@@ -27,7 +27,11 @@ const AdminProducts = () => {
   const normalizedQuery = query.trim().toLowerCase();
   const visibleProducts = normalizedQuery
     ? products.filter((product) =>
-        [product.name, product.brandName, ...(product.categories || []).map((c) => c.name)]
+        [
+          product.name,
+          product.brandName,
+          ...(product.categories || []).map((c) => c.name),
+        ]
           .filter(Boolean)
           .some((value) => value.toLowerCase().includes(normalizedQuery)),
       )
@@ -59,15 +63,22 @@ const AdminProducts = () => {
         title="Products"
         count={loading ? undefined : `${products.length} total`}
         actions={
-          <Link
-            to="/admin/products/new"
-            className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-2.5 text-[12px] font-semibold text-white transition-colors hover:border-(--color-accent-orange) hover:bg-(--color-accent-orange)"
-          >
-            New product
-          </Link>
+          <>
+            <a
+              href="/api/admin/export/products"
+              className="border border-[var(--line)] px-4 py-2.5 text-[12px] font-semibold text-[var(--ink-700)] transition-colors hover:border-[var(--ink-900)]"
+            >
+              Export CSV
+            </a>
+            <Link
+              to="/admin/products/new"
+              className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-2.5 text-[12px] font-semibold text-white transition-colors hover:border-(--color-accent-orange) hover:bg-(--color-accent-orange)"
+            >
+              New product
+            </Link>
+          </>
         }
       />
-
 
       <div className="mt-6">
         <AdminSearch
@@ -112,7 +123,8 @@ const AdminProducts = () => {
               label: "Categories",
               render: (product) => (
                 <span className="text-[var(--ink-700)]">
-                  {(product.categories || []).map((c) => c.name).join(", ") || "—"}
+                  {(product.categories || []).map((c) => c.name).join(", ") ||
+                    "—"}
                 </span>
               ),
             },
@@ -122,10 +134,14 @@ const AdminProducts = () => {
               render: (product) => (
                 <span className="flex gap-1.5">
                   {product.isNew && (
-                    <span className="border border-[var(--line)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--ink-500)]">New</span>
+                    <span className="border border-[var(--line)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--ink-500)]">
+                      New
+                    </span>
                   )}
                   {product.featured && (
-                    <span className="border border-(--color-accent-orange) px-1.5 py-0.5 text-[10px] uppercase text-(--color-accent-orange)">Featured</span>
+                    <span className="border border-(--color-accent-orange) px-1.5 py-0.5 text-[10px] uppercase text-(--color-accent-orange)">
+                      Featured
+                    </span>
                   )}
                 </span>
               ),
@@ -139,7 +155,9 @@ const AdminProducts = () => {
                   0,
                 );
                 if (!product.variants?.length) {
-                  return <span className="text-[var(--ink-300)]">No variants</span>;
+                  return (
+                    <span className="text-[var(--ink-300)]">No variants</span>
+                  );
                 }
                 return (
                   <span

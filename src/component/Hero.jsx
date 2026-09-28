@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import Button from "./ui/special-button";
-import SpotifyPlayer from "./ui/spotify-player";
 import { Link, useNavigate } from "react-router-dom";
 import AnimatedPageTitle from "./ui/AnimatedPageTitle";
 import { useQuery } from "@tanstack/react-query";
@@ -76,9 +75,10 @@ const Hero = () => {
   return (
     <>
       <section className="relative h-screen w-full overflow-hidden text-white bg-[#161616]">
-        {/* Background Video */}
+        {/* Background Video, admin-configurable via Site Images: hero-video */}
         <video
-          src="/videos/hero.mp4"
+          key={siteImages["hero-video"] || "/videos/hero.mp4"}
+          src={siteImages["hero-video"] || "/videos/hero.mp4"}
           autoPlay
           loop
           muted
@@ -118,9 +118,6 @@ const Hero = () => {
             <p>Lagos {time}</p>
           </div>
         )}
-
-        {/* Spotify Player */}
-        <SpotifyPlayer />
       </section>
       <div className="page-shell">
         <ProductRail

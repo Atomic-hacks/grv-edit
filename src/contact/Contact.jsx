@@ -144,8 +144,7 @@ const Contact = () => {
               <p className="text-xs font-semibold mb-3 tracking-wide">
                 (LOCATION)
               </p>
-              <p className="text-sm font-medium">19A Mulero Street, Agege</p>
-              <p className="text-sm font-medium">Nigeria, Lagos</p>
+             <p className="text-sm font-medium">Nigeria, Lagos</p>
             </div>
 
             <div>

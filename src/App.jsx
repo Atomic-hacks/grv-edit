@@ -50,10 +50,13 @@ import { trackPageview } from "./lib/analytics";
 // via AddressFields. They are always reached by navigation, never as a
 // landing page, so they load on demand.
 const Checkout = React.lazy(() => import("./checkout/Checkout"));
-const CheckoutComplete = React.lazy(() => import("./checkout/CheckoutComplete"));
+const CheckoutComplete = React.lazy(
+  () => import("./checkout/CheckoutComplete"),
+);
 const Account = React.lazy(() => import("./account/Account"));
 const AccountSettings = React.lazy(() => import("./account/AccountSettings"));
 const OrderDetail = React.lazy(() => import("./account/OrderDetail"));
+const ReportIssue = React.lazy(() => import("./account/ReportIssue"));
 
 // Admin is lazy-loaded: it is ~23 screens that no shopper ever opens,
 // and bundling it with the storefront made every visitor download it.
@@ -69,17 +72,26 @@ const AdminProductForm = React.lazy(() => import("./admin/AdminProductForm"));
 const AdminJournal = React.lazy(() => import("./admin/AdminJournal"));
 const AdminJournalForm = React.lazy(() => import("./admin/AdminJournalForm"));
 const AdminCustomers = React.lazy(() => import("./admin/AdminCustomers"));
-const AdminCustomerDetail = React.lazy(() => import("./admin/AdminCustomerDetail"));
+const AdminCustomerDetail = React.lazy(
+  () => import("./admin/AdminCustomerDetail"),
+);
 const AdminOrders = React.lazy(() => import("./admin/AdminOrders"));
 const AdminOrderDetail = React.lazy(() => import("./admin/AdminOrderDetail"));
-const AdminContactSubmissions = React.lazy(() => import("./admin/AdminContactSubmissions"));
+const AdminContactSubmissions = React.lazy(
+  () => import("./admin/AdminContactSubmissions"),
+);
 const AdminDiscounts = React.lazy(() => import("./admin/AdminDiscounts"));
-const AdminFirstOrderPromo = React.lazy(() => import("./admin/AdminFirstOrderPromo"));
+const AdminFirstOrderPromo = React.lazy(
+  () => import("./admin/AdminFirstOrderPromo"),
+);
 const AdminShippingFees = React.lazy(() => import("./admin/AdminShippingFees"));
 const AdminSiteImages = React.lazy(() => import("./admin/AdminSiteImages"));
 const AdminCategories = React.lazy(() => import("./admin/AdminCategories"));
 const AdminCampaigns = React.lazy(() => import("./admin/AdminCampaigns"));
 const AdminCampaignForm = React.lazy(() => import("./admin/AdminCampaignForm"));
+const AdminCases = React.lazy(() => import("./admin/AdminCases"));
+const AdminAnalytics = React.lazy(() => import("./admin/AdminAnalytics"));
+const AdminStaff = React.lazy(() => import("./admin/AdminStaff"));
 
 // Pages that end with <StoreSupport /> already carry a newsletter sign-up in
 // that block. This list is the remainder — pages that would otherwise finish
@@ -135,130 +147,167 @@ const AppLayout = () => {
           </div>
         }
       >
-      <Motion.div
-        key={location.pathname}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-      >
-      <Routes>
-        <Route path="/" element={<Hero />} />
+        <Motion.div
+          key={location.pathname}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <Routes>
+            <Route path="/" element={<Hero />} />
 
-        <Route path="/shop" element={<Shop />} />
-        <Route path="/shop-by" element={<ShopBy />} />
-        <Route path="/shop/new-arrivals" element={<NewArrivals />} />
-        <Route path="/product/:id" element={<ProductDetail />} />
-        <Route path="/size-guide" element={<SizeGuide />} />
-        <Route path="/faq" element={<Faq />} />
-        <Route path="/unsubscribe" element={<Unsubscribe />} />
-        <Route path="/sections/:slug" element={<SectionPage />} />
-        <Route path="/catalogues" element={<Catalogues />} />
-        <Route path="/brands" element={<Brands />} />
-        <Route path="/brands/:slug" element={<BrandCatalogue />} />
-        <Route path="/archive" element={<ArchivePage />} />
-        <Route path="/brand" element={<Brand />} />
-        <Route path="/journal" element={<Journal />} />
-        <Route path="/Departments" element={<Catalogues />} />
-        <Route path="/journal/:slug" element={<JournalArticle />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-        <Route path="/:categorySlug" element={<CategoryPage />} />
-        <Route path="/:categorySlug/*" element={<CategoryPage />} />
-        <Route path="/signup" element={<SignUp />} />
-        <Route path="/login" element={<LogIn />} />
-        <Route path="/email-confirmed" element={<EmailConfirmed />} />
-        <Route path="/confirm-email" element={<ConfirmEmail />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route
-          path="/account"
-          element={
-            <RequireAuth>
-              <Account />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/account/settings"
-          element={
-            <RequireAuth>
-              <AccountSettings />
-            </RequireAuth>
-          }
-        />
-        <Route path="/account/orders/:id" element={<OrderDetail />} />
-        <Route path="/wishlist" element={<Wishlist />} />
-        <Route path="/cart" element={<CartPage />} />
-        <Route path="/checkout" element={<Checkout />} />
-        <Route path="/checkout/complete" element={<CheckoutComplete />} />
-        <Route
-          path="/admin/*"
-          element={
-            <AdminRoute>
-              <React.Suspense
-                fallback={
-                  <div className="flex min-h-screen items-center justify-center">
-                    <Spinner label="Loading" className="text-sm text-gray-500" />
-                  </div>
-                }
-              >
-                <Routes>
-                <Route element={<AdminLayout />}>
-                  <Route index element={<AdminHome />} />
-                  <Route path="categories" element={<AdminCategories />} />
-                  <Route path="filter-types" element={<AdminFilterTypes />} />
-                  <Route path="tags" element={<AdminTags />} />
-                  <Route path="brands" element={<AdminBrands />} />
-                  <Route path="brands/new" element={<AdminBrandForm />} />
-                  <Route path="brands/:id/edit" element={<AdminBrandForm />} />
-                  <Route path="products" element={<AdminProducts />} />
-                  <Route path="products/new" element={<AdminProductForm />} />
-                  <Route
-                    path="products/bulk-upload"
-                    element={<AdminBulkUpload />}
-                  />
-                  <Route
-                    path="products/:id/edit"
-                    element={<AdminProductForm />}
-                  />
-                  <Route path="journal" element={<AdminJournal />} />
-                  <Route path="journal/new" element={<AdminJournalForm />} />
-                  <Route
-                    path="journal/:id/edit"
-                    element={<AdminJournalForm />}
-                  />
-                  <Route path="customers" element={<AdminCustomers />} />
-                  <Route
-                    path="customers/:id"
-                    element={<AdminCustomerDetail />}
-                  />
-                  <Route path="discounts" element={<AdminDiscounts />} />
-                  <Route
-                    path="first-order-promo"
-                    element={<AdminFirstOrderPromo />}
-                  />
-                  <Route path="shipping-fees" element={<AdminShippingFees />} />
-                  <Route path="site-images" element={<AdminSiteImages />} />
-                  <Route path="orders" element={<AdminOrders />} />
-                  <Route path="orders/:id" element={<AdminOrderDetail />} />
-                  <Route
-                    path="contact-submissions"
-                    element={<AdminContactSubmissions />}
-                  />
-                  <Route path="campaigns" element={<AdminCampaigns />} />
-                  <Route path="campaigns/new" element={<AdminCampaignForm />} />
-                  <Route path="campaigns/:id" element={<AdminCampaignForm />} />
-                  <Route path="*" element={<NotFound />} />
-                </Route>
-                </Routes>
-              </React.Suspense>
-            </AdminRoute>
-          }
-        />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-      </Motion.div>
+            <Route path="/shop" element={<Shop />} />
+            <Route path="/shop-by" element={<ShopBy />} />
+            <Route path="/shop/new-arrivals" element={<NewArrivals />} />
+            <Route path="/product/:id" element={<ProductDetail />} />
+            <Route path="/size-guide" element={<SizeGuide />} />
+            <Route path="/faq" element={<Faq />} />
+            <Route path="/unsubscribe" element={<Unsubscribe />} />
+            <Route path="/sections/:slug" element={<SectionPage />} />
+            <Route path="/catalogues" element={<Catalogues />} />
+            <Route path="/brands" element={<Brands />} />
+            <Route path="/brands/:slug" element={<BrandCatalogue />} />
+            <Route path="/archive" element={<ArchivePage />} />
+            <Route path="/brand" element={<Brand />} />
+            <Route path="/journal" element={<Journal />} />
+            <Route path="/Departments" element={<Catalogues />} />
+            <Route path="/journal/:slug" element={<JournalArticle />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/:categorySlug" element={<CategoryPage />} />
+            <Route path="/:categorySlug/*" element={<CategoryPage />} />
+            <Route path="/signup" element={<SignUp />} />
+            <Route path="/login" element={<LogIn />} />
+            <Route path="/email-confirmed" element={<EmailConfirmed />} />
+            <Route path="/confirm-email" element={<ConfirmEmail />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route
+              path="/account"
+              element={
+                <RequireAuth>
+                  <Account />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/account/settings"
+              element={
+                <RequireAuth>
+                  <AccountSettings />
+                </RequireAuth>
+              }
+            />
+            <Route path="/account/orders/:id" element={<OrderDetail />} />
+            <Route path="/account/report-issue" element={<ReportIssue />} />
+            <Route path="/wishlist" element={<Wishlist />} />
+            <Route path="/cart" element={<CartPage />} />
+            <Route path="/checkout" element={<Checkout />} />
+            <Route path="/checkout/complete" element={<CheckoutComplete />} />
+            <Route
+              path="/admin/*"
+              element={
+                <AdminRoute>
+                  <React.Suspense
+                    fallback={
+                      <div className="flex min-h-screen items-center justify-center">
+                        <Spinner
+                          label="Loading"
+                          className="text-sm text-gray-500"
+                        />
+                      </div>
+                    }
+                  >
+                    <Routes>
+                      <Route element={<AdminLayout />}>
+                        <Route index element={<AdminHome />} />
+                        <Route
+                          path="categories"
+                          element={<AdminCategories />}
+                        />
+                        <Route
+                          path="filter-types"
+                          element={<AdminFilterTypes />}
+                        />
+                        <Route path="tags" element={<AdminTags />} />
+                        <Route path="brands" element={<AdminBrands />} />
+                        <Route path="brands/new" element={<AdminBrandForm />} />
+                        <Route
+                          path="brands/:id/edit"
+                          element={<AdminBrandForm />}
+                        />
+                        <Route path="products" element={<AdminProducts />} />
+                        <Route
+                          path="products/new"
+                          element={<AdminProductForm />}
+                        />
+                        <Route
+                          path="products/bulk-upload"
+                          element={<AdminBulkUpload />}
+                        />
+                        <Route
+                          path="products/:id/edit"
+                          element={<AdminProductForm />}
+                        />
+                        <Route path="journal" element={<AdminJournal />} />
+                        <Route
+                          path="journal/new"
+                          element={<AdminJournalForm />}
+                        />
+                        <Route
+                          path="journal/:id/edit"
+                          element={<AdminJournalForm />}
+                        />
+                        <Route path="customers" element={<AdminCustomers />} />
+                        <Route
+                          path="customers/:id"
+                          element={<AdminCustomerDetail />}
+                        />
+                        <Route path="discounts" element={<AdminDiscounts />} />
+                        <Route
+                          path="first-order-promo"
+                          element={<AdminFirstOrderPromo />}
+                        />
+                        <Route
+                          path="shipping-fees"
+                          element={<AdminShippingFees />}
+                        />
+                        <Route
+                          path="site-images"
+                          element={<AdminSiteImages />}
+                        />
+                        <Route path="orders" element={<AdminOrders />} />
+                        <Route
+                          path="orders/:id"
+                          element={<AdminOrderDetail />}
+                        />
+                        <Route
+                          path="contact-submissions"
+                          element={<AdminContactSubmissions />}
+                        />
+                        <Route path="campaigns" element={<AdminCampaigns />} />
+                        <Route
+                          path="campaigns/new"
+                          element={<AdminCampaignForm />}
+                        />
+                        <Route
+                          path="campaigns/:id"
+                          element={<AdminCampaignForm />}
+                        />
+                        <Route path="cases" element={<AdminCases />} />
+                        <Route path="analytics" element={<AdminAnalytics />} />
+                        <Route path="staff" element={<AdminStaff />} />
+                        <Route path="*" element={<NotFound />} />
+                      </Route>
+                    </Routes>
+                  </React.Suspense>
+                </AdminRoute>
+              }
+            />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Motion.div>
       </React.Suspense>
 
       {shouldShowNewsletter(location.pathname) && <NewsletterBanner />}

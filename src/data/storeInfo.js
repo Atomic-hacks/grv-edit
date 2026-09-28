@@ -9,7 +9,7 @@ export const storeInfo = {
   phone: "09012285529",
   // Dialable form of the number above.
   phoneHref: "tel:+2349012285529",
-  addressLines: ["19A Mulero Street, Agege", "Lagos, Nigeria"],
+  addressLines: ["Lagos, Nigeria"],
   // (mock) Placeholder support inbox — see the Cloudflare Email Routing +
   // Resend walkthrough for how to stand this up for real on grvhq.com.
   email: "support@grvhq.com",

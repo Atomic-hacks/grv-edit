@@ -42,7 +42,7 @@ const WishlistCard = ({ item }) => {
               decoding="async"
               onLoad={() => setImageLoaded(true)}
               onError={() => setImageLoaded(true)}
-              className={`h-full w-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-[1.03] ${imageLoaded ? "opacity-100" : "opacity-0"}`}
+              className={`h-full w-full object-cover object-top transition-[opacity,transform] duration-500 group-hover:scale-[1.03] ${imageLoaded ? "opacity-100" : "opacity-0"}`}
             />
           </Link>
         ) : (
@@ -174,7 +174,13 @@ const WishlistContent = () => {
               </div>
             )}
             {brandItems.length > 0 && (
-              <section className={productItems.length > 0 ? "mt-16 border-t border-[var(--line)] pt-10" : "mt-10"}>
+              <section
+                className={
+                  productItems.length > 0
+                    ? "mt-16 border-t border-[var(--line)] pt-10"
+                    : "mt-10"
+                }
+              >
                 <h2 className="section-title">Followed brands</h2>
                 <div className="mt-4 max-w-lg divide-y divide-[var(--line)] border-t border-[var(--line)]">
                   {brandItems.map((item) => (

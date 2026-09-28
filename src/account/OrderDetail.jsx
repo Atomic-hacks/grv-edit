@@ -7,6 +7,7 @@ import { createAuthenticatedRequest } from "../lib/apiClient";
 import { formatPrice } from "../lib/productHelpers";
 import Spinner from "../component/ui/Spinner";
 import OrderTimeline from "../component/order/OrderTimeline";
+import FulfillmentDetails from "../component/order/FulfillmentDetails";
 import InlineNotice from "../component/ui/InlineNotice";
 
 const formatDate = (value) =>
@@ -40,7 +41,11 @@ const OrderDetailContent = () => {
       >
         Back to account
       </Link>
-      {error && <InlineNotice tone="error" className="mt-8">{error}</InlineNotice>}
+      {error && (
+        <InlineNotice tone="error" className="mt-8">
+          {error}
+        </InlineNotice>
+      )}
       {!error && isPending && (
         <Spinner label="Loading order" className="mt-8 text-sm text-gray-500" />
       )}
@@ -64,6 +69,8 @@ const OrderDetailContent = () => {
           <div className="mt-8">
             <OrderTimeline status={order.status} />
           </div>
+
+          <FulfillmentDetails fulfillment={order.fulfillment} />
 
           <section className="mt-10 border border-gray-200 p-6">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
@@ -128,6 +135,20 @@ const OrderDetailContent = () => {
               <br />
               {order.country}
             </p>
+          </section>
+
+          <section className="mt-8 border border-gray-200 p-6 text-sm">
+            <p className="font-medium">Have an issue with your package?</p>
+            <p className="mt-1 text-gray-500">
+              Request a refund or lodge a complaint and we'll follow up by
+              email.
+            </p>
+            <Link
+              to={`/account/report-issue?orderId=${encodeURIComponent(order.id)}`}
+              className="mt-4 inline-block border border-gray-900 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-gray-900 hover:text-white"
+            >
+              Request a refund or lodge a complaint
+            </Link>
           </section>
         </>
       )}

@@ -7,7 +7,7 @@ import InlineNotice from "../component/ui/InlineNotice";
 const ConfirmEmail = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { session, refreshAppUser } = useAuth();
   const email = searchParams.get("email") || "";
   const returnTo = searchParams.get("returnTo") || "/account";
   const [token, setToken] = useState("");
@@ -50,6 +50,7 @@ const ConfirmEmail = () => {
       return;
     }
 
+    refreshAppUser();
     navigate(returnTo, { replace: true });
   };
 
@@ -95,7 +96,9 @@ const ConfirmEmail = () => {
             className="border border-gray-300 px-3 py-3 text-center text-xl tracking-[0.35em] outline-none focus:border-black"
           />
         </label>
-        <InlineNotice tone="error" className="text-left">{error}</InlineNotice>
+        <InlineNotice tone="error" className="text-left">
+          {error}
+        </InlineNotice>
         {message && (
           <p className="text-left text-sm text-emerald-700" role="status">
             {message}

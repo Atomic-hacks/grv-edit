@@ -32,6 +32,11 @@ model User {
   marketingOptInAt DateTime?
   // Stable per-user secret used by one-click unsubscribe links.
   unsubscribeToken String?   @unique
+
+  supportCases SupportCase[]
+  caseNotes    CaseNote[]
+  caseEvents   CaseEvent[]
+  adminActions AdminAuditLog[]
 }
 
 model FirstOrderPromo {
@@ -123,7 +128,50 @@ model Order {
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
 
+  // Manual (pre-courier-API) fulfilment tracking. `fulfillmentStatus` is a
+  // separate lifecycle from `status` above: `status` is the payment/order
+  // lifecycle emails and stock already key off, `fulfillmentStatus` is the
+  // shipping/delivery lifecycle the customer sees on the tracking timeline.
+  // Keeping them separate means adding real courier statuses later never
+  // touches the payment state machine.
+  fulfillmentStatus     FulfillmentStatus       @default(PLACED)
+  courierName           String?
+  trackingNumber        String?
+  trackingUrl           String?
+  shippingDate          DateTime?
+  estimatedDeliveryDate DateTime?
+  deliveryNotes         String?
+  fulfillmentEvents     OrderFulfillmentEvent[]
+  supportCases          SupportCase[]
+
   @@index([userId])
+}
+
+enum FulfillmentStatus {
+  PLACED
+  PAYMENT_CONFIRMED
+  PROCESSING
+  READY_TO_SHIP
+  SHIPPED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  DELIVERY_FAILED
+  CANCELLED
+  RETURNED
+}
+
+// One row per fulfilment status change — the chronological timeline shown
+// to both the customer (order tracking) and admin (case/order history).
+model OrderFulfillmentEvent {
+  id        String            @id @default(cuid())
+  orderId   String
+  order     Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    FulfillmentStatus
+  note      String?
+  createdAt DateTime          @default(now())
+
+  @@index([orderId, createdAt])
 }
 
 // One row per (order, email type). The unique constraint is the dedupe
@@ -470,4 +518,131 @@ model Variant {
 enum Role {
   CUSTOMER
   ADMIN
+  // Staff roles, beyond CUSTOMER/ADMIN. Enforced server-side by
+  // requireRole()/requireAdmin() — never by hiding a button client-side.
+  OWNER
+  SUPPORT
+  FULFILMENT
+  ANALYST
+}
+
+// A case is either a refund request or a general complaint — REFUND_REQUEST
+// maps to the REFUND category, everything else to COMPLAINT. Kept as two
+// enums (type + derived category) rather than one, so the admin UI can
+// split "Refund Requests" from "Other Complaints" with a single filter.
+enum CaseType {
+  REFUND_REQUEST
+  WRONG_ITEM
+  MISSING_ITEM
+  DAMAGED_ITEM
+  ITEM_NOT_AS_DESCRIBED
+  PACKAGE_NOT_RECEIVED
+  DELIVERY_ISSUE
+  PAYMENT_ISSUE
+  OTHER
+}
+
+enum CaseCategory {
+  REFUND
+  COMPLAINT
+}
+
+enum CaseStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  AWAITING_CUSTOMER_INFO
+  APPROVED
+  REJECTED
+  REFUND_PROCESSING
+  REFUNDED
+  REFUND_FAILED
+  RESOLVED
+  CLOSED
+}
+
+// A customer-submitted refund request or complaint. `dedupeKey` is a hash of
+// (userId, orderId, issueType, description) — its unique constraint is what
+// stops a double form-submit or a network retry from creating two cases for
+// the same thing, without having to guess at a time window.
+model SupportCase {
+  id                     String       @id @default(cuid())
+  reference              String       @unique
+  userId                 String       @db.Uuid
+  user                   User         @relation(fields: [userId], references: [id])
+  customerEmail          String
+  orderId                String?
+  order                  Order?       @relation(fields: [orderId], references: [id])
+  orderItemIds           String[]     @default([])
+  paystackReference      String?
+  issueType              CaseType
+  category               CaseCategory
+  description            String
+  requestedRefundAmount  Float?
+  evidenceUrls           String[]     @default([])
+  status                 CaseStatus   @default(SUBMITTED)
+  dedupeKey              String       @unique
+
+  // Refund execution state — only meaningful once an admin approves a
+  // REFUND case. `refundedAmount` is set only after Paystack confirms the
+  // refund actually completed, never merely because an admin clicked
+  // approve.
+  refundReference String?
+  refundedAmount  Float?
+  refundedAt      DateTime?
+
+  notes     CaseNote[]
+  events    CaseEvent[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@index([category])
+}
+
+// Internal admin-only notes on a case — never shown to the customer.
+model CaseNote {
+  id        String      @id @default(cuid())
+  caseId    String
+  case      SupportCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  authorId  String      @db.Uuid
+  author    User        @relation(fields: [authorId], references: [id])
+  note      String
+  createdAt DateTime    @default(now())
+
+  @@index([caseId, createdAt])
+}
+
+// Status-change history for a case — "view case history" in the admin UI.
+model CaseEvent {
+  id         String       @id @default(cuid())
+  caseId     String
+  case       SupportCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  fromStatus CaseStatus?
+  toStatus   CaseStatus
+  actorId    String?      @db.Uuid
+  actor      User?        @relation(fields: [actorId], references: [id])
+  note       String?
+  createdAt  DateTime     @default(now())
+
+  @@index([caseId, createdAt])
+}
+
+// Lightweight audit trail for sensitive admin actions (refund decisions,
+// complaint/order status changes, role changes). Deliberately a flat log,
+// not event sourcing — nothing reads it back into application state.
+model AdminAuditLog {
+  id            String   @id @default(cuid())
+  actorId       String   @db.Uuid
+  actor         User     @relation(fields: [actorId], references: [id])
+  action        String
+  entityType    String
+  entityId      String
+  previousState Json?
+  newState      Json?
+  createdAt     DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }

@@ -9,7 +9,9 @@ import AdminSearch from "../component/admin/AdminSearch";
 import AdminList from "../component/admin/AdminList";
 
 const formatDate = (value) =>
-  new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
+  new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(
+    new Date(value),
+  );
 
 const Flag = ({ label, tone }) => (
   <span
@@ -28,7 +30,9 @@ const AdminCustomers = () => {
   const customersQuery = useQuery({
     queryKey: ["admin", "customers", { query }],
     queryFn: () =>
-      request(`/api/admin/customers${query ? `?q=${encodeURIComponent(query)}` : ""}`),
+      request(
+        `/api/admin/customers${query ? `?q=${encodeURIComponent(query)}` : ""}`,
+      ),
     enabled: Boolean(session),
   });
   const customers = customersQuery.data || [];
@@ -66,9 +70,15 @@ const AdminCustomers = () => {
       label: "Email",
       render: (row) =>
         row.emailVerified ? (
-          <Flag label="Verified" tone="border-emerald-200 bg-emerald-50 text-emerald-800" />
+          <Flag
+            label="Verified"
+            tone="border-emerald-200 bg-emerald-50 text-emerald-800"
+          />
         ) : (
-          <Flag label="Unverified" tone="border-(--color-accent-orange) text-(--color-accent-orange)" />
+          <Flag
+            label="Unverified"
+            tone="border-(--color-accent-orange) text-(--color-accent-orange)"
+          />
         ),
     },
     {
@@ -76,7 +86,10 @@ const AdminCustomers = () => {
       label: "Marketing",
       render: (row) =>
         row.marketingOptIn ? (
-          <Flag label="Opted in" tone="border-[var(--line)] text-[var(--ink-700)]" />
+          <Flag
+            label="Opted in"
+            tone="border-[var(--line)] text-[var(--ink-700)]"
+          />
         ) : (
           <span className="text-[var(--ink-300)]">—</span>
         ),
@@ -102,14 +115,26 @@ const AdminCustomers = () => {
     },
   ];
 
-  const optedIn = customers.filter((customer) => customer.marketingOptIn).length;
+  const optedIn = customers.filter(
+    (customer) => customer.marketingOptIn,
+  ).length;
 
   return (
     <main className="max-w-7xl py-10 md:py-14">
       <AdminPageHeader
         title="Customers"
-        count={customersQuery.isPending ? undefined : `${customers.length} shown`}
+        count={
+          customersQuery.isPending ? undefined : `${customers.length} shown`
+        }
         subtitle={`${optedIn} opted into marketing`}
+        actions={
+          <a
+            href="/api/admin/export/customers"
+            className="border border-[var(--line)] px-4 py-2.5 text-[12px] font-semibold text-[var(--ink-700)] transition-colors hover:border-[var(--ink-900)]"
+          >
+            Export CSV
+          </a>
+        }
       />
 
       <div className="mt-6">
@@ -131,7 +156,9 @@ const AdminCustomers = () => {
           onRowClick={(row) => navigate(`/admin/customers/${row.id}`)}
           emptyTitle={query ? "No customers match" : "No customers yet"}
           emptyMessage={
-            query ? "Try a different name or email." : "Customers appear here once they sign up."
+            query
+              ? "Try a different name or email."
+              : "Customers appear here once they sign up."
           }
         />
       </div>

@@ -36,20 +36,17 @@ const FirstOrderPromoBanner = () => {
   if (!promo?.eligible || dismissed) return null;
 
   return (
-    <aside className="relative z-30 bg-black px-6 py-4 text-white md:px-12">
-      <div className="mx-auto flex max-w-7xl items-start justify-between gap-6">
-        <div className="min-w-0 text-sm leading-6">
-          <p className="font-semibold">{promo.bannerMessage}</p>
-          <p className="text-gray-300">
-            {promo.discountPercent}% off your first order
-            {promo.freeShipping ? " · Free shipping" : ""}
-          </p>
-        </div>
+    <aside className="relative z-30 bg-black px-4 py-2 text-white md:px-12">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+        <p className="min-w-0 truncate text-xs font-medium md:text-sm">
+          {promo.bannerMessage} — {promo.discountPercent}% off your first order
+          {promo.freeShipping ? " · Free shipping" : ""}
+        </p>
         <button
           type="button"
           aria-label="Dismiss first-order promotion"
           onClick={() => setDismissed(true)}
-          className="shrink-0 text-xl leading-none text-gray-300 hover:text-white"
+          className="shrink-0 text-lg leading-none text-gray-300 hover:text-white"
         >
           ×
         </button>

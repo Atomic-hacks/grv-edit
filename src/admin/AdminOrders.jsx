@@ -43,6 +43,10 @@ const AdminOrders = () => {
   const [detailError, setDetailError] = useState("");
   const [savingStatus, setSavingStatus] = useState(false);
   const [pendingStatus, setPendingStatus] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkStatus, setBulkStatus] = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkError, setBulkError] = useState("");
 
   // Shipping and delivery notices are routine and reversible enough to send
   // on a single click; cancelling restocks inventory, so it asks first.
@@ -141,6 +145,40 @@ const AdminOrders = () => {
         ? ["DELIVERED", "CANCELLED"]
         : [];
 
+  const toggleSelected = (id) => {
+    setSelectedIds((current) =>
+      current.includes(id)
+        ? current.filter((entry) => entry !== id)
+        : [...current, id],
+    );
+  };
+
+  const applyBulkStatus = async () => {
+    if (!bulkStatus || selectedIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Mark ${selectedIds.length} order${selectedIds.length === 1 ? "" : "s"} as ${statusLabel(bulkStatus)}? This emails each customer${bulkStatus === "CANCELLED" ? " and returns stock to inventory" : ""}.`,
+      )
+    ) {
+      return;
+    }
+    setBulkSaving(true);
+    setBulkError("");
+    try {
+      await request("/api/admin/orders/bulk-status", {
+        method: "PUT",
+        body: JSON.stringify({ ids: selectedIds, status: bulkStatus }),
+      });
+      setSelectedIds([]);
+      setBulkStatus("");
+      await queryClient.invalidateQueries({ queryKey: ["admin", "orders"] });
+    } catch (bulkErr) {
+      setBulkError(bulkErr.message || "Bulk update failed.");
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   return (
     <main className="mx-auto max-w-7xl px-6 py-12 md:px-12 md:py-20">
       <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
@@ -156,6 +194,12 @@ const AdminOrders = () => {
             Review purchases, fulfillment, and payment details.
           </p>
         </div>
+        <a
+          href="/api/admin/export/orders"
+          className="border border-[var(--line)] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-700)] transition-colors hover:border-[var(--ink-900)]"
+        >
+          Export CSV
+        </a>
       </div>
 
       <div className="mt-8 grid gap-3 sm:grid-cols-3">
@@ -240,10 +284,45 @@ const AdminOrders = () => {
         </div>
       )}
 
+      {selectedIds.length > 0 && (
+        <div className="mt-6 flex flex-wrap items-center gap-3 border border-[var(--ink-900)] bg-[var(--surface-muted)] px-4 py-3 text-sm">
+          <span className="font-medium">{selectedIds.length} selected</span>
+          <select
+            value={bulkStatus}
+            onChange={(event) => setBulkStatus(event.target.value)}
+            className="border border-[var(--line)] bg-white px-3 py-2 outline-none focus:border-[var(--ink-900)]"
+          >
+            <option value="">Set status to…</option>
+            <option value="SHIPPED">Shipped</option>
+            <option value="DELIVERED">Delivered</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+          <button
+            type="button"
+            onClick={applyBulkStatus}
+            disabled={!bulkStatus || bulkSaving}
+            className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-4 py-2 text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {bulkSaving ? <Spinner label="Applying" /> : "Apply"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedIds([])}
+            className="text-[var(--ink-500)] underline underline-offset-4"
+          >
+            Clear selection
+          </button>
+          {bulkError && <span className="text-red-700">{bulkError}</span>}
+        </div>
+      )}
+
       <div className="mt-8 overflow-x-auto border-t border-[var(--ink-900)]">
         <table className="w-full min-w-190 text-left text-sm">
           <thead className="border-b border-[var(--line)] text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
             <tr>
+              <th className="px-3 py-4 font-medium">
+                <span className="sr-only">Select</span>
+              </th>
               <th className="px-3 py-4 font-medium">Order</th>
               <th className="px-3 py-4 font-medium">Product</th>
               <th className="px-3 py-4 font-medium">Customer</th>
@@ -255,14 +334,14 @@ const AdminOrders = () => {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan="6" className="px-3 py-8 text-[var(--ink-500)]">
+                <td colSpan="7" className="px-3 py-8 text-[var(--ink-500)]">
                   <Spinner label="Loading orders" />
                 </td>
               </tr>
             )}
             {!loading && filteredOrders.length === 0 && (
               <tr>
-                <td colSpan="6" className="px-3 py-8 text-[var(--ink-500)]">
+                <td colSpan="7" className="px-3 py-8 text-[var(--ink-500)]">
                   No orders found.
                 </td>
               </tr>
@@ -273,6 +352,16 @@ const AdminOrders = () => {
                 onClick={() => openOrder(order.id)}
                 className="cursor-pointer border-b border-[var(--line)] transition-colors hover:bg-[var(--surface-muted)]"
               >
+                <td
+                  className="px-3 py-4"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(order.id)}
+                    onChange={() => toggleSelected(order.id)}
+                  />
+                </td>
                 <td className="px-3 py-4 font-medium">
                   <button
                     type="button"
@@ -290,7 +379,9 @@ const AdminOrders = () => {
                       className="h-14 w-10 object-cover"
                     />
                   ) : (
-                    <span className="text-xs text-[var(--ink-300)]">No image</span>
+                    <span className="text-xs text-[var(--ink-300)]">
+                      No image
+                    </span>
                   )}
                 </td>
                 <td className="px-3 py-4">
@@ -423,7 +514,8 @@ const AdminOrders = () => {
                     {pendingStatus && (
                       <div className="mt-4 border border-[var(--ink-900)] p-4">
                         <p className="text-sm font-semibold">
-                          Mark this order {statusLabel(pendingStatus).toLowerCase()}?
+                          Mark this order{" "}
+                          {statusLabel(pendingStatus).toLowerCase()}?
                         </p>
                         <p className="mt-1.5 text-xs leading-relaxed text-[var(--ink-500)]">
                           {TRANSITION_EFFECTS[pendingStatus]?.email}{" "}

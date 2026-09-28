@@ -67,7 +67,15 @@ const Card = ({
 
   return (
     <div className="group w-full">
-      {/* Image */}
+      {/* Image. 3:4 portrait is the ratio every product photo should be shot
+          or cropped to before upload — it's what every product card, the
+          wishlist grid and the brand/department tiles use, so a mismatched
+          photo is the one that stands out. object-top (rather than the
+          default center) keeps the crop anchored to the top of the frame,
+          which is where the garment/model starts in nearly every shot GRV
+          uses — so a photo that's slightly taller or shorter than 3:4 still
+          crops at the hem/background instead of randomly slicing through a
+          head or logo. */}
       <div className="relative aspect-3/4 w-full overflow-hidden bg-[var(--surface-muted)]">
         {!imagesLoaded && <div className="skeleton absolute inset-0 z-20" />}
         {badge && (
@@ -89,7 +97,7 @@ const Card = ({
           decoding="async"
           onLoad={() => markImageLoaded(primaryImage)}
           onError={() => markImageLoaded(primaryImage)}
-          className={`h-full w-full object-cover object-center transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          className={`h-full w-full object-cover object-top transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
             hasSecondImage
               ? "group-hover:scale-[1.02] group-hover:opacity-0"
               : "group-hover:scale-[1.03]"
@@ -105,7 +113,7 @@ const Card = ({
             decoding="async"
             onLoad={() => markImageLoaded(secondaryImage)}
             onError={() => markImageLoaded(secondaryImage)}
-            className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center opacity-0 transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.02] group-hover:opacity-100"
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover object-top opacity-0 transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.02] group-hover:opacity-100"
           />
         )}
 

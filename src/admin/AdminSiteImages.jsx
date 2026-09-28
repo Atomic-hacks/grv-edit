@@ -57,6 +57,27 @@ const AdminSiteImages = () => {
 
   const getValue = (key) => drafts[key] ?? images[key] ?? "";
 
+  const uploadVideo = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploadingKey("hero-video");
+    setError("");
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const result = await request("/api/admin/upload-video", {
+        method: "POST",
+        body,
+      });
+      setDrafts((current) => ({ ...current, "hero-video": result.url }));
+    } catch (uploadError) {
+      setError(uploadError.message);
+    } finally {
+      setUploadingKey(null);
+      event.target.value = "";
+    }
+  };
+
   const upload = async (key, event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -133,6 +154,56 @@ const AdminSiteImages = () => {
         />
       ) : (
         <div className="mt-8 divide-y divide-[var(--line)] border-t border-[var(--ink-900)]">
+          <section className="grid gap-5 py-6 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-center">
+            <div>
+              <h2 className="font-medium">Home hero video</h2>
+              <p className="mt-1 text-xs text-[var(--ink-500)]">hero-video</p>
+            </div>
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="h-24 w-32 shrink-0 overflow-hidden bg-[var(--surface-muted)]">
+                {getValue("hero-video") && (
+                  <video
+                    src={getValue("hero-video")}
+                    muted
+                    className="h-full w-full object-cover"
+                  />
+                )}
+              </div>
+              <p className="min-w-0 truncate text-xs text-[var(--ink-500)]">
+                {getValue("hero-video") || "Using the default hero video"}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 md:justify-end">
+              <label className="cursor-pointer border border-[var(--line)] px-3 py-2 text-sm hover:border-[var(--ink-900)]">
+                {uploadingKey === "hero-video" ? (
+                  <Spinner label="Uploading" />
+                ) : (
+                  "Upload"
+                )}
+                <input
+                  type="file"
+                  accept="video/*"
+                  onChange={uploadVideo}
+                  disabled={uploadingKey !== null || savingKey !== null}
+                  className="sr-only"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => save("hero-video")}
+                disabled={
+                  drafts["hero-video"] === undefined || savingKey !== null
+                }
+                className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {savingKey === "hero-video" ? (
+                  <Spinner label="Saving" />
+                ) : (
+                  "Save"
+                )}
+              </button>
+            </div>
+          </section>
           {imageKeys.map(([key, label]) => {
             const value = getValue(key);
             const dirty = drafts[key] !== undefined;

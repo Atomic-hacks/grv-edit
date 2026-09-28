@@ -27,6 +27,13 @@ const navigationGroups = [
     ],
   },
   {
+    name: "Support",
+    items: [
+      { label: "Refunds & Complaints", to: "/admin/cases" },
+      { label: "Analytics", to: "/admin/analytics" },
+    ],
+  },
+  {
     name: "Communication",
     items: [
       { label: "Messages", to: "/admin/contact-submissions" },
@@ -36,6 +43,10 @@ const navigationGroups = [
   {
     name: "Content",
     items: [{ label: "Journal", to: "/admin/journal" }],
+  },
+  {
+    name: "System",
+    items: [{ label: "Staff & Roles", to: "/admin/staff" }],
   },
 ];
 
