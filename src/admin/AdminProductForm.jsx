@@ -25,6 +25,7 @@ const emptyForm = {
   basePrice: "",
   discountPercent: "",
   imageUrl: "",
+  modelImages: [],
   archived: false,
   featured: false,
 };
@@ -51,8 +52,15 @@ const CategoryCheckboxRow = ({
   const isExpanded = expandedCategoryIds.has(category.id);
   const hasChildren = category.children.length > 0;
   return (
-    <div className={depth === 0 ? "border-b border-[var(--line)] last:border-b-0" : ""}>
-      <div className="flex items-center gap-3 px-4 py-3" style={{ paddingLeft: 16 + depth * 24 }}>
+    <div
+      className={
+        depth === 0 ? "border-b border-[var(--line)] last:border-b-0" : ""
+      }
+    >
+      <div
+        className="flex items-center gap-3 px-4 py-3"
+        style={{ paddingLeft: 16 + depth * 24 }}
+      >
         <input
           type="checkbox"
           checked={selectedCategoryIds.includes(category.id)}
@@ -66,16 +74,34 @@ const CategoryCheckboxRow = ({
             className={`flex flex-1 items-center justify-between text-left ${depth === 0 ? "text-[14px] font-medium" : "text-[13px]"}`}
           >
             {category.name}
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 10 10"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
+            >
               <path d="M2 3.5l3 3 3-3" />
             </svg>
           </button>
         ) : (
-          <span className={depth === 0 ? "text-[14px] font-medium" : "text-[13px]"}>{category.name}</span>
+          <span
+            className={depth === 0 ? "text-[14px] font-medium" : "text-[13px]"}
+          >
+            {category.name}
+          </span>
         )}
       </div>
       {isExpanded && hasChildren && (
-        <div className={depth === 0 ? "space-y-2 bg-[var(--surface-muted)] py-3" : "space-y-2 py-2"}>
+        <div
+          className={
+            depth === 0
+              ? "space-y-2 bg-[var(--surface-muted)] py-3"
+              : "space-y-2 py-2"
+          }
+        >
           {category.children.map((child) => (
             <CategoryCheckboxRow
               key={child.id}
@@ -118,14 +144,21 @@ const AdminProductForm = () => {
   const [stockDrafts, setStockDrafts] = useState({});
   const [variantSavingId, setVariantSavingId] = useState(null);
   const [variantAction, setVariantAction] = useState(null);
-  const [existingImageUploadingId, setExistingImageUploadingId] = useState(null);
+  const [existingImageUploadingId, setExistingImageUploadingId] =
+    useState(null);
   // The variant matrix: one row per color, one column per size — fills in
   // the "red has 5 in XL and 2 in SM, blue has 6 in XL and 2 in SM" case in
   // one submit instead of eight separate "add variant" round trips.
   const [matrixSizes, setMatrixSizes] = useState([]);
   const [sizeDraft, setSizeDraft] = useState("");
   const [matrixRows, setMatrixRows] = useState([
-    { key: "row-0", color: "", imageFile: null, imagePreviewUrl: "", stocks: {} },
+    {
+      key: "row-0",
+      color: "",
+      imageFile: null,
+      imagePreviewUrl: "",
+      stocks: {},
+    },
   ]);
   const [matrixSubmitting, setMatrixSubmitting] = useState(false);
   const [matrixError, setMatrixError] = useState("");
@@ -138,6 +171,7 @@ const AdminProductForm = () => {
   const [loading, setLoading] = useState(isEditingExisting);
   const [saving, setSaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
+  const [modelImageUploading, setModelImageUploading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -148,7 +182,9 @@ const AdminProductForm = () => {
       request("/api/admin/categories"),
       request("/api/filter-types"),
       request("/api/tags"),
-      isEditingExisting ? request(`/api/admin/products/${routeId}`) : Promise.resolve(null),
+      isEditingExisting
+        ? request(`/api/admin/products/${routeId}`)
+        : Promise.resolve(null),
     ])
       .then(([brandData, categoryData, filterTypeData, tagData, product]) => {
         if (cancelled) return;
@@ -163,10 +199,12 @@ const AdminProductForm = () => {
             brandId: product.brandId,
             basePrice: String(product.basePrice),
             discountPercent:
-              product.discountPercent === null || product.discountPercent === undefined
+              product.discountPercent === null ||
+              product.discountPercent === undefined
                 ? ""
                 : String(product.discountPercent),
             imageUrl: product.imageUrl || "",
+            modelImages: product.modelImages || [],
             archived: Boolean(product.archived),
             featured: Boolean(product.featured),
           });
@@ -185,7 +223,10 @@ const AdminProductForm = () => {
           setVariants(product.variants || []);
           setStockDrafts(
             Object.fromEntries(
-              (product.variants || []).map((variant) => [variant.id, String(variant.stock)]),
+              (product.variants || []).map((variant) => [
+                variant.id,
+                String(variant.stock),
+              ]),
             ),
           );
         }
@@ -203,7 +244,9 @@ const AdminProductForm = () => {
 
   const tree = buildCategoryTree(categories);
   const canArchive =
-    Boolean(productId) && variants.length > 0 && variants.every((variant) => variant.stock === 0);
+    Boolean(productId) &&
+    variants.length > 0 &&
+    variants.every((variant) => variant.stock === 0);
 
   const updateField = (event) => {
     const { name, value } = event.target;
@@ -234,7 +277,10 @@ const AdminProductForm = () => {
     const body = new FormData();
     body.append("file", file);
     try {
-      const result = await request("/api/admin/upload-image", { method: "POST", body });
+      const result = await request("/api/admin/upload-image", {
+        method: "POST",
+        body,
+      });
       if (!result.url) throw new Error("Image upload returned no URL");
       setForm((current) => ({ ...current, imageUrl: result.url }));
     } catch (uploadError) {
@@ -245,9 +291,44 @@ const AdminProductForm = () => {
     }
   };
 
+  // Photos of someone wearing the product — as many as the admin wants,
+  // shown on hover instead of the main product photo above.
+  const uploadModelImage = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setModelImageUploading(true);
+    setError("");
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const result = await request("/api/admin/upload-image", {
+        method: "POST",
+        body,
+      });
+      if (!result.url) throw new Error("Image upload returned no URL");
+      setForm((current) => ({
+        ...current,
+        modelImages: [...current.modelImages, result.url],
+      }));
+    } catch (uploadError) {
+      setError(uploadError.message);
+    } finally {
+      setModelImageUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const removeModelImage = (url) =>
+    setForm((current) => ({
+      ...current,
+      modelImages: current.modelImages.filter((item) => item !== url),
+    }));
+
   const toggleTag = (tagId) => {
     setSelectedTagIds((current) =>
-      current.includes(tagId) ? current.filter((value) => value !== tagId) : [...current, tagId],
+      current.includes(tagId)
+        ? current.filter((value) => value !== tagId)
+        : [...current, tagId],
     );
   };
 
@@ -256,7 +337,9 @@ const AdminProductForm = () => {
     setError("");
     setNotice("");
     if (selectedCategoryIds.length === 0) {
-      setError("Pick at least one category — check where this product belongs below.");
+      setError(
+        "Pick at least one category — check where this product belongs below.",
+      );
       return;
     }
     setSaving(true);
@@ -267,8 +350,10 @@ const AdminProductForm = () => {
         brandId: form.brandId,
         categoryIds: selectedCategoryIds,
         basePrice: form.basePrice,
-        discountPercent: form.discountPercent === "" ? null : form.discountPercent,
+        discountPercent:
+          form.discountPercent === "" ? null : form.discountPercent,
         imageUrl: form.imageUrl,
+        modelImages: form.modelImages,
         archived: form.archived,
         featured: form.featured,
       };
@@ -298,7 +383,9 @@ const AdminProductForm = () => {
   const addMatrixSize = (rawSize) => {
     const size = rawSize.trim();
     if (!size) return;
-    setMatrixSizes((current) => (current.includes(size) ? current : [...current, size]));
+    setMatrixSizes((current) =>
+      current.includes(size) ? current : [...current, size],
+    );
   };
 
   const removeMatrixSize = (size) => {
@@ -317,7 +404,13 @@ const AdminProductForm = () => {
   const addMatrixRow = () =>
     setMatrixRows((current) => [
       ...current,
-      { key: `row-${Date.now()}`, color: "", imageFile: null, imagePreviewUrl: "", stocks: {} },
+      {
+        key: `row-${Date.now()}`,
+        color: "",
+        imageFile: null,
+        imagePreviewUrl: "",
+        stocks: {},
+      },
     ]);
 
   const removeMatrixRow = (key) =>
@@ -328,27 +421,37 @@ const AdminProductForm = () => {
     });
 
   const updateMatrixRowColor = (key, color) =>
-    setMatrixRows((current) => current.map((row) => (row.key === key ? { ...row, color } : row)));
+    setMatrixRows((current) =>
+      current.map((row) => (row.key === key ? { ...row, color } : row)),
+    );
 
   const updateMatrixRowImage = (key, file) =>
     setMatrixRows((current) =>
       current.map((row) => {
         if (row.key !== key) return row;
         if (row.imagePreviewUrl) URL.revokeObjectURL(row.imagePreviewUrl);
-        return { ...row, imageFile: file, imagePreviewUrl: file ? URL.createObjectURL(file) : "" };
+        return {
+          ...row,
+          imageFile: file,
+          imagePreviewUrl: file ? URL.createObjectURL(file) : "",
+        };
       }),
     );
 
   const updateMatrixCell = (key, size, value) =>
     setMatrixRows((current) =>
       current.map((row) =>
-        row.key === key ? { ...row, stocks: { ...row.stocks, [size]: value } } : row,
+        row.key === key
+          ? { ...row, stocks: { ...row.stocks, [size]: value } }
+          : row,
       ),
     );
 
   const matrixVariantCount = matrixRows.reduce(
     (total, row) =>
-      total + matrixSizes.filter((size) => (row.stocks[size] ?? "").trim() !== "").length,
+      total +
+      matrixSizes.filter((size) => (row.stocks[size] ?? "").trim() !== "")
+        .length,
     0,
   );
 
@@ -361,9 +464,17 @@ const AdminProductForm = () => {
     if (!sourceColor) return;
 
     const newColorNames = [
-      ...new Set(quickFillColorsInput.split(",").map((name) => name.trim()).filter(Boolean)),
+      ...new Set(
+        quickFillColorsInput
+          .split(",")
+          .map((name) => name.trim())
+          .filter(Boolean),
+      ),
     ].filter(
-      (name) => !existingColors.some((color) => color.toLowerCase() === name.toLowerCase()),
+      (name) =>
+        !existingColors.some(
+          (color) => color.toLowerCase() === name.toLowerCase(),
+        ),
     );
     if (newColorNames.length === 0) return;
 
@@ -372,13 +483,15 @@ const AdminProductForm = () => {
     const sizeStock = new Map();
     for (const variant of variants) {
       if (variant.color !== sourceColor) continue;
-      if (!sizeStock.has(variant.size)) sizeStock.set(variant.size, variant.stock);
+      if (!sizeStock.has(variant.size))
+        sizeStock.set(variant.size, variant.stock);
     }
     if (sizeStock.size === 0) return;
 
     setMatrixSizes((current) => {
       const next = [...current];
-      for (const size of sizeStock.keys()) if (!next.includes(size)) next.push(size);
+      for (const size of sizeStock.keys())
+        if (!next.includes(size)) next.push(size);
       return next;
     });
 
@@ -389,7 +502,9 @@ const AdminProductForm = () => {
       // Replace the untouched starter row instead of leaving it sitting
       // there blank alongside the new pre-filled ones.
       const base =
-        current.length === 1 && !current[0].color && Object.keys(current[0].stocks).length === 0
+        current.length === 1 &&
+        !current[0].color &&
+        Object.keys(current[0].stocks).length === 0
           ? []
           : current;
       const newRows = newColorNames.map((color, index) => ({
@@ -431,10 +546,15 @@ const AdminProductForm = () => {
         try {
           const body = new FormData();
           body.append("file", row.imageFile);
-          const uploadResult = await request("/api/admin/upload-image", { method: "POST", body });
+          const uploadResult = await request("/api/admin/upload-image", {
+            method: "POST",
+            body,
+          });
           imageUrl = uploadResult.url;
         } catch (uploadError) {
-          failures.push(`${row.color}: photo upload failed — ${uploadError.message}`);
+          failures.push(
+            `${row.color}: photo upload failed — ${uploadError.message}`,
+          );
         }
       }
 
@@ -443,17 +563,28 @@ const AdminProductForm = () => {
         if (!raw) continue;
         const stock = Number(raw);
         if (!Number.isInteger(stock) || stock < 0) {
-          failures.push(`${row.color} / ${size}: stock must be a whole number, 0 or more`);
+          failures.push(
+            `${row.color} / ${size}: stock must be a whole number, 0 or more`,
+          );
           continue;
         }
-        const sku = `${slugify(form.name)}-${slugify(row.color)}-${slugify(size)}`
-          .toUpperCase()
-          .slice(0, 64);
+        const sku =
+          `${slugify(form.name)}-${slugify(row.color)}-${slugify(size)}`
+            .toUpperCase()
+            .slice(0, 64);
         try {
-          const variant = await request(`/api/admin/products/${productId}/variants`, {
-            method: "POST",
-            body: JSON.stringify({ color: row.color.trim(), size, sku, stock }),
-          });
+          const variant = await request(
+            `/api/admin/products/${productId}/variants`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                color: row.color.trim(),
+                size,
+                sku,
+                stock,
+              }),
+            },
+          );
           const savedVariant = imageUrl
             ? await request(`/api/admin/variants/${variant.id}/images`, {
                 method: "POST",
@@ -461,7 +592,10 @@ const AdminProductForm = () => {
               })
             : variant;
           setVariants((current) => [...current, savedVariant]);
-          setStockDrafts((current) => ({ ...current, [savedVariant.id]: String(savedVariant.stock) }));
+          setStockDrafts((current) => ({
+            ...current,
+            [savedVariant.id]: String(savedVariant.stock),
+          }));
           createdCount += 1;
           // Clear the cell so re-submitting after fixing a failure elsewhere
           // in the grid doesn't try to create this one a second time.
@@ -474,7 +608,9 @@ const AdminProductForm = () => {
 
     setMatrixSubmitting(false);
     if (createdCount > 0) {
-      setMatrixNotice(`Created ${createdCount} variant${createdCount === 1 ? "" : "s"}.`);
+      setMatrixNotice(
+        `Created ${createdCount} variant${createdCount === 1 ? "" : "s"}.`,
+      );
       await queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
     }
     if (failures.length > 0) {
@@ -488,13 +624,21 @@ const AdminProductForm = () => {
     try {
       const body = new FormData();
       body.append("file", file);
-      const uploadResult = await request("/api/admin/upload-image", { method: "POST", body });
-      const updatedVariant = await request(`/api/admin/variants/${variantId}/images`, {
+      const uploadResult = await request("/api/admin/upload-image", {
         method: "POST",
-        body: JSON.stringify({ url: uploadResult.url }),
+        body,
       });
+      const updatedVariant = await request(
+        `/api/admin/variants/${variantId}/images`,
+        {
+          method: "POST",
+          body: JSON.stringify({ url: uploadResult.url }),
+        },
+      );
       setVariants((current) =>
-        current.map((item) => (item.id === updatedVariant.id ? updatedVariant : item)),
+        current.map((item) =>
+          item.id === updatedVariant.id ? updatedVariant : item,
+        ),
       );
     } catch (uploadError) {
       setError(uploadError.message);
@@ -514,12 +658,17 @@ const AdminProductForm = () => {
     setVariantAction("saving");
     setError("");
     try {
-      const updatedVariant = await request(`/api/admin/variants/${variant.id}`, {
-        method: "PUT",
-        body: JSON.stringify({ stock }),
-      });
+      const updatedVariant = await request(
+        `/api/admin/variants/${variant.id}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ stock }),
+        },
+      );
       setVariants((current) =>
-        current.map((item) => (item.id === updatedVariant.id ? updatedVariant : item)),
+        current.map((item) =>
+          item.id === updatedVariant.id ? updatedVariant : item,
+        ),
       );
     } catch (variantError) {
       setError(variantError.message);
@@ -535,7 +684,9 @@ const AdminProductForm = () => {
     setError("");
     try {
       await request(`/api/admin/variants/${variantId}`, { method: "DELETE" });
-      setVariants((current) => current.filter((variant) => variant.id !== variantId));
+      setVariants((current) =>
+        current.filter((variant) => variant.id !== variantId),
+      );
       setStockDrafts((current) => {
         const next = { ...current };
         delete next[variantId];
@@ -549,12 +700,16 @@ const AdminProductForm = () => {
     }
   };
 
-  const tagsByType = (slug) => tags.filter((tag) => tag.filterType?.slug === slug);
+  const tagsByType = (slug) =>
+    tags.filter((tag) => tag.filterType?.slug === slug);
 
   if (loading) {
     return (
       <main className="py-20">
-        <Spinner label="Loading product" className="text-sm text-[var(--ink-500)]" />
+        <Spinner
+          label="Loading product"
+          className="text-sm text-[var(--ink-500)]"
+        />
       </main>
     );
   }
@@ -575,8 +730,16 @@ const AdminProductForm = () => {
         }
       />
 
-      {error && <InlineNotice tone="error" className="mt-6">{error}</InlineNotice>}
-      {notice && <InlineNotice tone="success" className="mt-6">{notice}</InlineNotice>}
+      {error && (
+        <InlineNotice tone="error" className="mt-6">
+          {error}
+        </InlineNotice>
+      )}
+      {notice && (
+        <InlineNotice tone="success" className="mt-6">
+          {notice}
+        </InlineNotice>
+      )}
 
       <form onSubmit={saveProduct} className="mt-8 space-y-8">
         <div className="grid gap-5 md:grid-cols-2">
@@ -601,7 +764,9 @@ const AdminProductForm = () => {
             >
               <option value="">Select a brand</option>
               {brands.map((brand) => (
-                <option key={brand.id} value={brand.id}>{brand.name}</option>
+                <option key={brand.id} value={brand.id}>
+                  {brand.name}
+                </option>
               ))}
             </select>
           </label>
@@ -654,7 +819,10 @@ const AdminProductForm = () => {
             />
             {imageUploading && (
               <span className="mt-2 block">
-                <Spinner label="Uploading image" className="text-xs text-[var(--ink-500)]" />
+                <Spinner
+                  label="Uploading image"
+                  className="text-xs text-[var(--ink-500)]"
+                />
               </span>
             )}
           </label>
@@ -663,16 +831,64 @@ const AdminProductForm = () => {
         {form.imageUrl && (
           <div>
             <p className="mb-2 text-sm font-medium">Image preview</p>
-            <img src={form.imageUrl} alt="Product preview" className="h-40 w-32 object-cover" />
+            <img
+              src={form.imageUrl}
+              alt="Product preview"
+              className="h-40 w-32 object-cover"
+            />
           </div>
         )}
+
+        {/* As many as the admin wants, shown on hover instead of the main
+            photo above — separate from variant colour photos entirely. */}
+        <div>
+          <p className="mb-2 text-sm font-medium">Model images</p>
+          <p className="mb-3 text-xs text-[var(--ink-500)]">
+            Photos of someone wearing the product. The first one shows on hover
+            in place of the main product image above.
+          </p>
+          {form.modelImages.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-3">
+              {form.modelImages.map((url) => (
+                <div key={url} className="relative">
+                  <img src={url} alt="" className="h-32 w-24 object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeModelImage(url)}
+                    aria-label="Remove model image"
+                    className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center bg-white/90 text-xs font-semibold text-[var(--ink-900)] hover:bg-white"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <label className="inline-block cursor-pointer border border-[var(--line)] px-3 py-2 text-xs hover:border-[var(--ink-900)]">
+            {modelImageUploading ? (
+              <Spinner label="Uploading" />
+            ) : (
+              "Add model image"
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={modelImageUploading}
+              onChange={uploadModelImage}
+            />
+          </label>
+        </div>
 
         {/* Where this belongs — a product can be in as many of these as
             apply. Checking "Bags" under Women and "Bags" under Accessories
             is two clicks, and it shows up browsing either. */}
         <fieldset className="border-t border-[var(--line)] pt-6">
           <legend className="text-sm font-medium">
-            Categories <span className="font-normal text-[var(--ink-500)]">— pick every one that applies</span>
+            Categories{" "}
+            <span className="font-normal text-[var(--ink-500)]">
+              — pick every one that applies
+            </span>
           </legend>
           <div className="mt-4 border border-[var(--line)]">
             {tree.map((major) => (
@@ -688,13 +904,20 @@ const AdminProductForm = () => {
             ))}
           </div>
           <p className="mt-2 text-xs text-[var(--ink-500)]">
-            Need a category that isn't here? <Link to="/admin/categories" className="underline">Add it</Link> — it'll show up here immediately.
+            Need a category that isn't here?{" "}
+            <Link to="/admin/categories" className="underline">
+              Add it
+            </Link>{" "}
+            — it'll show up here immediately.
           </p>
         </fieldset>
 
         <fieldset className="border-t border-[var(--line)] pt-6">
           <legend className="text-sm font-medium">
-            Tags <span className="font-normal text-[var(--ink-500)]">— powers Mood, Occasion, Weather and Style discovery</span>
+            Tags{" "}
+            <span className="font-normal text-[var(--ink-500)]">
+              — powers Mood, Occasion, Weather and Style discovery
+            </span>
           </legend>
           <div className="mt-4 grid gap-6 sm:grid-cols-2">
             {filterTypes.map((filterType) => (
@@ -704,7 +927,10 @@ const AdminProductForm = () => {
                 </h2>
                 <div className="mt-3 space-y-2">
                   {tagsByType(filterType.slug).map((tag) => (
-                    <label key={tag.id} className="flex items-center gap-2 text-sm">
+                    <label
+                      key={tag.id}
+                      className="flex items-center gap-2 text-sm"
+                    >
                       <input
                         type="checkbox"
                         checked={selectedTagIds.includes(tag.id)}
@@ -725,12 +951,19 @@ const AdminProductForm = () => {
               type="checkbox"
               name="featured"
               checked={form.featured}
-              onChange={(event) => setForm((current) => ({ ...current, featured: event.target.checked }))}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  featured: event.target.checked,
+                }))
+              }
               className="mt-1 h-4 w-4 accent-(--color-accent-orange)"
             />
             <span>
               <span className="block font-medium">Featured</span>
-              <span className="mt-1 block text-[var(--ink-500)]">Editorial pick — shown in featured collections.</span>
+              <span className="mt-1 block text-[var(--ink-500)]">
+                Editorial pick — shown in featured collections.
+              </span>
             </span>
           </label>
           {productId && (
@@ -740,12 +973,19 @@ const AdminProductForm = () => {
                 name="archived"
                 checked={form.archived}
                 disabled={!canArchive && !form.archived}
-                onChange={(event) => setForm((current) => ({ ...current, archived: event.target.checked }))}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    archived: event.target.checked,
+                  }))
+                }
                 className="mt-1 h-4 w-4 accent-black"
               />
               <span>
                 <span className="block font-medium">Archive this product</span>
-                <span className="mt-1 block text-[var(--ink-500)]">Only available when every variant is sold out.</span>
+                <span className="mt-1 block text-[var(--ink-500)]">
+                  Only available when every variant is sold out.
+                </span>
               </span>
             </label>
           )}
@@ -776,7 +1016,8 @@ const AdminProductForm = () => {
           <div className="mt-6 border border-[var(--line)] p-4">
             <p className="text-sm font-medium">Add variants</p>
             <p className="mt-1 text-xs text-[var(--ink-500)]">
-              Fill in a stock number for every color/size combination that exists — leave the rest blank.
+              Fill in a stock number for every color/size combination that
+              exists — leave the rest blank.
             </p>
 
             <div className="mt-4">
@@ -806,7 +1047,11 @@ const AdminProductForm = () => {
                       className="flex items-center gap-1.5 border border-[var(--ink-900)] bg-[var(--ink-900)] px-3 py-1.5 text-xs font-medium text-white"
                     >
                       {size}
-                      <button type="button" onClick={() => removeMatrixSize(size)} aria-label={`Remove size ${size}`}>
+                      <button
+                        type="button"
+                        onClick={() => removeMatrixSize(size)}
+                        aria-label={`Remove size ${size}`}
+                      >
                         ×
                       </button>
                     </span>
@@ -832,28 +1077,39 @@ const AdminProductForm = () => {
               <div className="mt-5 border border-dashed border-[var(--line)] p-3">
                 <p className="text-xs font-medium">Quick-fill more colors</p>
                 <p className="mt-1 text-xs text-[var(--ink-500)]">
-                  For colors that carry the exact same sizes and stock as one already on this
-                  product — copies it onto new rows below instead of you re-typing it.
+                  For colors that carry the exact same sizes and stock as one
+                  already on this product — copies it onto new rows below
+                  instead of you re-typing it.
                 </p>
                 <div className="mt-3 flex flex-wrap items-end gap-3">
                   <label className="text-sm">
-                    <span className="mb-1.5 block text-xs font-medium">Copy sizes/stock from</span>
+                    <span className="mb-1.5 block text-xs font-medium">
+                      Copy sizes/stock from
+                    </span>
                     <select
                       value={quickFillSourceColor || existingColors[0]}
-                      onChange={(event) => setQuickFillSourceColor(event.target.value)}
+                      onChange={(event) =>
+                        setQuickFillSourceColor(event.target.value)
+                      }
                       className="border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--ink-900)]"
                     >
                       {existingColors.map((color) => (
-                        <option key={color} value={color}>{color}</option>
+                        <option key={color} value={color}>
+                          {color}
+                        </option>
                       ))}
                     </select>
                   </label>
                   <label className="min-w-48 flex-1 text-sm">
-                    <span className="mb-1.5 block text-xs font-medium">New colors (comma-separated)</span>
+                    <span className="mb-1.5 block text-xs font-medium">
+                      New colors (comma-separated)
+                    </span>
                     <input
                       type="text"
                       value={quickFillColorsInput}
-                      onChange={(event) => setQuickFillColorsInput(event.target.value)}
+                      onChange={(event) =>
+                        setQuickFillColorsInput(event.target.value)
+                      }
                       placeholder="Red, Blue, Green"
                       className="w-full border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-[var(--ink-900)]"
                     />
@@ -872,13 +1128,20 @@ const AdminProductForm = () => {
 
             <div className="mt-5 space-y-5">
               {matrixRows.map((row) => (
-                <div key={row.key} className="border-t border-[var(--line)] pt-4">
+                <div
+                  key={row.key}
+                  className="border-t border-[var(--line)] pt-4"
+                >
                   <div className="flex flex-wrap items-end gap-3">
                     <label className="text-sm">
-                      <span className="mb-1.5 block text-xs font-medium">Color</span>
+                      <span className="mb-1.5 block text-xs font-medium">
+                        Color
+                      </span>
                       <input
                         value={row.color}
-                        onChange={(event) => updateMatrixRowColor(row.key, event.target.value)}
+                        onChange={(event) =>
+                          updateMatrixRowColor(row.key, event.target.value)
+                        }
                         className="w-40 border border-[var(--line)] px-3 py-2 outline-none focus:border-[var(--ink-900)]"
                       />
                     </label>
@@ -888,11 +1151,20 @@ const AdminProductForm = () => {
                         type="file"
                         accept="image/*"
                         className="sr-only"
-                        onChange={(event) => updateMatrixRowImage(row.key, event.target.files?.[0] || null)}
+                        onChange={(event) =>
+                          updateMatrixRowImage(
+                            row.key,
+                            event.target.files?.[0] || null,
+                          )
+                        }
                       />
                     </label>
                     {row.imagePreviewUrl && (
-                      <img src={row.imagePreviewUrl} alt="" className="h-12 w-10 object-cover" />
+                      <img
+                        src={row.imagePreviewUrl}
+                        alt=""
+                        className="h-12 w-10 object-cover"
+                      />
                     )}
                     {matrixRows.length > 1 && (
                       <button
@@ -905,18 +1177,28 @@ const AdminProductForm = () => {
                     )}
                   </div>
                   {matrixSizes.length === 0 ? (
-                    <p className="mt-3 text-xs text-[var(--ink-500)]">Add at least one size above to enter stock.</p>
+                    <p className="mt-3 text-xs text-[var(--ink-500)]">
+                      Add at least one size above to enter stock.
+                    </p>
                   ) : (
                     <div className="mt-3 flex flex-wrap gap-3">
                       {matrixSizes.map((size) => (
                         <label key={size} className="text-sm">
-                          <span className="mb-1.5 block text-xs font-medium">{size}</span>
+                          <span className="mb-1.5 block text-xs font-medium">
+                            {size}
+                          </span>
                           <input
                             type="number"
                             min="0"
                             step="1"
                             value={row.stocks[size] ?? ""}
-                            onChange={(event) => updateMatrixCell(row.key, size, event.target.value)}
+                            onChange={(event) =>
+                              updateMatrixCell(
+                                row.key,
+                                size,
+                                event.target.value,
+                              )
+                            }
                             placeholder="—"
                             className="w-20 border border-[var(--line)] px-2 py-2 outline-none focus:border-[var(--ink-900)]"
                           />
@@ -943,32 +1225,55 @@ const AdminProductForm = () => {
                 loadingLabel="Creating"
                 disabled={matrixVariantCount === 0}
               >
-                Create {matrixVariantCount || ""} variant{matrixVariantCount === 1 ? "" : "s"}
+                Create {matrixVariantCount || ""} variant
+                {matrixVariantCount === 1 ? "" : "s"}
               </SubmitButton>
             </div>
-            {matrixError && <InlineNotice tone="error" className="mt-4">{matrixError}</InlineNotice>}
-            {matrixNotice && <InlineNotice tone="success" className="mt-4">{matrixNotice}</InlineNotice>}
+            {matrixError && (
+              <InlineNotice tone="error" className="mt-4">
+                {matrixError}
+              </InlineNotice>
+            )}
+            {matrixNotice && (
+              <InlineNotice tone="success" className="mt-4">
+                {matrixNotice}
+              </InlineNotice>
+            )}
           </div>
 
           <div className="mt-6 space-y-2 border-t border-[var(--ink-900)] pt-2">
             {variants.length === 0 && (
               <p className="py-6 text-sm text-[var(--ink-500)]">
-                No variants yet — add at least one above (color, size and stock) before this product can be bought.
+                No variants yet — add at least one above (color, size and stock)
+                before this product can be bought.
               </p>
             )}
             {variants.map((variant) => (
-              <details key={variant.id} className="border-b border-[var(--line)]">
+              <details
+                key={variant.id}
+                className="border-b border-[var(--line)]"
+              >
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-sm marker:hidden">
                   <span className="min-w-0">
-                    <span className="font-medium">{variant.color} / {variant.size}</span>
-                    <span className="ml-3 font-mono text-xs text-[var(--ink-500)]">{variant.sku}</span>
+                    <span className="font-medium">
+                      {variant.color} / {variant.size}
+                    </span>
+                    <span className="ml-3 font-mono text-xs text-[var(--ink-500)]">
+                      {variant.sku}
+                    </span>
                   </span>
-                  <span className="shrink-0 text-[var(--ink-700)]">{variant.stock} in stock</span>
+                  <span className="shrink-0 text-[var(--ink-700)]">
+                    {variant.stock} in stock
+                  </span>
                 </summary>
                 <div className="grid gap-5 border-t border-[var(--line)] py-5 md:grid-cols-[auto_1fr]">
                   <div className="flex flex-col items-start gap-2">
                     {variant.images?.[0] ? (
-                      <img src={variant.images[0]} alt="" className="h-28 w-24 object-cover" />
+                      <img
+                        src={variant.images[0]}
+                        alt=""
+                        className="h-28 w-24 object-cover"
+                      />
                     ) : (
                       <div className="flex h-28 w-24 items-center justify-center bg-[var(--surface-muted)] text-center text-xs text-[var(--ink-300)]">
                         No image
@@ -1004,7 +1309,10 @@ const AdminProductForm = () => {
                         step="1"
                         value={stockDrafts[variant.id] ?? variant.stock}
                         onChange={(event) =>
-                          setStockDrafts((current) => ({ ...current, [variant.id]: event.target.value }))
+                          setStockDrafts((current) => ({
+                            ...current,
+                            [variant.id]: event.target.value,
+                          }))
                         }
                         onBlur={() => saveVariantStock(variant)}
                         className="w-24 border border-[var(--line)] px-2 py-2"
@@ -1016,7 +1324,12 @@ const AdminProductForm = () => {
                       disabled={variantSavingId === variant.id}
                       className="text-sm underline disabled:opacity-50"
                     >
-                      {variantSavingId === variant.id && variantAction === "saving" ? <Spinner label="Saving" /> : "Save stock"}
+                      {variantSavingId === variant.id &&
+                      variantAction === "saving" ? (
+                        <Spinner label="Saving" />
+                      ) : (
+                        "Save stock"
+                      )}
                     </button>
                     <button
                       type="button"
@@ -1024,7 +1337,12 @@ const AdminProductForm = () => {
                       disabled={variantSavingId === variant.id}
                       className="text-sm text-red-700 underline disabled:opacity-50"
                     >
-                      {variantSavingId === variant.id && variantAction === "deleting" ? <Spinner label="Deleting" /> : "Delete"}
+                      {variantSavingId === variant.id &&
+                      variantAction === "deleting" ? (
+                        <Spinner label="Deleting" />
+                      ) : (
+                        "Delete"
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1034,7 +1352,8 @@ const AdminProductForm = () => {
         </section>
       ) : (
         <p className="mt-10 border-t border-[var(--line)] pt-6 text-sm text-[var(--ink-500)]">
-          Save the product above to start adding variants — you'll stay right here.
+          Save the product above to start adding variants — you'll stay right
+          here.
         </p>
       )}
     </main>

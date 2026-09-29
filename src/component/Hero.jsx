@@ -114,8 +114,13 @@ const Hero = () => {
 
         {/* Time Display */}
         {time && (
-          <div className="absolute bottom-0 z-30 flex items-center justify-center w-full py-4 text-xs md:text-sm">
-            <p>Lagos {time}</p>
+          <div className="absolute bottom-0 z-30 flex flex-col items-center justify-center w-full gap-1 py-6 md:py-10">
+            <span className="text-[10px] uppercase tracking-[0.3em] text-white/60 md:text-xs">
+              Lagos
+            </span>
+            <p className="font-mono text-2xl font-semibold tabular-nums tracking-[0.08em] text-white md:text-4xl">
+              {time}
+            </p>
           </div>
         )}
       </section>

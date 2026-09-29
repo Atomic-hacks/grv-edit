@@ -503,6 +503,10 @@ model Product {
   discountPercent Float?
   createdAt       DateTime          @default(now())
   imageUrl        String?
+  // Photos of someone wearing the product — shown on hover instead of the
+  // main product photo. Product-level (not per-variant/colour) since these
+  // are general "here's how it looks worn" shots, not tied to one colour.
+  modelImages     String[]          @default([])
   // Editorial pick, toggled by hand — unlike "new," this is a deliberate
   // curatorial call, so it stays a plain flag rather than a tree membership.
   featured        Boolean           @default(false)

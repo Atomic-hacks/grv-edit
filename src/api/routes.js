@@ -894,6 +894,7 @@ const serializeProduct = (product) => {
     discountPercent: product.discountPercent,
     createdAt: product.createdAt,
     imageUrl: product.imageUrl,
+    modelImages: product.modelImages,
     isNew: isProductNew(product.createdAt),
     featured: product.featured,
     archived: product.archived,
@@ -3217,6 +3218,7 @@ const serializeAdminProduct = (product) => {
     basePrice: product.basePrice,
     discountPercent: product.discountPercent,
     imageUrl: product.imageUrl,
+    modelImages: product.modelImages,
     isNew: isProductNew(product.createdAt),
     featured: product.featured,
     archived: product.archived,
@@ -3246,6 +3248,7 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
     "basePrice",
     "discountPercent",
     "imageUrl",
+    "modelImages",
     "featured",
     "archived",
     "brandId",
@@ -3292,6 +3295,13 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
   }
   if (data.archived !== undefined && typeof data.archived !== "boolean") {
     return { error: "archived must be a boolean" };
+  }
+  if (
+    data.modelImages !== undefined &&
+    (!Array.isArray(data.modelImages) ||
+      data.modelImages.some((url) => typeof url !== "string"))
+  ) {
+    return { error: "modelImages must be an array of URLs" };
   }
 
   let categoryIds;

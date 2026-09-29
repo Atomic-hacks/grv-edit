@@ -25,6 +25,7 @@ const toStoredProduct = (product) => ({
   discountPercent: product.discountPercent ?? null,
   subcategory: product.subcategory || null,
   imageUrl: product.imageUrl || null,
+  modelImages: (product.modelImages || []).slice(0, 1),
   variants: (product.variants || []).slice(0, 1).map((variant) => ({
     id: variant.id,
     images: (variant.images || []).slice(0, 2),

@@ -22,7 +22,9 @@ const money = (value) => nairaFormatter.format(Number(value || 0));
 // every email client still renders tables predictably and flexbox is not
 // dependable here.
 const itemRow = (item) => {
-  const variantParts = [item.variant?.color, item.variant?.size].filter(Boolean);
+  const variantParts = [item.variant?.color, item.variant?.size].filter(
+    Boolean,
+  );
   const thumbnail = item.image
     ? `<img src="${escapeHtml(item.image)}" width="56" alt="" style="display:block;width:56px;height:72px;object-fit:cover;border:1px solid ${BORDER};" />`
     : `<div style="width:56px;height:72px;background:#f4f4f4;border:1px solid ${BORDER};"></div>`;
@@ -67,7 +69,10 @@ const totalsTable = (order) => {
   }
   if (order.firstOrderDiscountAmount > 0) {
     rows.push(
-      totalsRow("First-order discount", `- ${money(order.firstOrderDiscountAmount)}`),
+      totalsRow(
+        "First-order discount",
+        `- ${money(order.firstOrderDiscountAmount)}`,
+      ),
     );
   }
   rows.push(
@@ -108,7 +113,13 @@ const orderUrl = (orderId) =>
 // Every order email is the same document with a different opening: heading,
 // intro, status, items, totals, address, CTA. Keeping one builder means a
 // change to the order layout lands in all four emails at once.
-const orderEmail = ({ order, heading, intro, preheader, ctaLabel = "View your order" }) =>
+const orderEmail = ({
+  order,
+  heading,
+  intro,
+  preheader,
+  ctaLabel = "View your order",
+}) =>
   renderEmail({
     preheader,
     bodyHtml: `
@@ -145,8 +156,7 @@ export const orderShippedEmail = (order) =>
     order,
     preheader: `Order #${order.id} is on its way.`,
     heading: "Your order is on its way",
-    intro:
-      "Your order has left us and is heading to the address below.",
+    intro: "Your order has left us and is heading to the address below.",
     ctaLabel: "Track your order",
   });
 
@@ -170,7 +180,12 @@ export const orderCancelledEmail = (order) =>
 
 // Customer-service reply. Quotes the original message so the customer has
 // the context of what they asked without digging through their sent folder.
-export const supportReplyEmail = ({ customerName, subject, originalMessage, replyBody }) =>
+export const supportReplyEmail = ({
+  customerName,
+  subject,
+  originalMessage,
+  replyBody,
+}) =>
   renderEmail({
     preheader: `Re: ${subject}`,
     bodyHtml: `
