@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
+import { uploadMedia } from "../lib/uploadMedia";
 import { buildCategoryTree, getCategoryPath } from "../lib/categoryTree";
 import AdminPageHeader from "../component/admin/AdminPageHeader";
 import InlineNotice from "../component/ui/InlineNotice";
@@ -274,15 +275,9 @@ const AdminProductForm = () => {
     if (!file) return;
     setImageUploading(true);
     setError("");
-    const body = new FormData();
-    body.append("file", file);
     try {
-      const result = await request("/api/admin/upload-image", {
-        method: "POST",
-        body,
-      });
-      if (!result.url) throw new Error("Image upload returned no URL");
-      setForm((current) => ({ ...current, imageUrl: result.url }));
+      const uploadedUrl = await uploadMedia(request, file);
+      setForm((current) => ({ ...current, imageUrl: uploadedUrl }));
     } catch (uploadError) {
       setError(uploadError.message);
     } finally {
@@ -298,17 +293,11 @@ const AdminProductForm = () => {
     if (!file) return;
     setModelImageUploading(true);
     setError("");
-    const body = new FormData();
-    body.append("file", file);
     try {
-      const result = await request("/api/admin/upload-image", {
-        method: "POST",
-        body,
-      });
-      if (!result.url) throw new Error("Image upload returned no URL");
+      const uploadedUrl = await uploadMedia(request, file);
       setForm((current) => ({
         ...current,
-        modelImages: [...current.modelImages, result.url],
+        modelImages: [...current.modelImages, uploadedUrl],
       }));
     } catch (uploadError) {
       setError(uploadError.message);
@@ -544,13 +533,7 @@ const AdminProductForm = () => {
       let imageUrl = null;
       if (row.imageFile) {
         try {
-          const body = new FormData();
-          body.append("file", row.imageFile);
-          const uploadResult = await request("/api/admin/upload-image", {
-            method: "POST",
-            body,
-          });
-          imageUrl = uploadResult.url;
+          imageUrl = await uploadMedia(request, row.imageFile);
         } catch (uploadError) {
           failures.push(
             `${row.color}: photo upload failed — ${uploadError.message}`,
@@ -622,17 +605,12 @@ const AdminProductForm = () => {
     setExistingImageUploadingId(variantId);
     setError("");
     try {
-      const body = new FormData();
-      body.append("file", file);
-      const uploadResult = await request("/api/admin/upload-image", {
-        method: "POST",
-        body,
-      });
+      const uploadedUrl = await uploadMedia(request, file);
       const updatedVariant = await request(
         `/api/admin/variants/${variantId}/images`,
         {
           method: "POST",
-          body: JSON.stringify({ url: uploadResult.url }),
+          body: JSON.stringify({ url: uploadedUrl }),
         },
       );
       setVariants((current) =>

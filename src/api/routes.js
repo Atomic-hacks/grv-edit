@@ -11,8 +11,20 @@ import {
 } from "../server/emailSenders.js";
 import {
   queueOrderEmail,
+  queueBrandNotifications,
   EMAIL_TYPE_FOR_STATUS,
 } from "../server/orderEmails.js";
+import { runInBackground } from "../server/background.js";
+import { publicCacheControl } from "../server/publicCache.js";
+import {
+  isProductNew,
+  NEW_PRODUCT_WINDOW_MS,
+  productInclude,
+  serializeProduct,
+  getCategoryAndDescendantIds,
+  loadCategoryTree,
+  collectSubtreeIds,
+} from "../server/catalog.js";
 import {
   sendCampaign,
   countAudience,
@@ -47,6 +59,12 @@ import { getAdminAnalytics } from "./handlers/analytics.js";
 import { handleAdminExportRequest } from "./handlers/exports.js";
 import { handleAdminStaffRequest } from "./handlers/staff.js";
 import { handleAdminProductBulkRequest } from "./handlers/productBulk.js";
+import {
+  handleAdminContentSectionRequest,
+  listPublicContentSections,
+  isSafeUrl,
+} from "./handlers/contentSections.js";
+import { getUploadSignature } from "./handlers/uploads.js";
 
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -831,85 +849,12 @@ const initializeCloudinary = () => {
   return false;
 };
 
-const cloudinaryReady = initializeCloudinary();
+// Configures the shared Cloudinary client once at startup; the upload
+// signer (handlers/uploads.js) and case evidence uploads read from it.
+initializeCloudinary();
 
 const DEFAULT_PAGE_SIZE = 48;
 const MAX_PAGE_SIZE = 100;
-
-// A product is "new" for a fixed window after creation, computed at read
-// time rather than stored — nobody has to remember to flip a flag on and,
-// more importantly, nobody has to remember to flip it back off.
-const NEW_PRODUCT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-const isProductNew = (createdAt) =>
-  Date.now() - new Date(createdAt).getTime() < NEW_PRODUCT_WINDOW_MS;
-
-const productInclude = {
-  variants: true,
-  categories: {
-    include: {
-      category: {
-        select: { id: true, name: true, slug: true, parentId: true },
-      },
-    },
-  },
-  tags: {
-    include: {
-      tag: {
-        include: {
-          filterType: { select: { id: true, name: true, slug: true } },
-        },
-      },
-    },
-  },
-  brand: { select: { id: true, name: true, slug: true } },
-};
-
-// Flattens relations (categories, tags, brand) back to a plain shape the
-// frontend can use without knowing how any of this is modeled in the DB.
-const serializeProduct = (product) => {
-  const categories = product.categories.map(({ category }) => category);
-  // The single most useful category for a simple "category / detail" label
-  // on a product card: prefer a subcategory (it's the more specific thing)
-  // over a bare top-level category.
-  const leafCategory =
-    categories.find((category) => category.parentId) || categories[0] || null;
-
-  return {
-    id: product.id,
-    name: product.name,
-    categories,
-    categoryIds: categories.map((category) => category.id),
-    // Convenience field for display-only call sites that just want "the
-    // category name" without walking the tree themselves.
-    subcategory: leafCategory?.name || null,
-    tags: product.tags.map(({ tag }) => ({
-      id: tag.id,
-      name: tag.name,
-      slug: tag.slug,
-      filterTypeId: tag.filterTypeId,
-      filterType: tag.filterType,
-    })),
-    description: product.description,
-    basePrice: product.basePrice,
-    discountPercent: product.discountPercent,
-    createdAt: product.createdAt,
-    imageUrl: product.imageUrl,
-    modelImages: product.modelImages,
-    isNew: isProductNew(product.createdAt),
-    featured: product.featured,
-    archived: product.archived,
-    brandId: product.brandId,
-    brandName: product.brand?.name,
-    variants: product.variants.map((variant) => ({
-      id: variant.id,
-      color: variant.color,
-      size: variant.size,
-      stock: variant.stock,
-      sku: variant.sku,
-      images: variant.images,
-    })),
-  };
-};
 
 const serializeCategory = (category) => ({
   id: category.id,
@@ -919,42 +864,8 @@ const serializeCategory = (category) => ({
   showInNav: category.showInNav,
   navOrder: category.navOrder,
   description: category.description,
-  showOnHomepage: category.showOnHomepage,
-  homepageOrder: category.homepageOrder,
   productCount: category._count?.products,
 });
-
-// The tree can be arbitrarily deep (Men > Accessories > Jewelry, as far as
-// an admin nests it), so "this category and everything under it" walks the
-// whole subtree rather than assuming one level of children. One query for
-// the full flat list (small table) plus an in-memory walk beats a round
-// trip per level.
-const getCategoryAndDescendantIds = async (idOrSlug) => {
-  const all = await prisma.category.findMany({
-    select: { id: true, slug: true, parentId: true },
-  });
-  const target = all.find(
-    (category) => category.id === idOrSlug || category.slug === idOrSlug,
-  );
-  if (!target) return [];
-
-  const childrenOf = new Map();
-  for (const category of all) {
-    if (!category.parentId) continue;
-    const list = childrenOf.get(category.parentId) || [];
-    list.push(category.id);
-    childrenOf.set(category.parentId, list);
-  }
-
-  const result = [];
-  const stack = [target.id];
-  while (stack.length) {
-    const id = stack.pop();
-    result.push(id);
-    for (const childId of childrenOf.get(id) || []) stack.push(childId);
-  }
-  return result;
-};
 
 // Filters are multi-value: every key accepts repeated params
 // (?size=S&size=M) or a comma list (?size=S,M). Values within one filter
@@ -986,6 +897,22 @@ const buildProductsWhere = async (url) => {
     );
     const ids = [...new Set(idLists.flat())];
     and.push({ categories: { some: { categoryId: { in: ids } } } });
+  }
+
+  // The contextual subcategory filter: narrows *within* the category being
+  // browsed (Footwear → Sneakers), so it's AND'd with `category` above
+  // rather than merged into it. Each picked subcategory includes its own
+  // descendants; several picks are OR'd with each other.
+  const subcategorySlugs = filterValues(params, "subcategory");
+  if (subcategorySlugs.length) {
+    const { all, childrenOf } = await loadCategoryTree();
+    const ids = new Set();
+    for (const slug of subcategorySlugs) {
+      const match = all.find((category) => category.slug === slug);
+      if (match) collectSubtreeIds(childrenOf, match.id).forEach((id) => ids.add(id));
+    }
+    // An unknown slug should match nothing, not silently drop the filter.
+    and.push({ categories: { some: { categoryId: { in: [...ids] } } } });
   }
 
   const brands = filterValues(params, "brand");
@@ -1142,125 +1069,89 @@ const listProducts = async (url) => {
   });
 };
 
-// Facets for the filter drawer, kept deliberately small: brand, size,
-// color and price are structured data already; style is the one
-// admin-managed tag dimension. Derived from the live catalogue (not a
-// hardcoded list), so anything an admin adds becomes filterable the
-// moment a product uses it. Counts respect every *other* active filter
-// but not the facet's own, which is what lets a shopper widen a
-// selection without the options disappearing underneath them.
-const CLOTHING_SIZE_ORDER = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL"];
-
-const compareSizes = (a, b) => {
-  const numericA = Number(a);
-  const numericB = Number(b);
-  const aIsNumeric = Number.isFinite(numericA);
-  const bIsNumeric = Number.isFinite(numericB);
-  // Numeric (shoe) sizes sort numerically and sit before lettered sizes.
-  if (aIsNumeric && bIsNumeric) return numericA - numericB;
-  if (aIsNumeric) return -1;
-  if (bIsNumeric) return 1;
-
-  const indexA = CLOTHING_SIZE_ORDER.indexOf(a.toUpperCase());
-  const indexB = CLOTHING_SIZE_ORDER.indexOf(b.toUpperCase());
-  if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-  if (indexA !== -1) return -1;
-  if (indexB !== -1) return 1;
-  return a.localeCompare(b);
+// Filters are deliberately three: Brand, Subcategory, Price. Every option
+// is derived from the live catalogue, never a hardcoded list.
+//
+// Each facet's counts respect every *other* active filter but not its own
+// — otherwise ticking one brand would collapse the brand list to just that
+// brand and the shopper could never add a second.
+//
+// Subcategories are contextual: they're the direct children of the
+// category being browsed (Footwear → Sneakers, Boots, ...), and only the
+// ones that actually contain products here. Browsing Footwear can never
+// offer "Knitwear". Each child counts its whole subtree, so a product
+// filed under Tops > Shirts > Oxford still counts towards "Shirts".
+const urlWithout = (url, ...keys) => {
+  const copy = new URL(url);
+  for (const key of keys) copy.searchParams.delete(key);
+  return copy;
 };
 
-// "Red" and "red" are the same colour to a shopper even when they were
-// typed differently at product-entry time.
-const titleCase = (value) =>
-  value.toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase());
-
 const listProductFilters = async (url) => {
-  const where = await buildProductsWhere(url);
+  const [baseWhere, whereWithoutBrand, whereWithoutSubcategory, whereWithoutPrice] =
+    await Promise.all([
+      buildProductsWhere(url),
+      buildProductsWhere(urlWithout(url, "brand")),
+      buildProductsWhere(urlWithout(url, "subcategory")),
+      buildProductsWhere(urlWithout(url, "minPrice", "maxPrice")),
+    ]);
 
-  const [products, priceBounds] = await Promise.all([
-    prisma.product.findMany({
-      where,
-      select: {
-        brandId: true,
-        brand: { select: { id: true, name: true } },
-        tags: {
-          select: {
-            tag: {
-              select: {
-                name: true,
-                slug: true,
-                filterType: { select: { slug: true } },
-              },
-            },
-          },
-        },
-        variants: { select: { size: true, color: true, stock: true } },
-      },
+  const contextSlug = filterValues(url.searchParams, "category")[0];
+  const tree = contextSlug ? await loadCategoryTree() : null;
+  const contextCategory = tree?.all.find((category) => category.slug === contextSlug);
+  const children = contextCategory
+    ? [...(tree.childrenOf.get(contextCategory.id) || [])].sort(
+        (a, b) => (a.navOrder ?? 0) - (b.navOrder ?? 0) || a.name.localeCompare(b.name),
+      )
+    : [];
+
+  const [brandRows, subcategoryRows, priceBounds, total] = await Promise.all([
+    prisma.product.groupBy({
+      by: ["brandId"],
+      where: whereWithoutBrand,
+      _count: { _all: true },
     }),
+    children.length
+      ? prisma.product.findMany({
+          where: whereWithoutSubcategory,
+          select: { categories: { select: { categoryId: true } } },
+        })
+      : [],
     prisma.product.aggregate({
-      where,
+      where: whereWithoutPrice,
       _min: { basePrice: true },
       _max: { basePrice: true },
     }),
+    prisma.product.count({ where: baseWhere }),
   ]);
 
-  const tally = (entries) => {
-    const counts = new Map();
-    for (const { value, label } of entries) {
-      if (!value) continue;
-      const existing = counts.get(value);
-      if (existing) existing.count += 1;
-      else counts.set(value, { value, label: label ?? value, count: 1 });
-    }
-    return [...counts.values()];
-  };
+  const brandNames = await prisma.brand.findMany({
+    where: { id: { in: brandRows.map((row) => row.brandId) } },
+    select: { id: true, name: true },
+  });
+  const nameById = new Map(brandNames.map((brand) => [brand.id, brand.name]));
+  const brands = brandRows
+    .map((row) => ({
+      value: row.brandId,
+      label: nameById.get(row.brandId) || "Unknown brand",
+      count: row._count._all,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
-  const brands = tally(
-    products.map((product) => ({
-      value: product.brandId,
-      label: product.brand?.name,
-    })),
-  ).sort((a, b) => a.label.localeCompare(b.label));
-
-  const styles = tally(
-    products.flatMap((product) =>
-      product.tags
-        .filter(({ tag }) => tag.filterType?.slug === "style")
-        .map(({ tag }) => ({ value: tag.slug, label: tag.name })),
-    ),
-  ).sort((a, b) => a.label.localeCompare(b.label));
-
-  // Variant facets are per-product, not per-variant: a product with three
-  // black variants counts once against "Black".
-  const sizes = tally(
-    products.flatMap((product) =>
-      [...new Set(product.variants.map((variant) => variant.size))].map(
-        (size) => ({ value: size }),
-      ),
-    ),
-  ).sort((a, b) => compareSizes(a.value, b.value));
-
-  const colors = tally(
-    products.flatMap((product) =>
-      [
-        ...new Set(
-          product.variants.map((variant) => titleCase(variant.color || "")),
-        ),
-      ].map((color) => ({ value: color })),
-    ),
-  ).sort((a, b) => a.label.localeCompare(b.label));
-
-  const inStockCount = products.filter((product) =>
-    product.variants.some((variant) => variant.stock > 0),
-  ).length;
+  const subcategories = children
+    .map((child) => {
+      const subtree = new Set(collectSubtreeIds(tree.childrenOf, child.id));
+      const count = subcategoryRows.filter((product) =>
+        product.categories.some(({ categoryId }) => subtree.has(categoryId)),
+      ).length;
+      return { value: child.slug, label: child.name, count };
+    })
+    .filter((option) => option.count > 0);
 
   return jsonResponse({
-    total: products.length,
+    total,
     brands,
-    styles,
-    sizes,
-    colors,
-    inStockCount,
+    subcategories,
     price: {
       min: priceBounds._min.basePrice ?? 0,
       max: priceBounds._max.basePrice ?? 0,
@@ -1314,6 +1205,9 @@ const listBrands = async () => {
   return jsonResponse(brands);
 };
 
+
+
+
 const listTags = async () => {
   const tags = await prisma.tag.findMany({
     select: {
@@ -1330,142 +1224,12 @@ const listTags = async () => {
 
 const listFilterTypes = async () => {
   const filterTypes = await prisma.filterType.findMany({
-    select: { id: true, name: true, slug: true },
+    select: { id: true, name: true, slug: true, imageUrl: true },
     orderBy: { name: "asc" },
   });
   return jsonResponse(filterTypes);
 };
 
-const listSiteImages = async () => {
-  const images = await prisma.siteImage.findMany({
-    select: { key: true, imageUrl: true },
-    orderBy: { key: "asc" },
-  });
-  return jsonResponse(
-    Object.fromEntries(images.map((image) => [image.key, image.imageUrl])),
-  );
-};
-
-const updateAdminSiteImage = async (request, key) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  const body = await request.json();
-  if (typeof body.imageUrl !== "string" || !body.imageUrl.trim()) {
-    return jsonResponse({ error: "imageUrl must be a non-empty string" }, 400);
-  }
-
-  const image = await prisma.siteImage.update({
-    where: { key },
-    data: { imageUrl: body.imageUrl.trim() },
-    select: { key: true, imageUrl: true, updatedAt: true },
-  });
-  return jsonResponse(image);
-};
-
-const uploadImage = async (request) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  try {
-    const formData = await request.formData();
-    const file = formData.get("file");
-    if (!file || typeof file.arrayBuffer !== "function") {
-      return jsonResponse({ error: "A file field is required" }, 400);
-    }
-    if (!file.type?.startsWith("image/")) {
-      return jsonResponse({ error: "The file must be an image" }, 400);
-    }
-
-    if (!cloudinaryReady) {
-      console.error("Cloudinary credentials are not configured");
-      return jsonResponse({ error: "Image upload is not configured" }, 500);
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const result = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: "grv", resource_type: "image" },
-        (error, uploadResult) => {
-          if (error) reject(error);
-          else resolve(uploadResult);
-        },
-      );
-      uploadStream.end(buffer);
-    });
-
-    if (!result?.secure_url) {
-      console.error("Cloudinary returned no secure URL");
-      return jsonResponse({ error: "Image upload returned no URL" }, 502);
-    }
-    return jsonResponse({ url: result.secure_url });
-  } catch (error) {
-    console.error("Cloudinary image upload failed", error);
-    return jsonResponse({ error: "Image upload failed" }, 502);
-  }
-};
-
-// Same shape as uploadImage, for the hero video and any other site video.
-// Kept as a separate endpoint (rather than branching on file.type inside
-// uploadImage) because Cloudinary needs resource_type "video" up front, and
-// so the two have independent size limits.
-//
-// Note: Vercel serverless functions cap request bodies at ~4.5MB regardless
-// of plan. A video much larger than that will fail here with a 413 before
-// this code ever runs — encode the hero video accordingly (short loop,
-// compressed) or move this to a direct browser-to-Cloudinary upload if
-// larger files are needed.
-const MAX_VIDEO_BYTES = 4 * 1024 * 1024;
-
-const uploadVideo = async (request) => {
-  const guard = await requireAdmin(request);
-  if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  try {
-    const formData = await request.formData();
-    const file = formData.get("file");
-    if (!file || typeof file.arrayBuffer !== "function") {
-      return jsonResponse({ error: "A file field is required" }, 400);
-    }
-    if (!file.type?.startsWith("video/")) {
-      return jsonResponse({ error: "The file must be a video" }, 400);
-    }
-    if (file.size > MAX_VIDEO_BYTES) {
-      return jsonResponse(
-        {
-          error: "Video must be smaller than 4MB (Vercel's request size limit)",
-        },
-        400,
-      );
-    }
-
-    if (!cloudinaryReady) {
-      console.error("Cloudinary credentials are not configured");
-      return jsonResponse({ error: "Video upload is not configured" }, 500);
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const result = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: "grv/video", resource_type: "video" },
-        (error, uploadResult) => {
-          if (error) reject(error);
-          else resolve(uploadResult);
-        },
-      );
-      uploadStream.end(buffer);
-    });
-
-    if (!result?.secure_url) {
-      console.error("Cloudinary returned no secure URL");
-      return jsonResponse({ error: "Video upload returned no URL" }, 502);
-    }
-    return jsonResponse({ url: result.secure_url });
-  } catch (error) {
-    console.error("Cloudinary video upload failed", error);
-    return jsonResponse({ error: "Video upload failed" }, 502);
-  }
-};
 
 const listAdminBrands = async (request) => {
   const guard = await requireAdmin(request);
@@ -1478,50 +1242,98 @@ const listAdminBrands = async (request) => {
   return jsonResponse(brands);
 };
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Brand contact details only ever pick a *recipient* for brand-specific
+// notices — there is deliberately no sender/provider field to configure
+// (see src/server/emailSenders.js).
+const brandInputFrom = (body, { partial = false } = {}) => {
+  const data = {};
+  for (const field of ["name", "slug", "logo", "description"]) {
+    if (body[field] !== undefined) {
+      const value = typeof body[field] === "string" ? body[field].trim() : body[field];
+      data[field] = value === "" && field !== "name" && field !== "slug" ? null : value;
+    }
+  }
+  if (body.contactEmail !== undefined) {
+    const email = String(body.contactEmail || "").trim().toLowerCase();
+    if (email && !EMAIL_PATTERN.test(email)) {
+      return { error: "contactEmail must be a valid email address" };
+    }
+    data.contactEmail = email || null;
+  }
+  if (body.orderNotificationsEnabled !== undefined) {
+    data.orderNotificationsEnabled = Boolean(body.orderNotificationsEnabled);
+  }
+  if (!partial && (!data.name || !data.slug)) {
+    return { error: "name and slug are required" };
+  }
+  return { data };
+};
+
 const createAdminBrand = async (request) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
-  const body = await request.json();
-  if (!body.name || !body.slug) {
-    return jsonResponse({ error: "name and slug are required" }, 400);
+  const input = brandInputFrom(await request.json());
+  if (input.error) return jsonResponse({ error: input.error }, 400);
+  if (input.data.orderNotificationsEnabled && !input.data.contactEmail) {
+    return jsonResponse(
+      { error: "Add a contact email before turning on order notifications" },
+      400,
+    );
   }
 
-  const brand = await prisma.brand.create({
-    data: {
-      id: crypto.randomUUID(),
-      name: body.name,
-      slug: body.slug,
-      logo: body.logo,
-    },
-    include: { _count: { select: { products: true } } },
-  });
-  return jsonResponse(brand, 201);
+  try {
+    const brand = await prisma.brand.create({
+      data: { id: crypto.randomUUID(), ...input.data },
+      include: { _count: { select: { products: true } } },
+    });
+    return jsonResponse(brand, 201);
+  } catch (error) {
+    if (error?.code === "P2002") {
+      return jsonResponse({ error: "A brand with this slug already exists" }, 409);
+    }
+    throw error;
+  }
 };
 
 const updateAdminBrand = async (request, id) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
-  const body = await request.json();
-  const data = Object.fromEntries(
-    ["name", "slug", "logo", "description"]
-      .filter((field) => body[field] !== undefined)
-      .map((field) => [field, body[field]]),
-  );
-  if (Object.keys(data).length === 0) {
+  const input = brandInputFrom(await request.json(), { partial: true });
+  if (input.error) return jsonResponse({ error: input.error }, 400);
+  if (Object.keys(input.data).length === 0) {
+    return jsonResponse({ error: "At least one brand field is required" }, 400);
+  }
+
+  const existing = await prisma.brand.findUnique({
+    where: { id },
+    select: { contactEmail: true, orderNotificationsEnabled: true },
+  });
+  if (!existing) return jsonResponse({ error: "Brand not found" }, 404);
+  const merged = { ...existing, ...input.data };
+  if (merged.orderNotificationsEnabled && !merged.contactEmail) {
     return jsonResponse(
-      { error: "At least one of name, slug, logo, or description is required" },
+      { error: "Add a contact email before turning on order notifications" },
       400,
     );
   }
 
-  const brand = await prisma.brand.update({
-    where: { id },
-    data,
-    include: { _count: { select: { products: true } } },
-  });
-  return jsonResponse(brand);
+  try {
+    const brand = await prisma.brand.update({
+      where: { id },
+      data: input.data,
+      include: { _count: { select: { products: true } } },
+    });
+    return jsonResponse(brand);
+  } catch (error) {
+    if (error?.code === "P2002") {
+      return jsonResponse({ error: "A brand with this slug already exists" }, 409);
+    }
+    throw error;
+  }
 };
 
 const deleteAdminBrand = async (request, id) => {
@@ -1585,12 +1397,6 @@ const categoryInputFrom = async (body, { partial = false } = {}) => {
     data.description = body.description || null;
   if (body.showInNav !== undefined) data.showInNav = Boolean(body.showInNav);
   if (body.navOrder !== undefined) data.navOrder = Number(body.navOrder) || 0;
-  if (body.showOnHomepage !== undefined)
-    data.showOnHomepage = Boolean(body.showOnHomepage);
-  if (body.homepageOrder !== undefined) {
-    data.homepageOrder =
-      body.homepageOrder === null ? null : Number(body.homepageOrder);
-  }
 
   if (!partial && !data.name) return { error: "name is required" };
 
@@ -1726,7 +1532,19 @@ const filterTypeSelect = {
   id: true,
   name: true,
   slug: true,
+  imageUrl: true,
   _count: { select: { tags: true } },
+};
+
+// undefined = field not sent; null = cleared; otherwise a validated URL.
+const optionalSafeUrl = (value) => {
+  if (value === undefined) return { value: undefined };
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return { value: null };
+  if (!isSafeUrl(text)) {
+    return { error: 'Image must be a site path starting with "/" or an http(s) URL' };
+  }
+  return { value: text };
 };
 
 const listAdminFilterTypes = async (request) => {
@@ -1749,8 +1567,10 @@ const createAdminFilterType = async (request) => {
     return jsonResponse({ error: "name and slug are required" }, 400);
   }
 
+  const imageUrl = optionalSafeUrl(body.imageUrl);
+  if (imageUrl.error) return jsonResponse({ error: imageUrl.error }, 400);
   const filterType = await prisma.filterType.create({
-    data: { name: body.name, slug: body.slug },
+    data: { name: body.name, slug: body.slug, imageUrl: imageUrl.value ?? null },
     select: filterTypeSelect,
   });
   return jsonResponse(filterType, 201);
@@ -1766,9 +1586,12 @@ const updateAdminFilterType = async (request, id) => {
       .filter((field) => body[field] !== undefined)
       .map((field) => [field, body[field]]),
   );
+  const imageUrl = optionalSafeUrl(body.imageUrl);
+  if (imageUrl.error) return jsonResponse({ error: imageUrl.error }, 400);
+  if (imageUrl.value !== undefined) data.imageUrl = imageUrl.value;
   if (Object.keys(data).length === 0) {
     return jsonResponse(
-      { error: "At least one of name or slug is required" },
+      { error: "At least one of name, slug or image is required" },
       400,
     );
   }
@@ -1922,48 +1745,6 @@ const handleAdminTagRequest = async (request, segments) => {
   if (request.method === "PUT" && id) return updateAdminTag(request, id);
   if (request.method === "DELETE" && id) return deleteAdminTag(request, id);
   return jsonResponse({ error: "Method not allowed" }, 405);
-};
-
-// Public-facing "section" views are just categories with showOnHomepage
-// set — no separate Section model to keep synchronized with this one.
-// Includes descendants via the same tree-walk browsing uses, so a
-// homepage block pointed at "Lifestyle" (no children) or at a major
-// category with subcategories both work the same way.
-const publicProductArchivedFilter = { archived: false };
-
-const getCategoryWithProducts = async (where) => {
-  const category = await prisma.category.findFirst({ where });
-  if (!category) return null;
-  const ids = await getCategoryAndDescendantIds(category.id);
-  const products = await prisma.product.findMany({
-    where: {
-      ...publicProductArchivedFilter,
-      categories: { some: { categoryId: { in: ids } } },
-    },
-    include: productInclude,
-    orderBy: { createdAt: "desc" },
-  });
-  return {
-    ...serializeCategory(category),
-    products: products.map(serializeProduct),
-  };
-};
-
-const getPublicSection = async (slug) => {
-  const section = await getCategoryWithProducts({ slug });
-  if (!section) return jsonResponse({ error: "Not found" }, 404);
-  return jsonResponse(section);
-};
-
-const listHomepageSections = async () => {
-  const categories = await prisma.category.findMany({
-    where: { showOnHomepage: true },
-    orderBy: [{ homepageOrder: "asc" }, { createdAt: "asc" }],
-  });
-  const sections = await Promise.all(
-    categories.map((category) => getCategoryWithProducts({ id: category.id })),
-  );
-  return jsonResponse(sections.filter(Boolean));
 };
 
 const discountSelect = {
@@ -2486,13 +2267,9 @@ const dispatchOrderStatusSideEffects = (id, status, restockedVariants) => {
   if (emailType) queueOrderEmail(id, emailType);
 
   if (status === "CANCELLED" && restockedVariants?.length > 0) {
-    void processRestockNotificationsBestEffort(restockedVariants).catch(
-      (error) => {
-        console.error("Restock notification batch failed", {
-          orderId: id,
-          error,
-        });
-      },
+    runInBackground(
+      processRestockNotificationsBestEffort(restockedVariants),
+      `Restock notification batch for order ${id}`,
     );
   }
 };
@@ -4348,21 +4125,15 @@ const finalizeOrderFromReference = async (reference) => {
     return { order: createdOrder, created: false };
   }
 
-  // Fire and forget so order completion never depends on email providers.
+  // Off the response path so order completion never waits on an email
+  // provider — but kept alive with waitUntil so it actually finishes on
+  // Vercel instead of being frozen mid-send.
   queueOrderEmail(createdOrder.id, "ORDER_PAID");
-  void sendAdminOrderAlert(createdOrder).catch((error) => {
-    console.error("Admin order alert failed", {
-      orderId: createdOrder.id,
-      error,
-    });
-  });
-  void processOrderPaidNotificationsBestEffort(notificationsToProcess).catch(
-    (error) => {
-      console.error("Order notification batch failed", {
-        orderId: createdOrder.id,
-        error,
-      });
-    },
+  queueBrandNotifications(createdOrder.id);
+  runInBackground(sendAdminOrderAlert(createdOrder), `Admin order alert for ${createdOrder.id}`);
+  runInBackground(
+    processOrderPaidNotificationsBestEffort(notificationsToProcess),
+    `Order notification batch for ${createdOrder.id}`,
   );
 
   return { order: createdOrder, created: true };
@@ -5441,18 +5212,6 @@ const ROUTES = [
     errorMessage: "Could not verify your email",
   },
   {
-    method: "POST",
-    ...path("api", "admin", "upload-image"),
-    handler: ({ request }) => uploadImage(request),
-    errorMessage: "Image upload failed",
-  },
-  {
-    method: "POST",
-    ...path("api", "admin", "upload-video"),
-    handler: ({ request }) => uploadVideo(request),
-    errorMessage: "Video upload failed",
-  },
-  {
     method: "GET",
     ...path("api", "checkout", "verify"),
     handler: ({ request, url }) => verifyCheckout(request, url),
@@ -5606,20 +5365,25 @@ const ROUTES = [
     errorMessage: "Reminder check failed",
   },
   {
-    ...prefix("api", "admin", "site-images"),
-    handler: ({ request, segments }) => {
-      const key = segments[3] ? decodeURIComponent(segments[3]) : null;
-      if (request.method === "PUT" && key)
-        return updateAdminSiteImage(request, key);
-      return jsonResponse({ error: "Method not allowed" }, 405);
-    },
-    errorMessage: "Site image update failed",
+    ...prefix("api", "admin", "content-sections"),
+    handler: ({ request, segments }) =>
+      handleAdminContentSectionRequest(request, segments),
+    errorLog: "Content section request failed",
+    errorMessage: "Content section request failed",
   },
   {
     method: "GET",
-    ...path("api", "site-images"),
-    handler: () => listSiteImages(),
-    errorMessage: "Site images request failed",
+    ...path("api", "content-sections"),
+    handler: ({ url }) => listPublicContentSections(url),
+    errorLog: "Content sections request failed",
+    errorMessage: "Unable to load this page's content",
+  },
+  {
+    method: "POST",
+    ...path("api", "admin", "upload-signature"),
+    handler: ({ request }) => getUploadSignature(request),
+    errorLog: "Upload signature request failed",
+    errorMessage: "Unable to start the upload",
   },
   {
     ...prefix("api", "admin", "discounts"),
@@ -5799,16 +5563,6 @@ const ROUTES = [
   },
   {
     method: "GET",
-    ...path("api", "sections", "homepage"),
-    handler: () => listHomepageSections(),
-  },
-  {
-    method: "GET",
-    ...path("api", "sections", ":slug"),
-    handler: ({ params }) => getPublicSection(params.slug),
-  },
-  {
-    method: "GET",
     ...path("api", "brands", ":slug"),
     handler: ({ params }) => getBrandBySlug(params.slug),
   },
@@ -5846,7 +5600,10 @@ export const handleApiRequest = async (request) => {
     if (route.method && route.method !== request.method) continue;
 
     try {
-      return await route.handler({ request, url, segments, params });
+      const response = await route.handler({ request, url, segments, params });
+      const cacheControl = publicCacheControl(request, response.status);
+      if (cacheControl) response.headers.set("Cache-Control", cacheControl);
+      return response;
     } catch (error) {
       console.error(route.errorLog || route.errorMessage, error);
       Sentry.captureException(error, {

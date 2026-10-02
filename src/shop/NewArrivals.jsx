@@ -28,7 +28,10 @@ const NewArrivals = () => {
   const { data: products, loading, error, refetch } = useAsync(() => fetchNewArrivals(), []);
   const baseProducts = useMemo(() => products || [], [products]);
   const arrivals = useMemo(() => applyClientFilters(baseProducts, appliedFilters), [baseProducts, appliedFilters]);
-  const facets = useMemo(() => buildClientFacets(baseProducts), [baseProducts]);
+  const facets = useMemo(
+    () => buildClientFacets(baseProducts, appliedFilters),
+    [baseProducts, appliedFilters],
+  );
 
   const activeFilterCount = countActiveClientFilters(appliedFilters);
 

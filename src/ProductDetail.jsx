@@ -111,6 +111,10 @@ const ProductDetail = () => {
     queryKey: ["product", id],
     queryFn: () => fetchProductById(id),
     enabled: Boolean(id),
+    // Stock changes as people buy, so unlike the rest of the catalogue a
+    // saved copy of this shouldn't be trusted for the full 5 minutes. It
+    // still paints instantly from cache and refreshes in the background.
+    staleTime: 30 * 1000,
   });
   const [selectedColor, setSelectedColor] = useState("");
   const [selectedSize, setSelectedSize] = useState("");

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
+import { uploadMedia } from "../lib/uploadMedia";
 import Spinner from "../component/ui/Spinner";
 
 const emptyForm = { name: "", slug: "" };
@@ -15,6 +16,7 @@ const AdminFilterTypes = () => {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState("");
+  const [imageBusyId, setImageBusyId] = useState(null);
 
   const request = useMemo(() => createAuthenticatedRequest(session), [session]);
 
@@ -76,6 +78,39 @@ const AdminFilterTypes = () => {
       setError(saveError.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Each theme's editorial image on the Shop By page. Saved immediately —
+  // there's nothing else on the row to confirm alongside it.
+  const saveThemeImage = async (filterType, imageUrl) => {
+    setError("");
+    setImageBusyId(filterType.id);
+    try {
+      await request(`/api/admin/filter-types/${filterType.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ imageUrl }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["admin", "filter-types"] });
+      await queryClient.invalidateQueries({ queryKey: ["filter-types"] });
+    } catch (imageError) {
+      setError(imageError.message);
+    } finally {
+      setImageBusyId(null);
+    }
+  };
+
+  const uploadThemeImage = async (filterType, event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setError("");
+    setImageBusyId(filterType.id);
+    try {
+      await saveThemeImage(filterType, await uploadMedia(request, file));
+    } catch (uploadError) {
+      setError(uploadError.message);
+      setImageBusyId(null);
     }
   };
 
@@ -160,20 +195,21 @@ const AdminFilterTypes = () => {
               <th className="px-3 py-4 font-medium">Name</th>
               <th className="px-3 py-4 font-medium">Slug</th>
               <th className="px-3 py-4 font-medium">Tags</th>
+              <th className="px-3 py-4 font-medium">Shop By image</th>
               <th className="px-3 py-4 text-right font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan="4" className="px-3 py-8 text-[var(--ink-500)]">
+                <td colSpan="5" className="px-3 py-8 text-[var(--ink-500)]">
                   <Spinner label="Loading filter types" />
                 </td>
               </tr>
             )}
             {!loading && filterTypes.length === 0 && (
               <tr>
-                <td colSpan="4" className="px-3 py-8 text-[var(--ink-500)]">
+                <td colSpan="5" className="px-3 py-8 text-[var(--ink-500)]">
                   No filter types yet.
                 </td>
               </tr>
@@ -184,7 +220,7 @@ const AdminFilterTypes = () => {
                 className="border-b border-[var(--line)] align-top"
               >
                 {editingId === filterType.id ? (
-                  <td colSpan="4" className="px-3 py-4">
+                  <td colSpan="5" className="px-3 py-4">
                     <form
                       onSubmit={saveEdit}
                       className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto] md:items-end"
@@ -237,6 +273,39 @@ const AdminFilterTypes = () => {
                     </td>
                     <td className="px-3 py-4 text-[var(--ink-700)]">
                       {filterType._count.tags}
+                    </td>
+                    <td className="px-3 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-16 shrink-0 bg-[var(--surface-muted)]">
+                          {filterType.imageUrl && (
+                            <img src={filterType.imageUrl} alt="" className="h-full w-full object-cover" />
+                          )}
+                        </div>
+                        {imageBusyId === filterType.id ? (
+                          <Spinner label="Saving" className="text-xs text-[var(--ink-500)]" />
+                        ) : (
+                          <div className="flex flex-col gap-1 text-xs">
+                            <label className="cursor-pointer underline">
+                              {filterType.imageUrl ? "Replace" : "Upload"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="sr-only"
+                                onChange={(event) => uploadThemeImage(filterType, event)}
+                              />
+                            </label>
+                            {filterType.imageUrl && (
+                              <button
+                                type="button"
+                                onClick={() => saveThemeImage(filterType, null)}
+                                className="text-left text-red-700 underline"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-4">
                       <div className="flex justify-end gap-4">

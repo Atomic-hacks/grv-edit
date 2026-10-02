@@ -178,6 +178,32 @@ export const orderCancelledEmail = (order) =>
       "This order has been cancelled and the pieces have been returned to stock. If you were charged, the refund will follow to your original payment method.",
   });
 
+// Operational notice to a brand's own inbox: only that brand's lines from
+// the order, nothing about the customer (name, address, phone, email) and
+// nothing about the rest of the basket. GRV owns the customer relationship
+// and fulfilment; if a brand ever ships directly, sharing the delivery
+// address should be a deliberate change here, not something it gets by
+// default.
+export const brandOrderEmail = ({ order, brand }) => {
+  const subtotal = order.items.reduce(
+    (sum, item) => sum + item.priceAtPurchase * item.quantity,
+    0,
+  );
+  return renderEmail({
+    preheader: `A paid GRV order includes ${order.items.length} of your pieces.`,
+    bodyHtml: `
+      <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;">New order for ${escapeHtml(brand.name)}</h1>
+      <p style="margin:0 0 20px;color:${MUTED};">A customer has paid for the following ${escapeHtml(brand.name)} pieces on GRV. This is an automated notice from GRV — the customer has already been sent their own confirmation.</p>
+      <p style="margin:0 0 4px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:${MUTED};">GRV order #${escapeHtml(order.id)}</p>
+      ${itemsTable(order.items)}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+        ${totalsRow("Your items", money(subtotal), { strong: true })}
+      </table>
+      <p style="margin:0;color:${MUTED};font-size:12px;">Questions about this order? Reply to this email and it will reach the GRV team.</p>
+    `,
+  });
+};
+
 // Customer-service reply. Quotes the original message so the customer has
 // the context of what they asked without digging through their sent folder.
 export const supportReplyEmail = ({

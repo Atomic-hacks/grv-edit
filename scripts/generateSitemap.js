@@ -52,7 +52,9 @@ const buildRobotsTxt = (baseUrl) =>
   `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /account\nSitemap: ${baseUrl}/sitemap.xml\n`;
 
 const run = async () => {
-  const rawBaseUrl = process.env.APP_URL || "http://localhost:5173";
+  // A build frequently runs without .env.local (CI preview, a fresh
+  // checkout). Never publish localhost URLs in that case.
+  const rawBaseUrl = process.env.APP_URL || "https://grvhq.com";
   const baseUrl = rawBaseUrl.replace(/\/$/, "");
   let dynamicPaths = [];
 
@@ -61,7 +63,7 @@ const run = async () => {
     const [categories, products, brands, journalPosts] = await Promise.all([
       prisma.category.findMany({ select: { id: true, slug: true, parentId: true } }),
       prisma.product.findMany({ where: { archived: false }, select: { id: true } }),
-      prisma.brand.findMany({ select: { id: true } }),
+      prisma.brand.findMany({ select: { slug: true } }),
       prisma.journalPost.findMany({ where: { published: true }, select: { slug: true } }),
     ]);
     await prisma.$disconnect();
@@ -77,7 +79,7 @@ const run = async () => {
     dynamicPaths = [
       ...categoryPaths,
       ...products.map((p) => `/product/${p.id}`),
-      ...brands.map((b) => `/brands/${b.id}`),
+      ...brands.map((b) => `/brands/${b.slug}`),
       ...journalPosts.map((j) => `/journal/${j.slug}`),
     ];
   } catch (error) {
@@ -96,7 +98,7 @@ const run = async () => {
 run().catch((error) => {
   console.error("Sitemap generation failed unexpectedly — writing static fallback.", error);
   try {
-    const baseUrl = (process.env.APP_URL || "http://localhost:5173").replace(/\/$/, "");
+    const baseUrl = (process.env.APP_URL || "https://grvhq.com").replace(/\/$/, "");
     writeFileSync(join(publicDir, "sitemap.xml"), buildSitemapXml(baseUrl, STATIC_PATHS));
     writeFileSync(join(publicDir, "robots.txt"), buildRobotsTxt(baseUrl));
   } catch {

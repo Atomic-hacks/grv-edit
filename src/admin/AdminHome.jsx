@@ -17,7 +17,6 @@ const groups = [
       ["Style Tags", "/admin/tags"],
       ["Filter Types", "/admin/filter-types"],
       ["Bulk Upload", "/admin/products/bulk-upload"],
-      ["Site Images", "/admin/site-images"],
     ],
   },
   {
@@ -44,6 +43,7 @@ const groups = [
     name: "Content",
     description: "Journal, customer messages and promotional email.",
     links: [
+      ["Page Sections", "/admin/content-sections"],
       ["Journal", "/admin/journal"],
       ["Messages", "/admin/contact-submissions"],
       ["Campaigns", "/admin/campaigns"],

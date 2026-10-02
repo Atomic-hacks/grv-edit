@@ -17,6 +17,9 @@ const RevealImage = ({
   ease = [0.8, 0, 0.3, 1],
   width = 1200,
   loading = "lazy",
+  // Above-the-fold hero images: tell the browser to fetch this before
+  // anything else on the page.
+  priority = false,
 }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const imageRef = useRef(null);
@@ -52,6 +55,7 @@ const RevealImage = ({
             isLoaded ? "opacity-100" : "opacity-0"
           }`}
           loading={loading}
+          fetchPriority={priority ? "high" : undefined}
           draggable={false}
         />
       </Motion.div>

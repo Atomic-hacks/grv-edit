@@ -1,12 +1,14 @@
 import { prisma as defaultPrisma } from "./prisma.js";
 import { sendEmail as defaultSendEmail } from "./sendEmail.js";
-import { FROM_INFO } from "./emailSenders.js";
+import { FROM_INFO, REPLY_TO_SUPPORT } from "./emailSenders.js";
+import { runInBackground } from "./background.js";
 import {
   orderCreatedEmail,
   orderPaidEmail,
   orderShippedEmail,
   orderDeliveredEmail,
   orderCancelledEmail,
+  brandOrderEmail,
 } from "./orderEmailTemplates.js";
 
 const TEMPLATES = {
@@ -30,7 +32,8 @@ const MAX_ATTEMPTS = 4;
 
 // OrderItem carries no relation to Product/Variant, so the display fields an
 // email needs (name, brand, image, colour, size) are resolved here in two
-// queries rather than one per line.
+// queries rather than one per line. `brandId` is carried through so a brand
+// notice can be narrowed to that brand's lines.
 const loadOrderForEmail = async (prisma, orderId) => {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
@@ -50,6 +53,7 @@ const loadOrderForEmail = async (prisma, orderId) => {
         id: true,
         name: true,
         imageUrl: true,
+        brandId: true,
         brand: { select: { name: true } },
       },
     }),
@@ -69,6 +73,7 @@ const loadOrderForEmail = async (prisma, orderId) => {
       return {
         ...item,
         productName: product?.name || "Item",
+        brandId: product?.brandId || null,
         brandName: product?.brand?.name || null,
         image: variant?.images?.[0] || product?.imageUrl || null,
         variant: variant || null,
@@ -77,11 +82,44 @@ const loadOrderForEmail = async (prisma, orderId) => {
   };
 };
 
+// Works out who an email goes to and what it says. Customer emails go to
+// the customer; BRAND_ORDER goes to the brand's configured inbox and only
+// contains that brand's lines. Returns null when there is legitimately
+// nobody to send to.
+const buildMessage = async (prisma, order, type, brandId) => {
+  if (type === "BRAND_ORDER") {
+    const brand = await prisma.brand.findUnique({
+      where: { id: brandId },
+      select: { id: true, name: true, contactEmail: true, orderNotificationsEnabled: true },
+    });
+    if (!brand?.orderNotificationsEnabled || !brand.contactEmail) return null;
+    const brandOrder = {
+      ...order,
+      items: order.items.filter((item) => item.brandId === brand.id),
+    };
+    if (brandOrder.items.length === 0) return null;
+    return {
+      to: brand.contactEmail,
+      subject: `New GRV order #${order.id} — ${brand.name}`,
+      html: brandOrderEmail({ order: brandOrder, brand }),
+    };
+  }
+
+  const template = TEMPLATES[type];
+  if (!order.user?.email) return null;
+  return {
+    to: order.user.email,
+    subject: template.subject(order),
+    html: template.render(order),
+  };
+};
+
 /**
- * Sends one order email, exactly once, ever.
+ * Sends one order email, exactly once, ever — customer emails once per
+ * (order, type), brand notices once per (order, brand).
  *
  * The OrderEmailEvent row is claimed before the provider is called: the
- * unique (orderId, type) constraint means a webhook retry, a client
+ * unique (orderId, type, brandId) constraint means a webhook retry, a client
  * verification and an admin double-click all collapse into a single send.
  * A row whose `sentAt` is still null is a failed attempt and stays eligible
  * for retry until MAX_ATTEMPTS — which is what `retryFailedOrderEmails`
@@ -93,12 +131,14 @@ const loadOrderForEmail = async (prisma, orderId) => {
 export const sendOrderEmail = async (
   orderId,
   type,
-  { prisma = defaultPrisma, sendEmail = defaultSendEmail } = {},
+  { brandId = "", prisma = defaultPrisma, sendEmail = defaultSendEmail } = {},
 ) => {
-  const template = TEMPLATES[type];
-  if (!template) {
+  if (!TEMPLATES[type] && type !== "BRAND_ORDER") {
     console.error("Unknown order email type", { orderId, type });
     return { sent: false, reason: "unknown-type" };
+  }
+  if (type === "BRAND_ORDER" && !brandId) {
+    return { sent: false, reason: "missing-brand" };
   }
 
   try {
@@ -107,13 +147,13 @@ export const sendOrderEmail = async (
     let event;
     try {
       event = await prisma.orderEmailEvent.create({
-        data: { orderId, type },
+        data: { orderId, type, brandId },
         select: { id: true, sentAt: true, attempts: true },
       });
     } catch (error) {
       if (error?.code !== "P2002") throw error;
       event = await prisma.orderEmailEvent.findUnique({
-        where: { orderId_type: { orderId, type } },
+        where: { orderId_type_brandId: { orderId, type, brandId } },
         select: { id: true, sentAt: true, attempts: true },
       });
       if (!event) return { sent: false, reason: "claim-lost" };
@@ -124,19 +164,22 @@ export const sendOrderEmail = async (
     }
 
     const order = await loadOrderForEmail(prisma, orderId);
-    if (!order?.user?.email) {
+    const message = order ? await buildMessage(prisma, order, type, brandId) : null;
+    if (!message) {
+      // Nothing to send to (no customer email, brand notifications since
+      // switched off, ...). Park it at MAX_ATTEMPTS so the retry pass
+      // doesn't keep picking it up.
       await prisma.orderEmailEvent.update({
         where: { id: event.id },
-        data: { attempts: { increment: 1 }, lastError: "No recipient email" },
+        data: { attempts: MAX_ATTEMPTS, lastError: "No recipient" },
       });
       return { sent: false, reason: "no-recipient" };
     }
 
     const result = await sendEmail({
-      to: order.user.email,
-      subject: template.subject(order),
-      html: template.render(order),
+      ...message,
       from: FROM_INFO,
+      replyTo: REPLY_TO_SUPPORT,
     });
 
     if (result?.sent) {
@@ -154,27 +197,65 @@ export const sendOrderEmail = async (
         lastError: result?.message || "Email provider rejected the message",
       },
     });
-    console.error("Order email failed", { orderId, type, message: result?.message });
+    console.error("Order email failed", { orderId, type, brandId, message: result?.message });
     return { sent: false, reason: "provider-error" };
   } catch (error) {
-    console.error("Order email threw", { orderId, type, error });
+    console.error("Order email threw", { orderId, type, brandId, error });
     return { sent: false, reason: "exception" };
   }
 };
 
-// Fire-and-forget wrapper for call sites inside request handlers: the order
-// has already been written, and the customer's email must not be able to
-// hold up (or fail) that response.
-export const queueOrderEmail = (orderId, type) => {
-  void sendOrderEmail(orderId, type).catch((error) => {
-    console.error("Order email dispatch failed", { orderId, type, error });
+/**
+ * Which brands are involved in an order and opted in to hear about it.
+ * The order → brand link goes OrderItem.productId → Product.brandId; an
+ * order spanning three brands notifies each of them separately, each with
+ * only their own lines.
+ */
+export const getNotifiableBrandsForOrder = async (orderId, { prisma = defaultPrisma } = {}) => {
+  const items = await prisma.orderItem.findMany({
+    where: { orderId },
+    select: { productId: true },
+  });
+  const productIds = [...new Set(items.map((item) => item.productId))];
+  if (productIds.length === 0) return [];
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    select: { brandId: true },
+  });
+  const brandIds = [...new Set(products.map((product) => product.brandId))];
+  return prisma.brand.findMany({
+    where: {
+      id: { in: brandIds },
+      orderNotificationsEnabled: true,
+      contactEmail: { not: null },
+    },
+    select: { id: true, name: true, contactEmail: true },
   });
 };
 
+export const notifyBrandsForOrder = async (orderId, options = {}) => {
+  const brands = await getNotifiableBrandsForOrder(orderId, options);
+  const results = [];
+  for (const brand of brands) {
+    results.push(await sendOrderEmail(orderId, "BRAND_ORDER", { ...options, brandId: brand.id }));
+  }
+  return results;
+};
+
+// For call sites inside request handlers: the order has already been
+// written, and email must not be able to hold up (or fail) that response —
+// but it must still actually run to completion on Vercel, hence
+// runInBackground rather than a bare `void`.
+export const queueOrderEmail = (orderId, type) =>
+  runInBackground(sendOrderEmail(orderId, type), `Order email ${type} for ${orderId}`);
+
+export const queueBrandNotifications = (orderId) =>
+  runInBackground(notifyBrandsForOrder(orderId), `Brand notifications for ${orderId}`);
+
 /**
- * Cron pass: retries order emails that were claimed but never delivered.
- * Without this a provider outage would silently swallow a customer's order
- * confirmation forever.
+ * Cron pass: retries order emails (customer and brand) that were claimed but
+ * never delivered. Without this a provider outage would silently swallow a
+ * customer's order confirmation forever.
  */
 export const retryFailedOrderEmails = async ({
   prisma = defaultPrisma,
@@ -185,7 +266,7 @@ export const retryFailedOrderEmails = async ({
     where: { sentAt: null, attempts: { lt: MAX_ATTEMPTS } },
     orderBy: { createdAt: "asc" },
     take: limit,
-    select: { orderId: true, type: true },
+    select: { orderId: true, type: true, brandId: true },
   });
 
   let retried = 0;
@@ -193,6 +274,7 @@ export const retryFailedOrderEmails = async ({
   for (const event of pending) {
     retried += 1;
     const result = await sendOrderEmail(event.orderId, event.type, {
+      brandId: event.brandId,
       prisma,
       sendEmail,
     });

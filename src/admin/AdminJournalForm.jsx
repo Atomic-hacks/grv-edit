@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
+import { uploadMedia } from "../lib/uploadMedia";
 import Spinner from "../component/ui/Spinner";
 
 const emptyForm = {
@@ -86,15 +87,9 @@ const AdminJournalForm = () => {
 
     setImageUploading(true);
     setError("");
-    const body = new FormData();
-    body.append("file", file);
     try {
-      const result = await request("/api/admin/upload-image", {
-        method: "POST",
-        body,
-      });
-      if (!result.url) throw new Error("Image upload returned no URL");
-      setForm((current) => ({ ...current, coverImage: result.url }));
+      const uploadedUrl = await uploadMedia(request, file);
+      setForm((current) => ({ ...current, coverImage: uploadedUrl }));
     } catch (uploadError) {
       setError(uploadError.message);
     } finally {

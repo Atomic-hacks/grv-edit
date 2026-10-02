@@ -59,9 +59,6 @@ const CategoryRow = ({
               {category.showInNav && (
                 <span className="border border-[var(--line)] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-[var(--ink-500)]">Nav</span>
               )}
-              {category.showOnHomepage && (
-                <span className="border border-(--color-accent-orange) px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-(--color-accent-orange)">Homepage</span>
-              )}
             </span>
           )}
         </button>
@@ -116,14 +113,12 @@ const emptyForm = {
   description: "",
   showInNav: false,
   navOrder: 0,
-  showOnHomepage: false,
-  homepageOrder: "",
 };
 
 // One screen for the entire taxonomy — major categories and their
 // subcategories are the same model, so create/edit/delete/reorder for
-// either happens right here. A row's nav and homepage flags are what used
-// to be separate Section/CategoryFilterType concepts.
+// either happens right here. Homepage product rails are Page Sections now
+// (Admin → Page Sections), not a category flag.
 const AdminCategories = () => {
   const { session } = useAuth();
   const request = useMemo(() => createAuthenticatedRequest(session), [session]);
@@ -177,8 +172,6 @@ const AdminCategories = () => {
       description: category.description || "",
       showInNav: category.showInNav,
       navOrder: category.navOrder,
-      showOnHomepage: category.showOnHomepage,
-      homepageOrder: category.homepageOrder ?? "",
     });
     // Reveal the row being edited even if it's nested a few levels deep.
     const ancestorIds = getCategoryPath(categories, category.id).map((c) => c.id);
@@ -200,8 +193,6 @@ const AdminCategories = () => {
         description: form.description || null,
         showInNav: form.showInNav,
         navOrder: Number(form.navOrder) || 0,
-        showOnHomepage: form.showOnHomepage,
-        homepageOrder: form.homepageOrder === "" ? null : Number(form.homepageOrder),
       };
       if (form.id) {
         await request(`/api/admin/categories/${form.id}`, {
@@ -371,30 +362,6 @@ const AdminCategories = () => {
                   type="number"
                   value={form.navOrder}
                   onChange={(event) => updateField("navOrder", event.target.value)}
-                  className="w-24 border border-[var(--line)] px-2 py-1.5 text-sm outline-none focus:border-[var(--ink-900)]"
-                />
-              </label>
-            )}
-
-            <label className="flex items-start gap-3 text-sm">
-              <input
-                type="checkbox"
-                checked={form.showOnHomepage}
-                onChange={(event) => updateField("showOnHomepage", event.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-(--color-accent-orange)"
-              />
-              <span>
-                <span className="block font-medium">Feature on homepage</span>
-                <span className="text-xs text-[var(--ink-500)]">Shows as a curated product rail — this is how "Lifestyle" or a seasonal drop works, no separate section needed.</span>
-              </span>
-            </label>
-            {form.showOnHomepage && (
-              <label className="block pl-7 text-sm">
-                <span className="mb-1.5 block text-xs font-medium">Homepage order</span>
-                <input
-                  type="number"
-                  value={form.homepageOrder}
-                  onChange={(event) => updateField("homepageOrder", event.target.value)}
                   className="w-24 border border-[var(--line)] px-2 py-1.5 text-sm outline-none focus:border-[var(--ink-900)]"
                 />
               </label>

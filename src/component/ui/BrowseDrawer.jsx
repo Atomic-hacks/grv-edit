@@ -3,24 +3,15 @@ import { useNavigate } from "react-router-dom";
 import SidePanel from "./SidePanel";
 import { buildCategoryTree, getCategoryHref, getCategoryPath } from "../../lib/categoryTree";
 
-const formatValue = (value) =>
-  String(value)
-    .replaceAll("-", " ")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-
 // "View All" — a navigator, not a filter. Opens from the left (the
 // opposite edge to Filter) because it moves you somewhere else rather than
 // narrowing what you're already looking at. Walks the category tree to
-// whatever depth it actually has (Men > Accessories > Jewelry, or deeper),
-// and — for whichever category is currently active — shows the style tags
-// that actually appear on products in it, computed from the live
-// catalogue rather than curated by hand.
+// whatever depth it actually has (Men > Accessories > Jewelry, or deeper).
 const BrowseDrawer = ({
   isOpen,
   onClose,
   categories = [],
   activeCategoryId,
-  styleOptions = [],
 }) => {
   const navigate = useNavigate();
   const navTree = buildCategoryTree(categories).filter((major) => major.showInNav);
@@ -46,11 +37,6 @@ const BrowseDrawer = ({
 
   const go = (id) => {
     navigate(getCategoryHref(categories, id));
-    onClose();
-  };
-
-  const goToStyle = (id, styleValue) => {
-    navigate(`${getCategoryHref(categories, id)}?style=${encodeURIComponent(styleValue)}`);
     onClose();
   };
 
@@ -96,20 +82,6 @@ const BrowseDrawer = ({
           )}
         </div>
 
-        {isCurrent && styleOptions.length > 0 && (
-          <div className="flex flex-wrap gap-2 pb-3" style={{ paddingLeft: (depth + 1) * 14 }}>
-            {styleOptions.map((style) => (
-              <button
-                key={style.value}
-                type="button"
-                onClick={() => goToStyle(node.id, style.value)}
-                className="border border-[var(--line)] px-2.5 py-1 text-[11px] text-[var(--ink-700)] transition-colors hover:border-[var(--ink-900)] hover:text-[var(--ink-900)]"
-              >
-                {formatValue(style.label)}
-              </button>
-            ))}
-          </div>
-        )}
 
         {isExpanded && hasChildren && (
           <div className="pb-2">

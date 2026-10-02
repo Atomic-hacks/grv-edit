@@ -1,47 +1,31 @@
 import React from "react";
+import { Navigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
-import SectionProductBlock from "../component/section/SectionProductBlock";
-import { fetchSection } from "../lib/apiClient";
+import { fetchCategories } from "../lib/apiClient";
+import { getCategoryHref } from "../lib/categoryTree";
 import Spinner from "../component/ui/Spinner";
-import ErrorState from "../component/ui/ErrorState";
+import NotFound from "../NotFound";
 
+// /sections/:slug used to be a separate view of a category flagged for the
+// homepage. Homepage rails are now Page Sections, and a category's own page
+// already lists the same products, so old links land there instead.
 const SectionPage = () => {
   const { slug } = useParams();
-  const sectionQuery = useQuery({
-    queryKey: ["section", slug],
-    queryFn: () => fetchSection(slug),
-    enabled: Boolean(slug),
+  const { data: categories, isPending } = useQuery({
+    queryKey: ["categories"],
+    queryFn: fetchCategories,
   });
 
-  if (sectionQuery.isPending) {
+  if (isPending) {
     return (
       <main className="page-shell flex min-h-[60vh] items-center justify-center py-24">
-        <Spinner label="Loading section" className="text-sm text-[var(--ink-500)]" />
+        <Spinner label="Loading" className="text-sm text-[var(--ink-500)]" />
       </main>
     );
   }
-  if (sectionQuery.error) {
-    return (
-      <main className="page-shell min-h-[60vh]">
-        <ErrorState
-          title="Couldn't load this section"
-          message="Something went wrong on our end. Give it another try."
-          onRetry={sectionQuery.refetch}
-          retryPending={sectionQuery.isRefetching}
-          secondaryTo="/shop"
-          secondaryLabel="Back to shop"
-        />
-      </main>
-    );
-  }
-  if (!sectionQuery.data) return null;
-
-  return (
-    <main className="min-h-screen bg-white text-black">
-      <SectionProductBlock section={sectionQuery.data} standalone />
-    </main>
-  );
+  const category = (categories || []).find((item) => item.slug === slug);
+  if (!category) return <NotFound />;
+  return <Navigate to={getCategoryHref(categories, category.id)} replace />;
 };
 
 export default SectionPage;

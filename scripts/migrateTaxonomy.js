@@ -74,7 +74,7 @@ async function main() {
   // Kids exists as an available top-level category (not shown in nav by
   // default, since there's no product data for it yet) — an admin can
   // switch it on the moment there's something to put in it.
-  const kidsCategory = await prisma.category.upsert({
+  const KIDS_CATEGORY = await prisma.category.upsert({
     where: { slug: "kids" },
     create: { name: "Kids", slug: "kids", parentId: null, showInNav: false, navOrder: navOrder++ },
     update: {},

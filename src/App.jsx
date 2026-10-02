@@ -86,13 +86,15 @@ const AdminFirstOrderPromo = React.lazy(
   () => import("./admin/AdminFirstOrderPromo"),
 );
 const AdminShippingFees = React.lazy(() => import("./admin/AdminShippingFees"));
-const AdminSiteImages = React.lazy(() => import("./admin/AdminSiteImages"));
 const AdminCategories = React.lazy(() => import("./admin/AdminCategories"));
 const AdminCampaigns = React.lazy(() => import("./admin/AdminCampaigns"));
 const AdminCampaignForm = React.lazy(() => import("./admin/AdminCampaignForm"));
 const AdminCases = React.lazy(() => import("./admin/AdminCases"));
 const AdminAnalytics = React.lazy(() => import("./admin/AdminAnalytics"));
 const AdminStaff = React.lazy(() => import("./admin/AdminStaff"));
+const AdminContentSections = React.lazy(
+  () => import("./admin/AdminContentSections"),
+);
 
 // Pages that end with <StoreSupport /> already carry a newsletter sign-up in
 // that block. This list is the remainder — pages that would otherwise finish
@@ -254,6 +256,10 @@ const AppLayout = () => {
                         />
                         <Route path="journal" element={<AdminJournal />} />
                         <Route
+                          path="content-sections"
+                          element={<AdminContentSections />}
+                        />
+                        <Route
                           path="journal/new"
                           element={<AdminJournalForm />}
                         />
@@ -274,10 +280,6 @@ const AppLayout = () => {
                         <Route
                           path="shipping-fees"
                           element={<AdminShippingFees />}
-                        />
-                        <Route
-                          path="site-images"
-                          element={<AdminSiteImages />}
                         />
                         <Route path="orders" element={<AdminOrders />} />
                         <Route

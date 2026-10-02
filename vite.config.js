@@ -34,7 +34,16 @@ const apiPlugin = () => ({
   },
 });
 
+// One id per build, used to invalidate every visitor's saved query cache on
+// deploy. Vercel's commit SHA when available, otherwise the build time.
+const appBuild = process.env.VERCEL_GIT_COMMIT_SHA || String(Date.now());
+
 export default defineConfig({
+  define: { __APP_BUILD__: JSON.stringify(appBuild) },
+  // One copy of React Query only: a second copy (e.g. bundled inside the
+  // persist client's dev pre-bundle) has its own context, which makes
+  // useQueryClient throw "No QueryClient set" under the provider.
+  resolve: { dedupe: ["@tanstack/react-query", "@tanstack/query-core", "react", "react-dom"] },
   plugins: [
     tailwindcss(),
     apiPlugin(),

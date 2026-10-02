@@ -3,12 +3,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
+import { uploadMedia } from "../lib/uploadMedia";
 import Spinner from "../component/ui/Spinner";
 
 const emptyForm = {
   name: "",
   slug: "",
   logo: "",
+  contactEmail: "",
+  orderNotificationsEnabled: false,
 };
 
 const slugify = (value) =>
@@ -46,6 +49,8 @@ const AdminBrandForm = () => {
           name: brand.name || "",
           slug: brand.slug || "",
           logo: brand.logo || "",
+          contactEmail: brand.contactEmail || "",
+          orderNotificationsEnabled: Boolean(brand.orderNotificationsEnabled),
         });
       })
       .catch((loadError) => {
@@ -80,15 +85,9 @@ const AdminBrandForm = () => {
 
     setLogoUploading(true);
     setError("");
-    const body = new FormData();
-    body.append("file", file);
     try {
-      const result = await request("/api/admin/upload-image", {
-        method: "POST",
-        body,
-      });
-      if (!result.url) throw new Error("Image upload returned no URL");
-      setForm((current) => ({ ...current, logo: result.url }));
+      const uploadedUrl = await uploadMedia(request, file);
+      setForm((current) => ({ ...current, logo: uploadedUrl }));
     } catch (uploadError) {
       setError(uploadError.message);
     } finally {
@@ -188,6 +187,30 @@ const AdminBrandForm = () => {
                 />
               </span>
             )}
+          </label>
+          <label className="text-sm md:col-span-2">
+            <span className="mb-2 block font-medium">Brand operations email</span>
+            <input
+              type="email"
+              value={form.contactEmail}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, contactEmail: event.target.value }))
+              }
+              placeholder="orders@brand.com"
+              className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+            />
+            <span className="mt-1 block text-xs text-[var(--ink-500)]">Used only as the recipient for brand order notices. Customer emails always come from GRV.</span>
+          </label>
+          <label className="flex items-start gap-2 text-sm md:col-span-2">
+            <input
+              type="checkbox"
+              checked={form.orderNotificationsEnabled}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, orderNotificationsEnabled: event.target.checked }))
+              }
+              className="mt-1"
+            />
+            <span><span className="block font-medium">Send paid-order notifications</span><span className="text-xs text-[var(--ink-500)]">GRV sends an operational notice to this email when a paid order includes this brand’s products.</span></span>
           </label>
         </div>
 

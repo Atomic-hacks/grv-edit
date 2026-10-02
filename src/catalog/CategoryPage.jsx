@@ -14,6 +14,8 @@ import StoreSupport from "../component/section/StoreSupport";
 import { getProductImages } from "../lib/productHelpers";
 import { fetchCategories, fetchProductPage, fetchProductFilters } from "../lib/apiClient";
 import { resolveCategoryPath } from "../lib/categoryTree";
+import { useContentSections, pickHero } from "../lib/useContentSections";
+import { ContentSectionList, HeroSection } from "../component/content/ContentSections";
 import { useCart } from "../context/CartContext";
 
 
@@ -36,29 +38,26 @@ const CategoryPage = () => {
   const categoryPath = categoriesQuery.isPending ? null : resolveCategoryPath(categories, segments);
   const activeCategory = categoryPath?.[categoryPath.length - 1] || null;
 
+  // Filters are Brand, Subcategory and Price only. Subcategory options
+  // come from the API and are always children of *this* category, so the
+  // drawer can't offer anything that doesn't belong here.
   const filters = {
     brand: searchParams.getAll("brand"),
-    size: searchParams.getAll("size"),
-    color: searchParams.getAll("color"),
-    style: searchParams.getAll("style"),
+    subcategory: searchParams.getAll("subcategory"),
     minPrice: searchParams.get("minPrice") || "",
     maxPrice: searchParams.get("maxPrice") || "",
   };
   const sort = searchParams.get("sort") || "";
   const activeFilterCount =
     filters.brand.length +
-    filters.size.length +
-    filters.color.length +
-    filters.style.length +
+    filters.subcategory.length +
     (filters.minPrice ? 1 : 0) +
     (filters.maxPrice ? 1 : 0);
 
   const queryParams = {
     category: activeCategory?.slug,
+    subcategory: filters.subcategory,
     brandId: filters.brand,
-    size: filters.size,
-    color: filters.color,
-    styleTag: filters.style,
     minPrice: filters.minPrice,
     maxPrice: filters.maxPrice,
     sort,
@@ -76,15 +75,17 @@ const CategoryPage = () => {
     enabled: Boolean(activeCategory),
   });
 
+  const sectionsQuery = useContentSections("CATEGORY", activeCategory?.id);
+  const landingSections = sectionsQuery.data || [];
+  const hero = pickHero(landingSections);
+
   const products = productsQuery.data?.items || [];
   const total = productsQuery.data?.total ?? 0;
 
   const applyFilters = (next) => {
     const params = new URLSearchParams();
     next.brand.forEach((v) => params.append("brand", v));
-    next.size.forEach((v) => params.append("size", v));
-    next.color.forEach((v) => params.append("color", v));
-    next.style.forEach((v) => params.append("style", v));
+    next.subcategory.forEach((v) => params.append("subcategory", v));
     if (next.minPrice) params.set("minPrice", next.minPrice);
     if (next.maxPrice) params.set("maxPrice", next.maxPrice);
     if (sort) params.set("sort", sort);
@@ -127,7 +128,8 @@ const CategoryPage = () => {
 
   return (
     <main className="min-h-screen bg-white">
-      <div className="page-shell pb-24">
+      {hero && <HeroSection section={hero} />}
+      <div className="page-shell pb-12">
         <Breadcrumbs
           className="pt-4"
           items={[
@@ -141,12 +143,14 @@ const CategoryPage = () => {
             })),
           ]}
         />
-        <div className="relative pb-8 pt-6 md:pb-10 md:pt-8">
-          <AnimatedPageTitle
-            title={activeCategory.name}
-            subtitle={activeCategory.description || `Explore the full ${activeCategory.name.toLowerCase()} edit.`}
-          />
-        </div>
+        {!hero && (
+          <div className="relative pb-8 pt-6 md:pb-10 md:pt-8">
+            <AnimatedPageTitle
+              title={activeCategory.name}
+              subtitle={activeCategory.description || `Explore the full ${activeCategory.name.toLowerCase()} edit.`}
+            />
+          </div>
+        )}
 
         <ListingToolbar
           label="VIEW ALL"
@@ -237,9 +241,13 @@ const CategoryPage = () => {
           onClose={() => setIsBrowseOpen(false)}
           categories={categories}
           activeCategoryId={activeCategory?.id}
-          styleOptions={facetsQuery.data?.styles || []}
         />
+      </div>
 
+      {/* Any other sections an admin added to this category's page. */}
+      <ContentSectionList sections={landingSections} />
+
+      <div className="page-shell pb-24">
         <RecentlyViewedRail />
       </div>
       <StoreSupport promises={false} help={false} />

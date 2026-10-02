@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import SmartLink from "./SmartLink";
 
 const VARIANT_CLASSES = {
   dark: "border-[var(--ink-900)] text-[var(--ink-900)] hover:bg-[var(--ink-900)] hover:text-white",
@@ -21,9 +21,9 @@ const CtaButton = ({
 
   if (to) {
     return (
-      <Link to={to} className={classes.trim()}>
+      <SmartLink to={to} className={classes.trim()}>
         {title}
-      </Link>
+      </SmartLink>
     );
   }
 

@@ -41,7 +41,7 @@ const BrandCatalogue = () => {
   );
   const brandProducts = brandProductsData || [];
   const visibleProducts = applyClientFilters(brandProducts, appliedFilters);
-  const facets = buildClientFacets(brandProducts);
+  const facets = buildClientFacets(brandProducts, appliedFilters);
   const activeFilterCount = countActiveClientFilters(appliedFilters);
 
   if (brandLoading) return <ProductDetailSkeleton />;

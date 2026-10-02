@@ -1,7 +1,8 @@
 import React from "react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import "./index.css";
 import App from "./App.jsx";
 import { CartProvider } from "./context/CartContext.jsx";
@@ -12,9 +13,17 @@ import { RecentlyViewedProvider } from "./context/RecentlyViewedContext.jsx";
 import ErrorBoundary from "./component/ErrorBoundary.jsx";
 import { initSentry } from "./lib/sentry.js";
 import { initAnalytics } from "./lib/analytics.js";
+import {
+  createQueryPersister,
+  shouldPersistQuery,
+  PERSIST_MAX_AGE,
+  PERSIST_BUSTER,
+} from "./lib/queryPersistence.js";
 
 initSentry();
 initAnalytics();
+
+const persister = createQueryPersister();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,7 +35,9 @@ const queryClient = new QueryClient({
       // already considered fresh for 5 minutes (staleTime above); nothing
       // here needs to be that eager.
       refetchOnWindowFocus: false,
-      gcTime: 10 * 60 * 1000,
+      // Must be at least the persistence max age, or saved queries are
+      // garbage-collected before they can be restored.
+      gcTime: PERSIST_MAX_AGE,
     },
   },
 });
@@ -34,7 +45,15 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister,
+          maxAge: PERSIST_MAX_AGE,
+          buster: PERSIST_BUSTER,
+          dehydrateOptions: { shouldDehydrateQuery: shouldPersistQuery },
+        }}
+      >
         <ToastProvider>
           <AuthProvider>
             <CartProvider>
@@ -46,7 +65,7 @@ createRoot(document.getElementById("root")).render(
             </CartProvider>
           </AuthProvider>
         </ToastProvider>
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

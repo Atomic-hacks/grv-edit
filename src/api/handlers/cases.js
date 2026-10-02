@@ -9,6 +9,7 @@ import { sendEmail } from "../../server/sendEmail.js";
 import { FROM_SUPPORT } from "../../server/emailSenders.js";
 import { checkRateLimit } from "../../server/rateLimit.js";
 import { recordAdminAction } from "../../server/auditLog.js";
+import { runInBackground } from "../../server/background.js";
 import {
   generateCaseReference,
   buildCaseDedupeKey,
@@ -230,7 +231,7 @@ export const createSupportCase = async (request) => {
     throw error;
   }
 
-  void sendEmail({
+  runInBackground(sendEmail({
     to: user.email,
     subject: `We've received your request — ${supportCase.reference}`,
     html: caseAcknowledgementEmail({
@@ -248,7 +249,7 @@ export const createSupportCase = async (request) => {
       caseId: supportCase.id,
       error,
     });
-  });
+  }));
 
   return jsonResponse({ case: supportCase, duplicate: false }, 201);
 };
@@ -630,7 +631,7 @@ export const updateCaseStatus = async (request, id) => {
   });
 
   if (updated.customerEmail) {
-    void sendEmail({
+    runInBackground(sendEmail({
       to: updated.customerEmail,
       subject: `Update on your request — ${updated.reference}`,
       html: caseStatusUpdateEmail({
@@ -641,7 +642,7 @@ export const updateCaseStatus = async (request, id) => {
       from: FROM_SUPPORT,
     }).catch((error) => {
       console.error("Case status update email failed", { caseId: id, error });
-    });
+    }));
   }
 
   return jsonResponse(updated);
@@ -885,7 +886,7 @@ export const applyPaystackRefundEvent = async (event) => {
     }),
   ]);
 
-  void sendEmail({
+  runInBackground(sendEmail({
     to: supportCase.customerEmail,
     subject: `Update on your request — ${supportCase.reference}`,
     html: caseStatusUpdateEmail({
@@ -901,7 +902,7 @@ export const applyPaystackRefundEvent = async (event) => {
       caseId: supportCase.id,
       error,
     });
-  });
+  }));
 };
 
 export const handleAdminCaseRequest = async (request, segments, url) => {

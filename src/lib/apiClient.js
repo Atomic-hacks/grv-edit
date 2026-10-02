@@ -50,6 +50,8 @@ export const buildProductParams = ({
   brandId,
   tag,
   tagAll,
+  // Contextual subcategory slug(s), AND'd with `category` (narrows within it).
+  subcategory,
   size,
   color,
   featured,
@@ -68,6 +70,7 @@ export const buildProductParams = ({
   appendValues(searchParams, "brand", brandId);
   appendValues(searchParams, "tag", tag);
   appendValues(searchParams, "tagAll", tagAll);
+  appendValues(searchParams, "subcategory", subcategory);
   appendValues(searchParams, "size", size);
   appendValues(searchParams, "color", color);
   if (featured) searchParams.set("featured", "true");
@@ -115,15 +118,16 @@ export const fetchNewArrivals = async () => {
   return items;
 };
 
-export const fetchSection = async (slug) => {
-  const response = await fetch(`/api/sections/${encodeURIComponent(slug)}`);
-  if (response.status === 404) return null;
-  return jsonOrThrow(response);
+// Admin-managed sections for one page, already resolved (product rails
+// carry their products, brand grids their brands).
+export const fetchContentSections = async (page, categoryId) => {
+  const params = new URLSearchParams({ page });
+  if (categoryId) params.set("categoryId", categoryId);
+  return jsonOrThrow(await fetch(`/api/content-sections?${params}`));
 };
 
-export const fetchHomepageSections = async () =>
-  jsonOrThrow(await fetch("/api/sections/homepage"));
-
+// Kept for the standalone /sections/:slug route. These category-backed
+// editorial rails predate ContentSection and remain valid links.
 export const fetchProductById = async (id) => {
   const response = await fetch(`/api/products/${encodeURIComponent(id)}`);
   if (response.status === 404) return null;
@@ -138,9 +142,6 @@ export const fetchCategories = async () =>
   jsonOrThrow(await fetch("/api/categories"));
 
 export const fetchBrands = async () => jsonOrThrow(await fetch("/api/brands"));
-
-export const fetchSiteImages = async () =>
-  jsonOrThrow(await fetch("/api/site-images"));
 
 export const fetchBrandBySlug = async (slug) => {
   const response = await fetch(`/api/brands/${encodeURIComponent(slug)}`);

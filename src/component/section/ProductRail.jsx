@@ -1,5 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import SmartLink from "../ui/SmartLink";
 import Card from "../ui/Card";
 import HorizontalCarousel from "../ui/HorizontalCarousel";
 import { HorizontalSkeleton } from "../ui/LoadingSkeletons";
@@ -35,12 +36,12 @@ const ProductRail = ({
           )}
         </div>
         {viewAllTo && (
-          <Link
+          <SmartLink
             to={viewAllTo}
             className="shrink-0 border border-[var(--ink-900)] px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors duration-200 hover:bg-[var(--ink-900)] hover:text-white"
           >
             {viewAllLabel}
-          </Link>
+          </SmartLink>
         )}
       </div>
 

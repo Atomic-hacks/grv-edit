@@ -201,13 +201,18 @@ model OrderEmailEvent {
   orderId   String
   order     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   type      OrderEmailType
+  // Only set for BRAND_ORDER (one notification per brand per order). "" for
+  // every customer-facing email — deliberately not NULL, because Postgres
+  // treats NULLs as distinct in a unique index and that would silently
+  // break the once-per-(order, type) guarantee below.
+  brandId   String         @default("")
   sentAt    DateTime?
   attempts  Int            @default(0)
   lastError String?
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 
-  @@unique([orderId, type])
+  @@unique([orderId, type, brandId])
   @@index([sentAt])
 }
 
@@ -217,6 +222,8 @@ enum OrderEmailType {
   ORDER_SHIPPED
   ORDER_DELIVERED
   ORDER_CANCELLED
+  // Operational notice to a brand's own inbox — not customer-facing.
+  BRAND_ORDER
 }
 
 model Discount {
@@ -410,14 +417,22 @@ enum CampaignAudience {
   ALL
 }
 
+// A brand only ever supplies *recipient* details — where brand-specific
+// operational email should go. Every email still sends from a GRV address
+// with platform-level credentials (see src/server/emailSenders.js); a brand
+// can never change the sender or reach the email provider configuration.
 model Brand {
-  id          String     @id
-  name        String
-  slug        String     @unique
-  logo        String?
-  description String?
-  products    Product[]
-  wishlists   Wishlist[]
+  id                        String           @id
+  name                      String
+  slug                      String           @unique
+  logo                      String?
+  description               String?
+  contactEmail              String?
+  // Email the brand when a paid order contains its products.
+  orderNotificationsEnabled Boolean          @default(false)
+  products                  Product[]
+  wishlists                 Wishlist[]
+  contentSections           ContentSection[]
 }
 
 // One self-referencing tree, arbitrarily deep — everything that used to be
@@ -445,6 +460,10 @@ model Category {
   homepageOrder  Int?
 
   products  ProductCategory[]
+  // Sections shown on this category's own landing page, and PRODUCTS
+  // sections elsewhere that pull their products from this category.
+  landingSections ContentSection[] @relation("CategoryLandingSections")
+  sourcedSections ContentSection[] @relation("ContentSectionSourceCategory")
   createdAt DateTime          @default(now())
   updatedAt DateTime          @default(now()) @updatedAt
 
@@ -469,11 +488,78 @@ model ProductCategory {
 // already, color reads off the variant, and Style/Mood/Occasion/Weather are
 // all the same shape (a named tag under a named dimension) so they share
 // one small model instead of four bespoke ones.
+// Every editable block on the Home, Shop, Departments and category landing
+// pages — one generic model rather than a table per section. `layout`
+// decides how it renders; fields a layout doesn't use are simply ignored.
+enum ContentPage {
+  HOME
+  SHOP
+  DEPARTMENTS
+  CATEGORY
+}
+
+enum ContentLayout {
+  HERO // full-bleed image/video with title, description and CTA
+  BANNER // wide media block with text and CTA
+  TILES // grid of linked image tiles (items)
+  BENTO // asymmetric collage of linked image tiles (items)
+  PRODUCTS // product rail fed by productSource
+  BRANDS // grid of every brand, maintained automatically
+}
+
+enum ContentMediaType {
+  IMAGE
+  VIDEO
+}
+
+enum ContentProductSource {
+  NEW_ARRIVALS
+  FEATURED
+  CATEGORY
+  BRAND
+}
+
+model ContentSection {
+  id          String           @id @default(cuid())
+  page        ContentPage
+  // Only for page = CATEGORY: which category's landing page this is on.
+  categoryId  String?
+  category    Category?        @relation("CategoryLandingSections", fields: [categoryId], references: [id], onDelete: Cascade)
+  layout      ContentLayout
+  eyebrow     String?
+  title       String
+  description String?
+  ctaLabel    String?
+  ctaUrl      String?
+  mediaType   ContentMediaType @default(IMAGE)
+  imageUrl    String?
+  videoUrl    String?
+  // TILES / BENTO only: [{ title, imageUrl, url }]
+  items       Json?
+
+  // PRODUCTS only
+  productSource    ContentProductSource?
+  sourceCategoryId String?
+  sourceCategory   Category?             @relation("ContentSectionSourceCategory", fields: [sourceCategoryId], references: [id], onDelete: SetNull)
+  sourceBrandId    String?
+  sourceBrand      Brand?                @relation(fields: [sourceBrandId], references: [id], onDelete: SetNull)
+  productLimit     Int                   @default(12)
+
+  position  Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([page, categoryId, active, position])
+}
+
 model FilterType {
-  id   String @id @default(cuid())
-  name String
-  slug String @unique
-  tags Tag[]
+  id       String  @id @default(cuid())
+  name     String
+  slug     String  @unique
+  // Editorial image for this theme's card on the Shop By page.
+  imageUrl String?
+  tags     Tag[]
 }
 
 model Tag {

@@ -12,7 +12,7 @@ const DiscountPrice = ({
   className = "",
   normalPrice,
   light = false,
-  discountTone = "default",
+
   align = "end",
 }) => {
   const hasDiscount =
@@ -25,13 +25,7 @@ const DiscountPrice = ({
   }
 
   const alignment = ALIGNMENT[align] || ALIGNMENT.end;
-  const saleTone =
-    discountTone === "red"
-      ? "text-neutral-900"
-      : light
-        ? "text-white"
-        : "text-red-600";
-
+  const saleTone = light ? "text-white" : "text-neutral-900";
   // Was-price, now-price and the percentage read as one line at card sizes
   // and wrap to two only when the container is genuinely narrow, instead of
   // always stacking into a three-line block beside the product name.

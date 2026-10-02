@@ -1,6 +1,6 @@
 import { Resend } from "resend";
 
-export const sendEmail = async ({ to, subject, html, from } = {}) => {
+export const sendEmail = async ({ to, subject, html, from, replyTo } = {}) => {
   try {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey || !to || !subject || !html) {
@@ -17,6 +17,7 @@ export const sendEmail = async ({ to, subject, html, from } = {}) => {
       to,
       subject,
       html,
+      ...(replyTo ? { replyTo } : {}),
     });
 
     if (!error) return { sent: true };

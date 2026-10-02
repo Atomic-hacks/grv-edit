@@ -110,9 +110,3 @@ export const flattenCategoryOptions = (categories = []) => {
   walk(buildCategoryTree(categories), 0);
   return result;
 };
-
-/** Categories that show on the homepage as curated blocks, in display order. */
-export const getHomepageCategories = (categories = []) =>
-  sortCategories(categories.filter((category) => category.showOnHomepage)).sort(
-    (a, b) => (a.homepageOrder ?? 0) - (b.homepageOrder ?? 0),
-  );

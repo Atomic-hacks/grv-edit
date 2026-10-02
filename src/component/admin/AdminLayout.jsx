@@ -13,7 +13,6 @@ const navigationGroups = [
       { label: "Style Tags", to: "/admin/tags" },
       { label: "Filter Types", to: "/admin/filter-types", exact: true },
       { label: "Bulk Upload", to: "/admin/products/bulk-upload" },
-      { label: "Site Images", to: "/admin/site-images" },
     ],
   },
   {
@@ -42,7 +41,10 @@ const navigationGroups = [
   },
   {
     name: "Content",
-    items: [{ label: "Journal", to: "/admin/journal" }],
+    items: [
+      { label: "Page Sections", to: "/admin/content-sections" },
+      { label: "Journal", to: "/admin/journal" },
+    ],
   },
   {
     name: "System",

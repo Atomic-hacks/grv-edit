@@ -9,11 +9,10 @@ import RecentlyViewedRail from "../component/section/RecentlyViewedRail";
 import StoreSupport from "../component/section/StoreSupport";
 import { getProductImages } from "../lib/productHelpers";
 import { fetchProducts } from "../lib/apiClient";
-import { useSiteImages } from "../lib/useSiteImages";
 import { useCart } from "../context/CartContext";
 
 // A muted tint per theme, used when no editorial photo has been set for it
-// yet (Site Images admin, key "shopby-<slug>") — never a broken image.
+// yet (Admin → Filter Types) — never a broken image.
 const FALLBACK_TINTS = ["#e8e3dc", "#ddE3e0", "#e3dde3", "#e0e3dd", "#e3e0dd"];
 
 const ThemeCard = ({ filterType, tags, image, tint, selectedSlugs, onToggleTag }) => (
@@ -63,7 +62,6 @@ const ThemeCard = ({ filterType, tags, image, tint, selectedSlugs, onToggleTag }
 
 const ShopBy = () => {
   const { addToCart } = useCart();
-  const siteImages = useSiteImages();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedSlugs = searchParams.getAll("tags");
 
@@ -151,7 +149,7 @@ const ShopBy = () => {
                   key={filterType.id}
                   filterType={filterType}
                   tags={typeTags}
-                  image={siteImages[`shopby-${filterType.slug}`]}
+                  image={filterType.imageUrl}
                   tint={FALLBACK_TINTS[index % FALLBACK_TINTS.length]}
                   selectedSlugs={selectedSlugs}
                   onToggleTag={toggleTag}
