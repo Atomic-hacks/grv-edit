@@ -43,7 +43,7 @@ export default defineConfig({
   // One copy of React Query only: a second copy (e.g. bundled inside the
   // persist client's dev pre-bundle) has its own context, which makes
   // useQueryClient throw "No QueryClient set" under the provider.
-  resolve: { dedupe: ["@tanstack/react-query", "@tanstack/query-core", "react", "react-dom"] },
+  resolve: { dedupe: ["@tanstack/react-query", "react", "react-dom"] },
   plugins: [
     tailwindcss(),
     apiPlugin(),
