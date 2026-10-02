@@ -78,3 +78,4 @@ Admin endpoints (`/api/admin/*`) each call `requireAdmin` themselves at the top 
 handler, independent of routing — see [src/server/requireAdmin.js](src/server/requireAdmin.js).
 When adding a new admin endpoint, copy that guard into the new handler; the route table
 does not enforce it for you.
+# archademy
