@@ -1,0 +1,344 @@
+import React, { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { createAuthenticatedRequest } from "../lib/apiClient";
+import { uploadMedia } from "../lib/uploadMedia";
+import Spinner from "../component/ui/Spinner";
+
+const emptyForm = { name: "", slug: "" };
+
+const AdminFilterTypes = () => {
+  const { session } = useAuth();
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
+  const [editingForm, setEditingForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [error, setError] = useState("");
+  const [imageBusyId, setImageBusyId] = useState(null);
+
+  const request = useMemo(() => createAuthenticatedRequest(session), [session]);
+
+  const queryClient = useQueryClient();
+  const filterTypesQuery = useQuery({
+    queryKey: ["admin", "filter-types"],
+    queryFn: () => request("/api/admin/filter-types"),
+    enabled: Boolean(session),
+  });
+  const filterTypes = filterTypesQuery.data || [];
+  const loading = filterTypesQuery.isPending;
+  const displayError = error || filterTypesQuery.error?.message;
+
+  const updateField = (setter) => (event) => {
+    const { name, value } = event.target;
+    setter((current) => ({ ...current, [name]: value }));
+  };
+
+  const createFilterType = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await request("/api/admin/filter-types", {
+        method: "POST",
+        body: JSON.stringify(form),
+      });
+      setForm(emptyForm);
+      await queryClient.invalidateQueries({
+        queryKey: ["admin", "filter-types"],
+      });
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startEditing = (filterType) => {
+    setEditingId(filterType.id);
+    setEditingForm({ name: filterType.name, slug: filterType.slug });
+    setError("");
+  };
+
+  const saveEdit = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await request(`/api/admin/filter-types/${editingId}`, {
+        method: "PUT",
+        body: JSON.stringify(editingForm),
+      });
+      setEditingId(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["admin", "filter-types"],
+      });
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Each theme's editorial image on the Shop By page. Saved immediately —
+  // there's nothing else on the row to confirm alongside it.
+  const saveThemeImage = async (filterType, imageUrl) => {
+    setError("");
+    setImageBusyId(filterType.id);
+    try {
+      await request(`/api/admin/filter-types/${filterType.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ imageUrl }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["admin", "filter-types"] });
+      await queryClient.invalidateQueries({ queryKey: ["filter-types"] });
+    } catch (imageError) {
+      setError(imageError.message);
+    } finally {
+      setImageBusyId(null);
+    }
+  };
+
+  const uploadThemeImage = async (filterType, event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setError("");
+    setImageBusyId(filterType.id);
+    try {
+      await saveThemeImage(filterType, await uploadMedia(request, file));
+    } catch (uploadError) {
+      setError(uploadError.message);
+      setImageBusyId(null);
+    }
+  };
+
+  const deleteFilterType = async (id) => {
+    setError("");
+    setDeletingId(id);
+    try {
+      await request(`/api/admin/filter-types/${id}`, { method: "DELETE" });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin", "filter-types"],
+      });
+    } catch (deleteError) {
+      setError(deleteError.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <main className="mx-auto max-w-6xl px-6 py-12 md:px-12 md:py-20">
+      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-[var(--ink-900)] pb-6">
+        <div>
+          <Link
+            to="/admin"
+            className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]"
+          >
+            Admin
+          </Link>
+          <h1 className="mt-3 text-3xl font-semibold">Filter types</h1>
+        </div>
+        <p className="max-w-sm text-sm text-[var(--ink-500)]">
+          Manage the groups used to organize product tags.
+        </p>
+      </div>
+
+      {displayError && (
+        <div
+          role="alert"
+          className="mt-6 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          {displayError}
+        </div>
+      )}
+
+      <form
+        onSubmit={createFilterType}
+        className="mt-8 grid gap-4 border-b border-[var(--line)] pb-8 md:grid-cols-[1fr_1fr_auto] md:items-end"
+      >
+        <label className="text-sm">
+          <span className="mb-2 block font-medium">Name</span>
+          <input
+            required
+            name="name"
+            value={form.name}
+            onChange={updateField(setForm)}
+            className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-2 block font-medium">Slug</span>
+          <input
+            required
+            name="slug"
+            value={form.slug}
+            onChange={updateField(setForm)}
+            className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={saving || loading}
+          className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white hover:text-[var(--ink-900)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving ? <Spinner label="Saving" /> : "Add filter type"}
+        </button>
+      </form>
+
+      <div className="mt-8 overflow-x-auto border-t border-[var(--ink-900)]">
+        <table className="w-full min-w-[650px] text-left text-sm">
+          <thead className="border-b border-[var(--line)] text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
+            <tr>
+              <th className="px-3 py-4 font-medium">Name</th>
+              <th className="px-3 py-4 font-medium">Slug</th>
+              <th className="px-3 py-4 font-medium">Tags</th>
+              <th className="px-3 py-4 font-medium">Shop By image</th>
+              <th className="px-3 py-4 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && (
+              <tr>
+                <td colSpan="5" className="px-3 py-8 text-[var(--ink-500)]">
+                  <Spinner label="Loading filter types" />
+                </td>
+              </tr>
+            )}
+            {!loading && filterTypes.length === 0 && (
+              <tr>
+                <td colSpan="5" className="px-3 py-8 text-[var(--ink-500)]">
+                  No filter types yet.
+                </td>
+              </tr>
+            )}
+            {filterTypes.map((filterType) => (
+              <tr
+                key={filterType.id}
+                className="border-b border-[var(--line)] align-top"
+              >
+                {editingId === filterType.id ? (
+                  <td colSpan="5" className="px-3 py-4">
+                    <form
+                      onSubmit={saveEdit}
+                      className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto] md:items-end"
+                    >
+                      <label className="text-sm">
+                        <span className="mb-1 block text-xs text-[var(--ink-500)]">
+                          Name
+                        </span>
+                        <input
+                          required
+                          name="name"
+                          value={editingForm.name}
+                          onChange={updateField(setEditingForm)}
+                          className="w-full border border-[var(--line)] px-2.5 py-2"
+                        />
+                      </label>
+                      <label className="text-sm">
+                        <span className="mb-1 block text-xs text-[var(--ink-500)]">
+                          Slug
+                        </span>
+                        <input
+                          required
+                          name="slug"
+                          value={editingForm.slug}
+                          onChange={updateField(setEditingForm)}
+                          className="w-full border border-[var(--line)] px-2.5 py-2"
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="border border-[var(--ink-900)] bg-[var(--ink-900)] px-3 py-2 text-sm text-white disabled:opacity-50"
+                      >
+                        {saving ? <Spinner label="Saving" /> : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        className="px-3 py-2 text-sm underline"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  </td>
+                ) : (
+                  <>
+                    <td className="px-3 py-4 font-medium">{filterType.name}</td>
+                    <td className="px-3 py-4 text-[var(--ink-700)]">
+                      {filterType.slug}
+                    </td>
+                    <td className="px-3 py-4 text-[var(--ink-700)]">
+                      {filterType._count.tags}
+                    </td>
+                    <td className="px-3 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-16 shrink-0 bg-[var(--surface-muted)]">
+                          {filterType.imageUrl && (
+                            <img src={filterType.imageUrl} alt="" className="h-full w-full object-cover" />
+                          )}
+                        </div>
+                        {imageBusyId === filterType.id ? (
+                          <Spinner label="Saving" className="text-xs text-[var(--ink-500)]" />
+                        ) : (
+                          <div className="flex flex-col gap-1 text-xs">
+                            <label className="cursor-pointer underline">
+                              {filterType.imageUrl ? "Replace" : "Upload"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="sr-only"
+                                onChange={(event) => uploadThemeImage(filterType, event)}
+                              />
+                            </label>
+                            {filterType.imageUrl && (
+                              <button
+                                type="button"
+                                onClick={() => saveThemeImage(filterType, null)}
+                                className="text-left text-red-700 underline"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-4">
+                      <div className="flex justify-end gap-4">
+                        <button
+                          type="button"
+                          onClick={() => startEditing(filterType)}
+                          className="text-sm underline"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteFilterType(filterType.id)}
+                          disabled={deletingId === filterType.id}
+                          className="text-sm text-red-700 underline"
+                        >
+                          {deletingId === filterType.id ? (
+                            <Spinner label="Deleting" />
+                          ) : (
+                            "Delete"
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </main>
+  );
+};
+
+export default AdminFilterTypes;

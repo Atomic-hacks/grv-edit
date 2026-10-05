@@ -1,0 +1,53 @@
+{
+  "name": "react-tut",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "set -a && . ./.env.local && set +a && vite",
+    "build": "node scripts/generateSitemap.js && prisma generate && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "db:push": "set -a && . ./.env.local && set +a && prisma db push",
+    "db:pull": "set -a && . ./.env.local && set +a && prisma db pull",
+    "db:backup": "set -a && . ./.env.local && set +a && node scripts/backupDatabase.js",
+    "db:lock": "set -a && . ./.env.local && set +a && node scripts/lockDownPublicTables.js",
+    "db:generate": "set -a && . ./.env.local && set +a && prisma generate",
+    "db:seed-content": "set -a && . ./.env.local && set +a && node scripts/seedContentSections.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "@sentry/node": "^11.0.0",
+    "@sentry/react": "^11.0.0",
+    "@supabase/supabase-js": "^2.115.0",
+    "@tailwindcss/vite": "^4.1.17",
+    "@tanstack/query-sync-storage-persister": "^5.104.0",
+    "@tanstack/react-query": "^5.104.0",
+    "@tanstack/react-query-persist-client": "^5.104.0",
+    "@vercel/functions": "^3.9.9",
+    "cloudinary": "^2.11.0",
+    "clsx": "^2.1.1",
+    "country-state-city": "^3.2.1",
+    "csv-parse": "^7.0.2",
+    "framer-motion": "^12.33.0",
+    "prisma": "^6.19.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-phone-number-input": "^3.4.18",
+    "react-router-dom": "^7.18.4",
+    "resend": "^6.26.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@sentry/vite-plugin": "^5.4.0",
+    "eslint": "^9.36.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.22",
+    "globals": "^16.4.0",
+    "tailwindcss": "^4.1.17",
+    "vite": "^7.3.6",
+    "vitest": "^5.0.1"
+  }
+}

@@ -1,0 +1,146 @@
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "../lib/supabaseClient";
+import { safeReturnTo } from "../lib/safeReturnTo";
+
+const AuthContext = createContext(null);
+const HAS_ACCOUNT_STORAGE_KEY = "grv_has_account";
+
+const rememberAccountOnThisBrowser = () => {
+  window.localStorage.setItem(HAS_ACCOUNT_STORAGE_KEY, "true");
+};
+
+export const AuthProvider = ({ children }) => {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const appUserQuery = useQuery({
+    queryKey: ["me", session?.user?.id],
+    queryFn: async () => {
+      const response = await fetch("/api/me", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      return response.ok ? ((await response.json())?.user ?? null) : null;
+    },
+    enabled: Boolean(session?.access_token),
+  });
+  const appUser = appUserQuery.data;
+  const appUserLoading = appUserQuery.isPending;
+  // Call after any server-side change to the User row (email verification,
+  // profile update) that isn't already reflected in this cached copy —
+  // otherwise the 5-minute staleTime means the page keeps showing the old
+  // value until it happens to expire.
+  const refreshAppUser = useCallback(
+    () =>
+      queryClient.invalidateQueries({ queryKey: ["me", session?.user?.id] }),
+    [queryClient, session?.user?.id],
+  );
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setLoading(false);
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange(
+      (_event, nextSession) => {
+        setSession(nextSession);
+        // Covers the Google OAuth redirect too, not just signIn/signUp —
+        // any session appearing at all means this browser has an account.
+        if (nextSession) rememberAccountOnThisBrowser();
+      },
+    );
+
+    return () => subscription.subscription.unsubscribe();
+  }, []);
+
+  // appUser is the Prisma User row (id/email/name/role) — the authoritative
+  // source for role, fetched via /api/me rather than trusted from the client.
+  const signUp = async ({ email, password, name }) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name },
+      },
+    });
+    if (error) throw error;
+    if (!data.user?.id) throw new Error("Could not create your account.");
+    const verificationHeaders = { "Content-Type": "application/json" };
+    if (data.session?.access_token) {
+      verificationHeaders.Authorization = `Bearer ${data.session.access_token}`;
+    }
+    const verificationResponse = await fetch("/api/auth/send-verification", {
+      method: "POST",
+      headers: verificationHeaders,
+      body: JSON.stringify({ userId: data.user.id }),
+    });
+    if (!verificationResponse.ok) {
+      const body = await verificationResponse.json().catch(() => ({}));
+      throw new Error(body.error || "Could not send your verification code.");
+    }
+    rememberAccountOnThisBrowser();
+    return data;
+  };
+
+  const signIn = async ({ email, password }) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    rememberAccountOnThisBrowser();
+    return data;
+  };
+
+  const signOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  };
+
+  // Redirects out to Google and back — there's no local result to return,
+  // the session shows up via onAuthStateChange once the redirect completes.
+  const signInWithGoogle = async ({ returnTo = "/account" } = {}) => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}${safeReturnTo(returnTo)}`,
+      },
+    });
+    if (error) throw error;
+  };
+
+  const value = useMemo(
+    () => ({
+      session,
+      user: session?.user ?? null,
+      appUser,
+      appUserLoading,
+      refreshAppUser,
+      loading,
+      signUp,
+      signIn,
+      signInWithGoogle,
+      signOut,
+    }),
+    [session, appUser, appUserLoading, loading, refreshAppUser],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+};
