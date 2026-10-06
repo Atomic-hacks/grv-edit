@@ -1,3 +1,4 @@
+import { variantLabel } from "../lib/variantOptions";
 import React from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -102,9 +103,9 @@ const OrderDetailContent = () => {
                         </p>
                       )}
                       <p className="mt-1 text-gray-500">
-                        {item.variant?.color || ""}
-                        {item.variant?.color && item.variant?.size ? " / " : ""}
-                        {item.variant?.size || ""} · Qty {item.quantity}
+                        {variantLabel(item.variant)}
+                        {variantLabel(item.variant) ? " · " : ""}Qty{" "}
+                        {item.quantity}
                       </p>
                     </div>
                   </div>

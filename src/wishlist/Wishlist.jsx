@@ -1,3 +1,4 @@
+import { variantLabel } from "../lib/variantOptions";
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import RequireAuth from "../component/auth/RequireAuth";
@@ -95,7 +96,7 @@ const WishlistCard = ({ item }) => {
                 value={variant.id}
                 disabled={variant.stock < 1}
               >
-                {variant.color} / {variant.size}
+                {variantLabel(variant)}
                 {variant.stock < 1 ? " (Sold out)" : ""}
               </option>
             ))}

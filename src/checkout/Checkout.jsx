@@ -1,3 +1,4 @@
+import { variantLabel } from "../lib/variantOptions";
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -439,9 +440,8 @@ const CheckoutContent = () => {
                       )}
                     </div>
                     <p className="mt-1 text-xs text-gray-500">
-                      {variant?.color || ""}
-                      {variant?.color && variant?.size ? " / " : ""}
-                      {variant?.size || ""} · Qty {item.qty}
+                      {variantLabel(variant)}
+                      {variantLabel(variant) ? " · " : ""}Qty {item.qty}
                     </p>
                   </div>
                   <p className="shrink-0 font-medium">

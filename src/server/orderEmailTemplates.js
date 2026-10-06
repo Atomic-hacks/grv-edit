@@ -1,3 +1,4 @@
+import { variantLabel } from "../lib/variantOptions.js";
 import {
   escapeHtml,
   siteUrl,
@@ -22,9 +23,7 @@ const money = (value) => nairaFormatter.format(Number(value || 0));
 // every email client still renders tables predictably and flexbox is not
 // dependable here.
 const itemRow = (item) => {
-  const variantParts = [item.variant?.color, item.variant?.size].filter(
-    Boolean,
-  );
+  const variantParts = [variantLabel(item.variant)].filter(Boolean);
   const thumbnail = item.image
     ? `<img src="${escapeHtml(item.image)}" width="56" alt="" style="display:block;width:56px;height:72px;object-fit:cover;border:1px solid ${BORDER};" />`
     : `<div style="width:56px;height:72px;background:#f4f4f4;border:1px solid ${BORDER};"></div>`;

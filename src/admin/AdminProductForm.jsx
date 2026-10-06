@@ -9,6 +9,7 @@ import AdminPageHeader from "../component/admin/AdminPageHeader";
 import InlineNotice from "../component/ui/InlineNotice";
 import SubmitButton from "../component/ui/SubmitButton";
 import Spinner from "../component/ui/Spinner";
+import { NO_OPTION_COLOR, NO_OPTION_SIZE } from "../lib/variantOptions";
 
 const slugify = (name) =>
   name
@@ -512,6 +513,50 @@ const AdminProductForm = () => {
   // Each color is uploaded once and the resulting URL reused across every
   // size created for it — a shirt in one color shouldn't upload the same
   // photo five times over.
+  // Accessories (watches, bags…) have no color/size choice, but the cart and
+  // stock still need a variant — so create the one placeholder variant.
+  const [noOptionStock, setNoOptionStock] = useState("");
+  const [noOptionSubmitting, setNoOptionSubmitting] = useState(false);
+  const [noOptionError, setNoOptionError] = useState("");
+  const submitNoOptionVariant = async () => {
+    setNoOptionError("");
+    const stock = Number(noOptionStock);
+    if (noOptionStock.trim() === "" || !Number.isInteger(stock) || stock < 0) {
+      setNoOptionError("Enter the stock count as a whole number, 0 or more.");
+      return;
+    }
+    const suffix = "-ONE-SIZE";
+    const sku = `${slugify(form.name).slice(0, 64 - suffix.length)}${suffix}`
+      .toUpperCase()
+      .slice(0, 64);
+    setNoOptionSubmitting(true);
+    try {
+      const variant = await request(
+        `/api/admin/products/${productId}/variants`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            color: NO_OPTION_COLOR,
+            size: NO_OPTION_SIZE,
+            sku,
+            stock,
+          }),
+        },
+      );
+      setVariants((current) => [...current, variant]);
+      setStockDrafts((current) => ({
+        ...current,
+        [variant.id]: String(variant.stock),
+      }));
+      setNoOptionStock("");
+      await queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
+    } catch (noOptionErr) {
+      setNoOptionError(noOptionErr.message);
+    } finally {
+      setNoOptionSubmitting(false);
+    }
+  };
+
   const submitMatrixVariants = async () => {
     setMatrixError("");
     setMatrixNotice("");
@@ -988,6 +1033,39 @@ const AdminProductForm = () => {
             <p className="text-sm text-[var(--ink-500)]">
               {variants.length} variant{variants.length === 1 ? "" : "s"}
             </p>
+          </div>
+
+          <div className="mt-6 border border-[var(--line)] p-4">
+            <p className="text-sm font-medium">
+              No options (watch, bag, other accessories)
+            </p>
+            <p className="mt-1 text-xs text-[var(--ink-500)]">
+              One buyable item with no color or size. Customers won&apos;t see
+              any pickers — just the price and Add to Goody Bag.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={noOptionStock}
+                onChange={(event) => setNoOptionStock(event.target.value)}
+                placeholder="Stock"
+                aria-label="Stock"
+                className="w-28 border border-[var(--line)] px-3 py-2 text-sm"
+              />
+              <button
+                type="button"
+                disabled={noOptionSubmitting}
+                onClick={submitNoOptionVariant}
+                className="border border-[var(--ink-900)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.1em] disabled:opacity-50"
+              >
+                {noOptionSubmitting ? "Adding" : "Add single item"}
+              </button>
+            </div>
+            {noOptionError && (
+              <p className="mt-2 text-xs text-red-700">{noOptionError}</p>
+            )}
           </div>
 
           {/* One row per color, one column per size — covers "red has 5 in

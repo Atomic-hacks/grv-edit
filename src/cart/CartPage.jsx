@@ -1,3 +1,4 @@
+import { isPlaceholderSize } from "../lib/variantOptions";
 import React from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -107,7 +108,7 @@ const CartLine = ({ item }) => {
 
         <div className="mt-auto flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pt-4">
           <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
-            {variant && (
+            {variant && !isPlaceholderSize(variant.size) && (
               <div>
                 <p className="eyebrow">Size</p>
                 <p className="mt-1 flex items-baseline gap-2 text-[13px]">
@@ -265,8 +266,8 @@ const CartPage = () => {
                 <dl className="mt-5 space-y-3 text-[13px]">
                   <div className="flex items-center justify-between">
                     <dt className="text-[var(--ink-500)]">
-                      Subtotal ({itemCount}{" "}
-                      {itemCount === 1 ? "item" : "items"})
+                      Subtotal ({itemCount} {itemCount === 1 ? "item" : "items"}
+                      )
                     </dt>
                     <dd>{formatPrice(subtotal)}</dd>
                   </div>

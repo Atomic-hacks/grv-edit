@@ -1,3 +1,4 @@
+import { variantLabel } from "../lib/variantOptions";
 import React, { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -215,8 +216,8 @@ const ReportIssueForm = () => {
                 />
                 <span>
                   {item.productName}
-                  {item.variant
-                    ? ` — ${item.variant.color} / ${item.variant.size}`
+                  {variantLabel(item.variant)
+                    ? ` — ${variantLabel(item.variant)}`
                     : ""}{" "}
                   · Qty {item.quantity}
                 </span>

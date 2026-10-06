@@ -1,3 +1,4 @@
+import { isPlaceholderColor, isPlaceholderSize } from "./lib/variantOptions";
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getProductImages, getLeafCategory } from "./lib/productHelpers";
@@ -251,6 +252,10 @@ const ProductDetail = () => {
       (variant) =>
         variant.color === selectedColor && variant.size === selectedSize,
     ) || null;
+  // A product with no real options is sold as one placeholder variant —
+  // there is nothing to pick, so the pickers disappear.
+  const hideColor = colors.every(isPlaceholderColor);
+  const hideSize = sizes.every(isPlaceholderSize);
   const isVariantInStock = (variant) => Boolean(variant?.stock > 0);
   const selectedVariantInStock = isVariantInStock(selectedVariant);
   const selectedVariantWaitlisted = Boolean(
@@ -396,82 +401,86 @@ const ProductDetail = () => {
               </p>
             ) : (
               <div className="grid gap-6">
-                <fieldset className="text-sm">
-                  <div className="mb-3 flex items-center justify-between">
-                    <legend className="eyebrow">
-                      Colour{selectedColor ? `: ${selectedColor}` : ""}
-                    </legend>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {colors.map((color) => {
-                      const selected = selectedColor === color;
-                      return (
-                        <button
-                          key={color}
-                          type="button"
-                          aria-label={`Select ${color}`}
-                          title={color}
-                          aria-pressed={selected}
-                          onClick={() => {
-                            const matchingSizes = variants
-                              .filter((variant) => variant.color === color)
-                              .map((variant) => variant.size);
-                            setSelectedColor(color);
-                            setSelectedSize(
-                              matchingSizes.includes(selectedSize)
-                                ? selectedSize
-                                : matchingSizes[0] || "",
-                            );
-                          }}
-                          className={`h-9 w-9 border transition-all duration-200 ${
-                            selected
-                              ? "border-[var(--ink-900)] ring-1 ring-[var(--ink-900)] ring-offset-2"
-                              : "border-[var(--line)] hover:border-[var(--ink-900)]"
-                          }`}
-                          style={{ backgroundColor: getColorSwatch(color) }}
-                        />
-                      );
-                    })}
-                  </div>
-                </fieldset>
-                <fieldset className="text-sm">
-                  <div className="mb-3 flex items-center justify-between">
-                    <legend className="eyebrow">Size</legend>
-                    <Link
-                      to="/size-guide"
-                      className="text-[11px] font-semibold text-[var(--ink-700)] underline underline-offset-4 transition-colors hover:text-[var(--ink-900)]"
-                    >
-                      Size guide
-                    </Link>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {sizes.map((size) => {
-                      const unavailable =
-                        Boolean(selectedColor) &&
-                        !sizesForSelectedColor.has(size);
-                      const selected = selectedSize === size;
-                      return (
-                        <button
-                          key={size}
-                          type="button"
-                          aria-label={`Select size ${size}`}
-                          aria-pressed={selected}
-                          disabled={unavailable}
-                          onClick={() => setSelectedSize(size)}
-                          className={`min-h-11 min-w-12 border px-3 text-[13px] transition-colors duration-200 ${
-                            unavailable
-                              ? "cursor-not-allowed border-[var(--line)] bg-[var(--surface-muted)] text-[var(--ink-300)] line-through"
-                              : selected
-                                ? "border-[var(--ink-900)] bg-[var(--ink-900)] text-white"
-                                : "border-[var(--line)] bg-white text-[var(--ink-700)] hover:border-[var(--ink-900)]"
-                          }`}
-                        >
-                          {size}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </fieldset>
+                {!hideColor && (
+                  <fieldset className="text-sm">
+                    <div className="mb-3 flex items-center justify-between">
+                      <legend className="eyebrow">
+                        Colour{selectedColor ? `: ${selectedColor}` : ""}
+                      </legend>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {colors.map((color) => {
+                        const selected = selectedColor === color;
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            aria-label={`Select ${color}`}
+                            title={color}
+                            aria-pressed={selected}
+                            onClick={() => {
+                              const matchingSizes = variants
+                                .filter((variant) => variant.color === color)
+                                .map((variant) => variant.size);
+                              setSelectedColor(color);
+                              setSelectedSize(
+                                matchingSizes.includes(selectedSize)
+                                  ? selectedSize
+                                  : matchingSizes[0] || "",
+                              );
+                            }}
+                            className={`h-9 w-9 border transition-all duration-200 ${
+                              selected
+                                ? "border-[var(--ink-900)] ring-1 ring-[var(--ink-900)] ring-offset-2"
+                                : "border-[var(--line)] hover:border-[var(--ink-900)]"
+                            }`}
+                            style={{ backgroundColor: getColorSwatch(color) }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                )}
+                {!hideSize && (
+                  <fieldset className="text-sm">
+                    <div className="mb-3 flex items-center justify-between">
+                      <legend className="eyebrow">Size</legend>
+                      <Link
+                        to="/size-guide"
+                        className="text-[11px] font-semibold text-[var(--ink-700)] underline underline-offset-4 transition-colors hover:text-[var(--ink-900)]"
+                      >
+                        Size guide
+                      </Link>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {sizes.map((size) => {
+                        const unavailable =
+                          Boolean(selectedColor) &&
+                          !sizesForSelectedColor.has(size);
+                        const selected = selectedSize === size;
+                        return (
+                          <button
+                            key={size}
+                            type="button"
+                            aria-label={`Select size ${size}`}
+                            aria-pressed={selected}
+                            disabled={unavailable}
+                            onClick={() => setSelectedSize(size)}
+                            className={`min-h-11 min-w-12 border px-3 text-[13px] transition-colors duration-200 ${
+                              unavailable
+                                ? "cursor-not-allowed border-[var(--line)] bg-[var(--surface-muted)] text-[var(--ink-300)] line-through"
+                                : selected
+                                  ? "border-[var(--ink-900)] bg-[var(--ink-900)] text-white"
+                                  : "border-[var(--line)] bg-white text-[var(--ink-700)] hover:border-[var(--ink-900)]"
+                            }`}
+                          >
+                            {size}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                )}
               </div>
             )}
           </div>
@@ -505,7 +514,8 @@ const ProductDetail = () => {
                 </p>
               )}
               <p className="meta-text mt-4">
-                SKU {selectedVariant.sku} · Size {selectedVariant.size}
+                SKU {selectedVariant.sku}
+                {hideSize ? "" : ` · Size ${selectedVariant.size}`}
               </p>
               {waitlistError && (
                 <p className="mt-2 text-xs text-red-700">{waitlistError}</p>
