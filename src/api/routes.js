@@ -3462,9 +3462,20 @@ const createAdminProductVariant = async (request, productId) => {
 
   const input = parseVariantInput(await request.json());
   if (input.error) return jsonResponse({ error: input.error }, 400);
-  const variant = await prisma.variant.create({
-    data: { id: crypto.randomUUID(), images: [], productId, ...input.data },
-  });
+  let variant;
+  try {
+    variant = await prisma.variant.create({
+      data: { id: crypto.randomUUID(), images: [], productId, ...input.data },
+    });
+  } catch (error) {
+    if (error?.code === "P2002") {
+      return jsonResponse(
+        { error: "A variant with this SKU already exists" },
+        409,
+      );
+    }
+    throw error;
+  }
   return jsonResponse(variant, 201);
 };
 
