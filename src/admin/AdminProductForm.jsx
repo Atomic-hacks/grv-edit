@@ -551,8 +551,11 @@ const AdminProductForm = () => {
           );
           continue;
         }
+        // Trim the product name, not the suffix: truncating the whole string
+        // drops color/size on long names and makes every size collide.
+        const skuSuffix = `-${slugify(row.color)}-${slugify(size)}`;
         const sku =
-          `${slugify(form.name)}-${slugify(row.color)}-${slugify(size)}`
+          `${slugify(form.name).slice(0, 64 - skuSuffix.length)}${skuSuffix}`
             .toUpperCase()
             .slice(0, 64);
         try {
