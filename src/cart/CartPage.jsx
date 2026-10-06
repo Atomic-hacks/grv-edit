@@ -1,4 +1,3 @@
-import { isPlaceholderSize } from "../lib/variantOptions";
 import React from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -108,7 +107,7 @@ const CartLine = ({ item }) => {
 
         <div className="mt-auto flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pt-4">
           <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
-            {variant && !isPlaceholderSize(variant.size) && (
+            {variant && (
               <div>
                 <p className="eyebrow">Size</p>
                 <p className="mt-1 flex items-baseline gap-2 text-[13px]">

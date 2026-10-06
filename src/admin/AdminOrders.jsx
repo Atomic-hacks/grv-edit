@@ -1,3 +1,4 @@
+import { variantLabel } from "../lib/variantOptions";
 import React, { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
@@ -8,14 +9,39 @@ import { formatPrice } from "../lib/productHelpers";
 import { NIGERIAN_REGIONS } from "../lib/nigeriaRegions";
 import Spinner from "../component/ui/Spinner";
 import ListToolbar, { ShowMore } from "../component/admin/ListToolbar";
-import { useListControls, byText, byNumber, byDate } from "../lib/useListControls";
+import {
+  useListControls,
+  byText,
+  byNumber,
+  byDate,
+} from "../lib/useListControls";
 
 const ORDER_SORTS = [
-  { value: "newest", label: "Newest first", compare: byDate((o) => o.createdAt, -1) },
-  { value: "oldest", label: "Oldest first", compare: byDate((o) => o.createdAt) },
-  { value: "total-high", label: "Highest total", compare: byNumber((o) => o.total, -1) },
-  { value: "total-low", label: "Lowest total", compare: byNumber((o) => o.total) },
-  { value: "customer", label: "Customer A–Z", compare: byText((o) => o.customer?.name || o.customer?.email) },
+  {
+    value: "newest",
+    label: "Newest first",
+    compare: byDate((o) => o.createdAt, -1),
+  },
+  {
+    value: "oldest",
+    label: "Oldest first",
+    compare: byDate((o) => o.createdAt),
+  },
+  {
+    value: "total-high",
+    label: "Highest total",
+    compare: byNumber((o) => o.total, -1),
+  },
+  {
+    value: "total-low",
+    label: "Lowest total",
+    compare: byNumber((o) => o.total),
+  },
+  {
+    value: "customer",
+    label: "Customer A–Z",
+    compare: byText((o) => o.customer?.name || o.customer?.email),
+  },
   { value: "status", label: "Status", compare: byText((o) => o.status) },
 ];
 import OrderTimeline from "../component/order/OrderTimeline";
@@ -96,16 +122,16 @@ const AdminOrders = () => {
   const filteredOrders = useMemo(
     () =>
       orders.filter((order) => {
-    const matchesStatus = !status || order.status === status;
-    const matchesState = !state || order.state === state;
-    const matchesRegion = !region || order.region === region;
-    const query = search.trim().toLowerCase();
-    const matchesSearch =
-      !query ||
-      order.id.toLowerCase().includes(query) ||
-      order.customer.name?.toLowerCase().includes(query) ||
-      order.customer.email?.toLowerCase().includes(query);
-    return matchesStatus && matchesState && matchesRegion && matchesSearch;
+        const matchesStatus = !status || order.status === status;
+        const matchesState = !state || order.state === state;
+        const matchesRegion = !region || order.region === region;
+        const query = search.trim().toLowerCase();
+        const matchesSearch =
+          !query ||
+          order.id.toLowerCase().includes(query) ||
+          order.customer.name?.toLowerCase().includes(query) ||
+          order.customer.email?.toLowerCase().includes(query);
+        return matchesStatus && matchesState && matchesRegion && matchesSearch;
       }),
     [orders, status, state, region, search],
   );
@@ -589,7 +615,7 @@ const AdminOrders = () => {
                             </p>
                             <p className="mt-1 text-[var(--ink-500)]">
                               {item.variant
-                                ? `${item.variant.color} / ${item.variant.size}`
+                                ? variantLabel(item.variant)
                                 : "Unavailable variant"}{" "}
                               · Qty {item.quantity}
                             </p>

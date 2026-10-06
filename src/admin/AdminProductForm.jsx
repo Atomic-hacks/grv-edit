@@ -9,7 +9,11 @@ import AdminPageHeader from "../component/admin/AdminPageHeader";
 import InlineNotice from "../component/ui/InlineNotice";
 import SubmitButton from "../component/ui/SubmitButton";
 import Spinner from "../component/ui/Spinner";
-import { NO_OPTION_COLOR, NO_OPTION_SIZE } from "../lib/variantOptions";
+import {
+  NO_OPTION_COLOR,
+  NO_OPTION_SIZE,
+  variantLabel,
+} from "../lib/variantOptions";
 
 const slugify = (name) =>
   name
@@ -1314,9 +1318,7 @@ const AdminProductForm = () => {
               >
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-sm marker:hidden">
                   <span className="min-w-0">
-                    <span className="font-medium">
-                      {variant.color} / {variant.size}
-                    </span>
+                    <span className="font-medium">{variantLabel(variant)}</span>
                     <span className="ml-3 font-mono text-xs text-[var(--ink-500)]">
                       {variant.sku}
                     </span>

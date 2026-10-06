@@ -1,3 +1,4 @@
+import { variantLabel } from "../lib/variantOptions";
 import React, { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
@@ -378,7 +379,7 @@ const AdminOrderDetail = () => {
                       )}
                       <p className="mt-1 text-[var(--ink-500)]">
                         {item.variant
-                          ? `${item.variant.color} / ${item.variant.size}`
+                          ? variantLabel(item.variant)
                           : "Unavailable variant"}
                         {item.variant?.sku ? ` · ${item.variant.sku}` : ""} ·
                         Qty {item.quantity}

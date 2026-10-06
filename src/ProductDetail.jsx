@@ -515,7 +515,7 @@ const ProductDetail = () => {
               )}
               <p className="meta-text mt-4">
                 SKU {selectedVariant.sku}
-                {hideSize ? "" : ` · Size ${selectedVariant.size}`}
+                {` · Size ${selectedVariant.size}`}
               </p>
               {waitlistError && (
                 <p className="mt-2 text-xs text-red-700">{waitlistError}</p>
