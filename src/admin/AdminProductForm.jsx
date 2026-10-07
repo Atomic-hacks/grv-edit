@@ -326,10 +326,18 @@ const AdminProductForm = () => {
     );
   };
 
+  // Create-time shortcut for accessories: no color/size, just a stock count.
+  const [singleItem, setSingleItem] = useState(false);
+  const [singleItemStock, setSingleItemStock] = useState("");
+
   const saveProduct = async (event) => {
     event.preventDefault();
     setError("");
     setNotice("");
+    if (!productId && singleItem && !isValidStock(singleItemStock)) {
+      setError("Enter the stock count as a whole number, 0 or more.");
+      return;
+    }
     if (selectedCategoryIds.length === 0) {
       setError(
         "Pick at least one category — check where this product belongs below.",
@@ -362,10 +370,28 @@ const AdminProductForm = () => {
       await queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
       const wasNew = !productId;
       setProductId(product.id);
+      let singleItemCreated = false;
+      if (wasNew && singleItem) {
+        try {
+          await createNoOptionVariant(
+            product.id,
+            product.name,
+            singleItemStock,
+          );
+          singleItemCreated = true;
+          setSingleItem(false);
+        } catch (variantError) {
+          setError(
+            `Product created, but its stock couldn't be added: ${variantError.message}. Use "Add single item" below.`,
+          );
+        }
+      }
       setNotice(
-        wasNew
-          ? "Product created. Add variants below, or come back to this page any time."
-          : "Changes saved.",
+        !wasNew
+          ? "Changes saved."
+          : singleItemCreated
+            ? "Product created and ready to buy."
+            : "Product created. Add variants below, or come back to this page any time.",
       );
     } catch (saveError) {
       setError(saveError.message);
@@ -522,36 +548,43 @@ const AdminProductForm = () => {
   const [noOptionStock, setNoOptionStock] = useState("");
   const [noOptionSubmitting, setNoOptionSubmitting] = useState(false);
   const [noOptionError, setNoOptionError] = useState("");
+  const isValidStock = (value) => {
+    const stock = Number(value);
+    return String(value).trim() !== "" && Number.isInteger(stock) && stock >= 0;
+  };
+  const createNoOptionVariant = async (targetProductId, name, stock) => {
+    const suffix = "-ONE-SIZE";
+    const sku = `${slugify(name).slice(0, 64 - suffix.length)}${suffix}`
+      .toUpperCase()
+      .slice(0, 64);
+    const variant = await request(
+      `/api/admin/products/${targetProductId}/variants`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          color: NO_OPTION_COLOR,
+          size: NO_OPTION_SIZE,
+          sku,
+          stock: Number(stock),
+        }),
+      },
+    );
+    setVariants((current) => [...current, variant]);
+    setStockDrafts((current) => ({
+      ...current,
+      [variant.id]: String(variant.stock),
+    }));
+    return variant;
+  };
   const submitNoOptionVariant = async () => {
     setNoOptionError("");
-    const stock = Number(noOptionStock);
-    if (noOptionStock.trim() === "" || !Number.isInteger(stock) || stock < 0) {
+    if (!isValidStock(noOptionStock)) {
       setNoOptionError("Enter the stock count as a whole number, 0 or more.");
       return;
     }
-    const suffix = "-ONE-SIZE";
-    const sku = `${slugify(form.name).slice(0, 64 - suffix.length)}${suffix}`
-      .toUpperCase()
-      .slice(0, 64);
     setNoOptionSubmitting(true);
     try {
-      const variant = await request(
-        `/api/admin/products/${productId}/variants`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            color: NO_OPTION_COLOR,
-            size: NO_OPTION_SIZE,
-            sku,
-            stock,
-          }),
-        },
-      );
-      setVariants((current) => [...current, variant]);
-      setStockDrafts((current) => ({
-        ...current,
-        [variant.id]: String(variant.stock),
-      }));
+      await createNoOptionVariant(productId, form.name, noOptionStock);
       setNoOptionStock("");
       await queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
     } catch (noOptionErr) {
@@ -1020,6 +1053,40 @@ const AdminProductForm = () => {
             </label>
           )}
         </fieldset>
+
+        {!productId && (
+          <fieldset className="space-y-3 border border-[var(--line)] p-4 text-sm">
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={singleItem}
+                onChange={(event) => setSingleItem(event.target.checked)}
+                className="mt-1 h-4 w-4 accent-black"
+              />
+              <span>
+                <span className="block font-medium">
+                  No color or size options (belt, watch, other accessories)
+                </span>
+                <span className="mt-1 block text-[var(--ink-500)]">
+                  Sold as a single item — no variants to set up. Just enter the
+                  stock.
+                </span>
+              </span>
+            </label>
+            {singleItem && (
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={singleItemStock}
+                onChange={(event) => setSingleItemStock(event.target.value)}
+                placeholder="Stock"
+                aria-label="Stock"
+                className="w-28 border border-[var(--line)] px-3 py-2 text-sm"
+              />
+            )}
+          </fieldset>
+        )}
 
         <div className="flex gap-4 border-t border-[var(--line)] pt-6">
           <SubmitButton type="submit" loading={saving} loadingLabel="Saving">
