@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/img/favicon-square.png" />
+    <!-- Google needs a square icon in a multiple of 48px, and also probes
+         /favicon.ico directly — both must be real image files. -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/img/icon-192.png" />
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GRV HQ</title>
     <meta
@@ -23,14 +27,14 @@
       property="og:description"
       content="Handpicked from your favorite brands and boutiques."
     />
-    <meta property="og:image" content="/img/logoblack.png" />
+    <meta property="og:image" content="https://www.grvhq.com/img/logoblack.png" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="GRV HQ — We've got style !" />
     <meta
       name="twitter:description"
       content="Handpicked from your favorite brands and boutiques."
     />
-    <meta name="twitter:image" content="/img/logoblack.png" />
+    <meta name="twitter:image" content="https://www.grvhq.com/img/logoblack.png" />
   </head>
   <body>
     <div id="root"></div>

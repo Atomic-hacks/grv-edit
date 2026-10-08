@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /account
-Sitemap: https://grvhq.com/sitemap.xml
+Sitemap: https://www.grvhq.com/sitemap.xml

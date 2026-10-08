@@ -54,7 +54,7 @@ const buildRobotsTxt = (baseUrl) =>
 const run = async () => {
   // A build frequently runs without .env.local (CI preview, a fresh
   // checkout). Never publish localhost URLs in that case.
-  const rawBaseUrl = process.env.APP_URL || "https://grvhq.com";
+  const rawBaseUrl = process.env.APP_URL || "https://www.grvhq.com";
   const baseUrl = rawBaseUrl.replace(/\/$/, "");
   let dynamicPaths = [];
 
@@ -98,7 +98,7 @@ const run = async () => {
 run().catch((error) => {
   console.error("Sitemap generation failed unexpectedly — writing static fallback.", error);
   try {
-    const baseUrl = (process.env.APP_URL || "https://grvhq.com").replace(/\/$/, "");
+    const baseUrl = (process.env.APP_URL || "https://www.grvhq.com").replace(/\/$/, "");
     writeFileSync(join(publicDir, "sitemap.xml"), buildSitemapXml(baseUrl, STATIC_PATHS));
     writeFileSync(join(publicDir, "robots.txt"), buildRobotsTxt(baseUrl));
   } catch {
