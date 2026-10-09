@@ -286,6 +286,7 @@ const categoryHref = (tree, categoryId) => {
 const loadSectionProducts = async (section, tree) => {
   const where = { archived: false };
   if (section.productSource === "NEW_ARRIVALS") {
+    where.suppressNew = false;
     where.createdAt = { gte: new Date(Date.now() - NEW_PRODUCT_WINDOW_MS) };
   } else if (section.productSource === "FEATURED") {
     where.featured = true;

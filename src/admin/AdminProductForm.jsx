@@ -34,6 +34,7 @@ const emptyForm = {
   modelImages: [],
   archived: false,
   featured: false,
+  suppressNew: false,
 };
 
 /**
@@ -213,6 +214,7 @@ const AdminProductForm = () => {
             modelImages: product.modelImages || [],
             archived: Boolean(product.archived),
             featured: Boolean(product.featured),
+            suppressNew: Boolean(product.suppressNew),
           });
           const productCategoryIds = product.categoryIds || [];
           setSelectedCategoryIds(productCategoryIds);
@@ -358,6 +360,7 @@ const AdminProductForm = () => {
         modelImages: form.modelImages,
         archived: form.archived,
         featured: form.featured,
+        suppressNew: form.suppressNew,
       };
       const product = await request(
         productId ? `/api/admin/products/${productId}` : "/api/admin/products",
@@ -1026,6 +1029,26 @@ const AdminProductForm = () => {
               <span className="block font-medium">Featured</span>
               <span className="mt-1 block text-[var(--ink-500)]">
                 Editorial pick — shown in featured collections.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              name="suppressNew"
+              checked={form.suppressNew}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  suppressNew: event.target.checked,
+                }))
+              }
+              className="mt-1 h-4 w-4 accent-(--color-accent-orange)"
+            />
+            <span>
+              <span className="block font-medium">Don&apos;t show as new</span>
+              <span className="mt-1 block text-[var(--ink-500)]">
+                Skips the NEW badge and New Arrivals, even in the first 30 days.
               </span>
             </span>
           </label>

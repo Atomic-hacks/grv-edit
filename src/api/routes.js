@@ -1167,6 +1167,7 @@ const listNewArrivals = async () => {
   const products = await prisma.product.findMany({
     where: {
       archived: false,
+      suppressNew: false,
       createdAt: { gte: new Date(Date.now() - NEW_PRODUCT_WINDOW_MS) },
     },
     include: productInclude,
@@ -3019,7 +3020,8 @@ const serializeAdminProduct = (product) => {
     discountPercent: product.discountPercent,
     imageUrl: product.imageUrl,
     modelImages: product.modelImages,
-    isNew: isProductNew(product.createdAt),
+    isNew: isProductNew(product.createdAt, product.suppressNew),
+    suppressNew: product.suppressNew,
     featured: product.featured,
     archived: product.archived,
     brandId: product.brandId,
@@ -3050,6 +3052,7 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
     "imageUrl",
     "modelImages",
     "featured",
+    "suppressNew",
     "archived",
     "brandId",
   ];
@@ -3092,6 +3095,9 @@ const getAdminProductInput = async (body, { partial = false } = {}) => {
   }
   if (data.featured !== undefined && typeof data.featured !== "boolean") {
     return { error: "featured must be a boolean" };
+  }
+  if (data.suppressNew !== undefined && typeof data.suppressNew !== "boolean") {
+    return { error: "suppressNew must be a boolean" };
   }
   if (data.archived !== undefined && typeof data.archived !== "boolean") {
     return { error: "archived must be a boolean" };

@@ -8,7 +8,8 @@ import { prisma } from "./prisma.js";
 // time rather than stored — nobody has to remember to flip a flag on and,
 // more importantly, nobody has to remember to flip it back off.
 export const NEW_PRODUCT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-export const isProductNew = (createdAt) =>
+export const isProductNew = (createdAt, suppressNew = false) =>
+  !suppressNew &&
   Date.now() - new Date(createdAt).getTime() < NEW_PRODUCT_WINDOW_MS;
 
 export const productInclude = {
@@ -63,7 +64,7 @@ export const serializeProduct = (product) => {
     createdAt: product.createdAt,
     imageUrl: product.imageUrl,
     modelImages: product.modelImages,
-    isNew: isProductNew(product.createdAt),
+    isNew: isProductNew(product.createdAt, product.suppressNew),
     featured: product.featured,
     archived: product.archived,
     brandId: product.brandId,
@@ -83,7 +84,13 @@ export const serializeProduct = (product) => {
 // subtree lookups and the subcategory filter.
 export const loadCategoryTree = async () => {
   const all = await prisma.category.findMany({
-    select: { id: true, name: true, slug: true, parentId: true, navOrder: true },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      parentId: true,
+      navOrder: true,
+    },
   });
   const childrenOf = new Map();
   for (const category of all) {

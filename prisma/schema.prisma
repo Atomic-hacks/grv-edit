@@ -615,6 +615,10 @@ model Product {
   // Editorial pick, toggled by hand — unlike "new," this is a deliberate
   // curatorial call, so it stays a plain flag rather than a tree membership.
   featured        Boolean           @default(false)
+  // Opt-out from the automatic "new" window (see isProductNew) — for
+  // products that shouldn't be advertised as new arrivals, like evergreen
+  // accessories. Off by default, so every product still starts out as new.
+  suppressNew     Boolean           @default(false)
   archived        Boolean           @default(false)
   brandId         String
   brand           Brand             @relation(fields: [brandId], references: [id])
