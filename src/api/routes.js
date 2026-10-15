@@ -59,6 +59,7 @@ import {
 } from "./handlers/cases.js";
 import { handleAdminFulfillmentRequest } from "./handlers/fulfillment.js";
 import { getAdminAnalytics } from "./handlers/analytics.js";
+import { handleCspReport } from "./handlers/cspReport.js";
 import { getMessagingOptions, previewMessageAudience, sendAdminMessage } from "./handlers/messaging.js";
 import { getAdminVisitors, getAdminGa4 } from "./handlers/visitors.js";
 import { recordVisit } from "../server/visits.js";
@@ -5392,6 +5393,15 @@ const ROUTES = [
     handler: ({ request }) => createContactSubmission(request),
     errorLog: "Contact submission failed",
     errorMessage: "Unable to save contact submission",
+  },
+  {
+    // Unauthenticated by necessity: browsers post CSP violation reports
+    // with no credentials. Throttled and size-capped inside the handler.
+    method: "POST",
+    ...path("api", "csp-report"),
+    handler: ({ request }) => handleCspReport(request),
+    errorLog: "CSP report handling failed",
+    errorMessage: "ok",
   },
   {
     method: "POST",
