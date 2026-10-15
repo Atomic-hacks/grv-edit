@@ -4,15 +4,7 @@
 // what an admin already sees in the corresponding list screen).
 import { prisma } from "../../server/prisma.js";
 import { requireRole } from "../../server/requireRole.js";
-
-const csvCell = (value) => {
-  const cell = value === null || value === undefined ? "" : String(value);
-  return /[",\n\r]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
-};
-
-const toCsv = (columns, rows) =>
-  [columns, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n") +
-  "\r\n";
+import { toCsv } from "../../server/csv.js";
 
 const csvResponse = (filename, columns, rows) =>
   new Response(toCsv(columns, rows), {

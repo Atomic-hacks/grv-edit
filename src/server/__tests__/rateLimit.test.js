@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkRateLimit } from "../rateLimit.js";
+import { checkRateLimit, clientIp } from "../rateLimit.js";
 
 const fakePrisma = () => {
   const hits = [];
@@ -61,5 +61,68 @@ describe("checkRateLimit", () => {
     };
     const result = await checkRateLimit("contact:1.2.3.4", { prisma });
     expect(result.allowed).toBe(true);
+  });
+});
+
+describe("clientIp", () => {
+  const req = (headers) =>
+    new Request("https://www.grvhq.com/api/contact", { method: "POST", headers });
+
+  it("ignores a client-supplied X-Forwarded-For (throttle bypass)", () => {
+    // Same caller, five different forged headers: must collapse to one key.
+    const keys = new Set(
+      ["10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4", "10.0.0.5"].map((forged) =>
+        clientIp(
+          req({ "x-forwarded-for": forged, "x-vercel-forwarded-for": "102.90.98.94" }),
+        ),
+      ),
+    );
+    expect(keys).toEqual(new Set(["102.90.98.94"]));
+  });
+
+  it("uses the edge-set x-vercel-forwarded-for", () => {
+    expect(clientIp(req({ "x-vercel-forwarded-for": "102.90.98.94" }))).toBe("102.90.98.94");
+  });
+
+  it("falls back to x-real-ip", () => {
+    expect(clientIp(req({ "x-real-ip": "41.58.1.2" }))).toBe("41.58.1.2");
+  });
+
+  it("takes the first hop when the trusted header holds a chain", () => {
+    expect(clientIp(req({ "x-vercel-forwarded-for": "102.90.98.94, 10.1.1.1" }))).toBe("102.90.98.94");
+  });
+
+  it("shares one bucket rather than minting new ones when no trusted header exists", () => {
+    expect(clientIp(req({ "x-forwarded-for": "10.0.0.9" }))).toBe("unknown");
+    expect(clientIp(req({}))).toBe("unknown");
+  });
+});
+
+describe("checkRateLimit failure mode", () => {
+  const brokenPrisma = {
+    rateLimitHit: {
+      count: async () => {
+        throw new Error("database unavailable");
+      },
+      create: async () => {
+        throw new Error("database unavailable");
+      },
+      deleteMany: async () => ({ count: 0 }),
+    },
+  };
+
+  it("fails open by default so the storefront keeps working", async () => {
+    const result = await checkRateLimit("k", { prisma: brokenPrisma });
+    expect(result.allowed).toBe(true);
+  });
+
+  it("fails closed when the endpoint opts in (paid email sends)", async () => {
+    const result = await checkRateLimit("k", {
+      prisma: brokenPrisma,
+      failClosed: true,
+      windowMs: 60_000,
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.retryAfterSeconds).toBe(60);
   });
 });

@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { scrubSentryEvent } from "../lib/scrubSentryEvent.js";
 
 // Same no-op-without-a-DSN shape as the client side (src/lib/sentry.js) —
 // safe to import and call from anywhere in the API layer whether or not
@@ -8,6 +9,9 @@ if (process.env.SENTRY_DSN) {
     dsn: process.env.SENTRY_DSN,
     environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
     tracesSampleRate: process.env.VERCEL_ENV === "production" ? 0.2 : 1.0,
+    // Never send customer personal data to a third-party error tracker.
+    sendDefaultPii: false,
+    beforeSend: scrubSentryEvent,
   });
 }
 

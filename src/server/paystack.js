@@ -43,3 +43,45 @@ export const claimPendingCheckout = async (transaction, reference) => {
   });
   return claim.count > 0;
 };
+
+/**
+ * Confirms what Paystack says was actually paid covers what we charged.
+ *
+ * Neither the webhook nor the customer's return-from-Paystack check used to
+ * look at the amount at all: a `charge.success` for a reference was taken as
+ * proof the order was paid in full. That trusts the event's existence rather
+ * than its contents, so any flow that can settle a transaction for less than
+ * the requested amount (partial payments, a bank transfer short by a naira,
+ * a currency mix-up) would still have produced a PAID order and shipped the
+ * goods.
+ *
+ * `expectedTotal` is the server-computed order total in naira — never a
+ * client-supplied figure. Paystack reports `amount` in kobo.
+ *
+ * Overpayment is allowed through (refusing to fulfil an order someone paid
+ * too much for helps nobody) but reported, so it can be reconciled.
+ */
+export const checkPaidAmount = ({
+  paidAmount,
+  paidCurrency,
+  expectedTotal,
+}) => {
+  const expectedKobo = Math.round(Number(expectedTotal) * 100);
+  if (!Number.isFinite(expectedKobo) || expectedKobo < 0) {
+    return { ok: false, reason: "expected-total-invalid", expectedKobo };
+  }
+  if (!Number.isInteger(paidAmount) || paidAmount < 0) {
+    return { ok: false, reason: "paid-amount-invalid", expectedKobo };
+  }
+  if (paidCurrency !== "NGN") {
+    return { ok: false, reason: "currency-mismatch", expectedKobo };
+  }
+  if (paidAmount < expectedKobo) {
+    return { ok: false, reason: "underpaid", expectedKobo };
+  }
+  return {
+    ok: true,
+    reason: paidAmount > expectedKobo ? "overpaid" : "exact",
+    expectedKobo,
+  };
+};

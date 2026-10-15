@@ -39,8 +39,11 @@ import {
 } from "../server/emailTemplates.js";
 import { supportReplyEmail } from "../server/orderEmailTemplates.js";
 import { checkRateLimit, clientIp } from "../server/rateLimit.js";
+import { csvCell } from "../server/csv.js";
+import { validateTextFields } from "../server/inputLimits.js";
 import {
   verifyPaystackSignature,
+  checkPaidAmount,
   claimPendingCheckout,
 } from "../server/paystack.js";
 import { formatPrice } from "../lib/productHelpers.js";
@@ -148,6 +151,9 @@ const sendVerificationCode = async (request) => {
   const limit = await checkRateLimit(`send-verification:${clientIp(request)}`, {
     max: 5,
     windowMs: 60_000,
+    // Each call sends a real email against a paid quota, so a broken
+    // limiter must not become an unmetered send.
+    failClosed: true,
   });
   if (!limit.allowed) {
     return jsonResponse(
@@ -449,21 +455,16 @@ const createContactSubmission = async (request) => {
   }
 
   const body = await request.json();
-  const fields = ["name", "email", "subject", "message"];
-  const missingFields = fields.filter(
-    (field) => typeof body[field] !== "string" || !body[field].trim(),
-  );
-  if (missingFields.length) {
-    return jsonResponse(
-      { error: `${missingFields.join(", ")} are required` },
-      400,
-    );
-  }
+  const validated = validateTextFields(body, [
+    "name",
+    "email",
+    "subject",
+    "message",
+  ]);
+  if (validated.error) return jsonResponse({ error: validated.error }, 400);
 
   const submission = await prisma.contactSubmission.create({
-    data: Object.fromEntries(
-      fields.map((field) => [field, body[field].trim()]),
-    ),
+    data: validated.data,
   });
   return jsonResponse({ success: true, submission }, 201);
 };
@@ -2566,11 +2567,6 @@ const BULK_PRODUCT_LEVEL_FIELDS = [
   "tagSlugs",
 ];
 
-const csvCell = (value) => {
-  const cell = String(value ?? "");
-  return /[",\n\r]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
-};
-
 const parseBulkBoolean = (value) =>
   ["true", "1", "yes", "y"].includes(
     String(value ?? "")
@@ -3642,6 +3638,45 @@ const getBrandBySlug = async (idOrSlug) => {
   return jsonResponse(brand);
 };
 
+// Where Paystack sends the customer back to after paying.
+//
+// This used to be `new URL(request.url).origin`, which comes from the Host
+// header — client-controlled, so a forged Host could hand the paying
+// customer (and their payment reference) to an attacker's site on return.
+//
+// APP_URL is preferred but only trusted when it parses as a real absolute
+// URL: it has shipped as the placeholder "https://<your-vercel-domain>",
+// and a malformed value here would break checkout for everyone. Otherwise
+// fall back to the request's own origin, and only for hosts we serve.
+const TRUSTED_RETURN_HOSTS = new Set([
+  "www.grvhq.com",
+  "grvhq.com",
+  "localhost:5176",
+  "localhost:5173",
+]);
+const CANONICAL_ORIGIN = "https://www.grvhq.com";
+
+export const checkoutReturnOrigin = (request) => {
+  const configured = process.env.APP_URL?.trim();
+  if (configured) {
+    try {
+      const url = new URL(configured);
+      if (url.protocol === "https:" || url.hostname === "localhost") {
+        return url.origin;
+      }
+    } catch {
+      // Unset, placeholder or malformed — fall through to the request.
+    }
+  }
+  try {
+    const requested = new URL(request.url);
+    if (TRUSTED_RETURN_HOSTS.has(requested.host)) return requested.origin;
+  } catch {
+    // Unparseable request URL — fall through.
+  }
+  return CANONICAL_ORIGIN;
+};
+
 const initializeCheckout = async (request) => {
   const user = await getCurrentUser(request);
   if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
@@ -3666,7 +3701,7 @@ const initializeCheckout = async (request) => {
   }
 
   const body = await request.json();
-  const requiredFields = [
+  const shipping = validateTextFields(body, [
     "fullName",
     "country",
     "phone",
@@ -3674,18 +3709,8 @@ const initializeCheckout = async (request) => {
     "city",
     "state",
     "postalCode",
-  ];
-  const missingFields = requiredFields.filter(
-    (field) => typeof body[field] !== "string" || !body[field].trim(),
-  );
-  if (missingFields.length) {
-    return jsonResponse(
-      {
-        error: `${missingFields.join(", ")} ${missingFields.length === 1 ? "is" : "are"} required`,
-      },
-      400,
-    );
-  }
+  ]);
+  if (shipping.error) return jsonResponse({ error: shipping.error }, 400);
 
   const items = body.items;
   if (!Array.isArray(items) || items.length === 0) {
@@ -3711,6 +3736,12 @@ const initializeCheckout = async (request) => {
   const products = await prisma.product.findMany({
     where: {
       id: { in: [...new Set(lineItems.map((item) => item.productId))] },
+      // Withdrawn from sale. Archiving requires every variant to be sold
+      // out, so the stock check below usually catches these — but that only
+      // holds at the moment of archiving, and nothing stops a variant being
+      // restocked afterwards. Filtered here so "archived" always means
+      // "cannot be bought", whatever the stock says.
+      archived: false,
     },
     select: {
       id: true,
@@ -3806,7 +3837,7 @@ const initializeCheckout = async (request) => {
   const firstOrderFreeShipping = Boolean(
     firstOrderEligible && firstOrderPromo.freeShipping,
   );
-  const { fee: regionalShippingFee } = await getShippingFeeForState(body.state);
+  const { fee: regionalShippingFee } = await getShippingFeeForState(shipping.data.state);
   const shippingFee = firstOrderFreeShipping ? 0 : regionalShippingFee;
   const orderTotal = Math.max(
     0,
@@ -3827,13 +3858,13 @@ const initializeCheckout = async (request) => {
     firstOrderFreeShipping,
     shippingFee,
     shippingAmount: shippingFee,
-    fullName: body.fullName.trim(),
-    country: body.country.trim(),
-    phone: body.phone.trim(),
-    address: body.address.trim(),
-    city: body.city.trim(),
-    state: body.state.trim(),
-    postalCode: body.postalCode.trim(),
+    fullName: shipping.data.fullName,
+    country: shipping.data.country,
+    phone: shipping.data.phone,
+    address: shipping.data.address,
+    city: shipping.data.city,
+    state: shipping.data.state,
+    postalCode: shipping.data.postalCode,
     items: orderItems,
   };
   const reference = `grv_${crypto.randomUUID()}`;
@@ -3860,7 +3891,7 @@ const initializeCheckout = async (request) => {
           amount: Math.round(orderTotal * 100),
           currency: "NGN",
           email: user.email,
-          callback_url: `${new URL(request.url).origin}/checkout/complete`,
+          callback_url: `${checkoutReturnOrigin(request)}/checkout/complete`,
           // Explicit rather than left to account defaults: Paystack's test
           // mode shows every channel regardless of what a live account is
           // actually provisioned for, so this doesn't turn a channel on by
@@ -4024,7 +4055,7 @@ const processRestockNotificationsBestEffort = async (restockedVariants) => {
 // nothing left to claim and falls through to look up the Order that
 // resulted, so both call sites can safely call this for the same
 // reference without creating (or decrementing stock) twice.
-const finalizeOrderFromReference = async (reference) => {
+const finalizeOrderFromReference = async (reference, charge = null) => {
   const existingOrder = await prisma.order.findUnique({
     where: { paystackReference: reference },
     include: { items: true, user: { select: { email: true } } },
@@ -4033,6 +4064,7 @@ const finalizeOrderFromReference = async (reference) => {
 
   const notificationsToProcess = [];
   let createdOrder = null;
+  let amountMismatch = null;
 
   await prisma.$transaction(async (transaction) => {
     // Read the payload before claiming — claimPendingCheckout deletes the
@@ -4042,12 +4074,35 @@ const finalizeOrderFromReference = async (reference) => {
     });
     if (!pending) return;
 
+    const payload = pending.payload;
+
+    // Paystack said this reference was paid — but "an event exists" is not
+    // the same as "the right amount arrived". This runs before the claim on
+    // purpose: a mismatch must leave the PendingCheckout row in place to be
+    // investigated and refunded by hand, never become a PAID order.
+    if (charge) {
+      const paid = checkPaidAmount({
+        paidAmount: charge.amount,
+        paidCurrency: charge.currency,
+        expectedTotal: payload.total,
+      });
+      if (!paid.ok) {
+        amountMismatch = { reference, ...paid, paidCurrency: charge.currency };
+        return;
+      }
+      if (paid.reason === "overpaid") {
+        console.warn("Paystack charge exceeded the order total", {
+          reference,
+          expectedKobo: paid.expectedKobo,
+          paidKobo: charge.amount,
+        });
+      }
+    }
+
     const claimed = await claimPendingCheckout(transaction, reference);
     // Lost a race with a concurrent call that claimed it first — there's
     // nothing here to create; the caller re-checks for the resulting Order.
     if (!claimed) return;
-
-    const payload = pending.payload;
     createdOrder = await transaction.order.create({
       data: {
         userId: payload.userId,
@@ -4151,6 +4206,21 @@ const finalizeOrderFromReference = async (reference) => {
       }
     }
   });
+
+  if (amountMismatch) {
+    // Loud on purpose: this is either a payment-integrity bug or someone
+    // trying to underpay, and it needs a human either way.
+    console.error("Refusing to finalize order: paid amount does not match", {
+      reference: amountMismatch.reference,
+      reason: amountMismatch.reason,
+      expectedKobo: amountMismatch.expectedKobo,
+    });
+    Sentry.captureException(
+      new Error(`Paystack amount mismatch (${amountMismatch.reason})`),
+      { tags: { route: "paystack-amount-mismatch" } },
+    );
+    return { order: null, created: false, amountMismatch };
+  }
 
   if (!createdOrder) {
     // Someone else's transaction is (or already has) creating this order —
@@ -4259,7 +4329,23 @@ const verifyCheckout = async (request, url) => {
   }
 
   if (paystackBody.data.status === "success") {
-    const { order } = await finalizeOrderFromReference(reference);
+    const { order, amountMismatch } = await finalizeOrderFromReference(
+      reference,
+      {
+        amount: paystackBody.data.amount,
+        currency: paystackBody.data.currency,
+      },
+    );
+    if (amountMismatch) {
+      return jsonResponse(
+        {
+          error:
+            "We could not confirm the full payment for this order. Our team has been alerted and will be in touch.",
+          status: "FAILED",
+        },
+        409,
+      );
+    }
     if (!order) return jsonResponse({ status: "PENDING" });
     return jsonResponse({ orderId: order.id, status: order.status });
   }
@@ -5179,7 +5265,10 @@ const handlePaystackWebhook = async (request) => {
     return jsonResponse({ error: "Missing payment reference" }, 400);
   }
 
-  await finalizeOrderFromReference(reference);
+  await finalizeOrderFromReference(reference, {
+    amount: event.data?.amount,
+    currency: event.data?.currency,
+  });
 
   // A webhook has no browser session, so it cannot identify which persisted
   // cart should be cleared after checkout.

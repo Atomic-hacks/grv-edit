@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/react";
+import { scrubSentryEvent } from "./scrubSentryEvent.js";
 
 const dsn = import.meta.env.VITE_SENTRY_DSN;
 
@@ -11,6 +12,8 @@ export const initSentry = () => {
     dsn,
     environment: import.meta.env.MODE,
     integrations: [Sentry.browserTracingIntegration()],
+    sendDefaultPii: false,
+    beforeSend: scrubSentryEvent,
     // Trace a fraction of pageloads/navigations in production, all of them
     // in dev — this is a small storefront, not a high-traffic API.
     tracesSampleRate: import.meta.env.PROD ? 0.2 : 1.0,

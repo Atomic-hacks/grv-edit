@@ -12,7 +12,12 @@ import { prisma as defaultPrisma } from "./prisma.js";
  */
 export const checkRateLimit = async (
   key,
-  { max = 5, windowMs = 60_000, prisma = defaultPrisma } = {},
+  {
+    max = 5,
+    windowMs = 60_000,
+    prisma = defaultPrisma,
+    failClosed = false,
+  } = {},
 ) => {
   const now = Date.now();
   const windowStart = new Date(now - windowMs);
@@ -37,11 +42,38 @@ export const checkRateLimit = async (
 
     return { allowed: true };
   } catch (error) {
-    console.error("Rate limit check failed, failing open", { key, error });
-    return { allowed: true };
+    // Failing open keeps the storefront working when the limiter itself is
+    // the only thing broken. Endpoints that cost real money per call when
+    // abused (sending email) opt into failing closed instead: a database
+    // outage already breaks them a moment later anyway, so the only thing
+    // failing open buys there is an unmetered send.
+    console.error(
+      `Rate limit check failed, failing ${failClosed ? "closed" : "open"}`,
+      { key, error },
+    );
+    return failClosed
+      ? { allowed: false, retryAfterSeconds: Math.ceil(windowMs / 1000) }
+      : { allowed: true };
   }
 };
 
-/** Best-effort client IP from Vercel's forwarded-for header. */
-export const clientIp = (request) =>
-  request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+/**
+ * Client IP for throttling, taken only from headers the edge sets itself.
+ *
+ * `x-forwarded-for` is attacker-controlled: anyone can send their own and
+ * Vercel passes it through, so keying a rate limit on it let one caller mint
+ * a fresh quota per request simply by changing a header — defeating every
+ * per-IP throttle (contact form, verification emails, newsletter).
+ * `x-vercel-forwarded-for` and `x-real-ip` are written by Vercel's edge and
+ * cannot be forged by the client.
+ *
+ * Falling back to "unknown" shares one bucket rather than handing out an
+ * unlimited supply of them: stricter, never looser.
+ */
+export const clientIp = (request) => {
+  const trusted =
+    request.headers.get("x-vercel-forwarded-for") ||
+    request.headers.get("x-real-ip");
+  const ip = trusted?.split(",")[0]?.trim();
+  return ip || "unknown";
+};
