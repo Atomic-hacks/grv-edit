@@ -70,18 +70,27 @@ export const checkPaidAmount = ({
   if (!Number.isFinite(expectedKobo) || expectedKobo < 0) {
     return { ok: false, reason: "expected-total-invalid", expectedKobo };
   }
-  if (!Number.isInteger(paidAmount) || paidAmount < 0) {
+  // Paystack documents `amount` as an integer number of kobo, but a value
+  // arriving as a numeric string must not cause a real payment to be
+  // refused — that would leave a charged customer with no order. Coerced
+  // rather than rejected outright; anything that is not a whole number is
+  // still refused.
+  const paidKobo =
+    typeof paidAmount === "string" && paidAmount.trim() !== ""
+      ? Number(paidAmount)
+      : paidAmount;
+  if (!Number.isInteger(paidKobo) || paidKobo < 0) {
     return { ok: false, reason: "paid-amount-invalid", expectedKobo };
   }
   if (paidCurrency !== "NGN") {
     return { ok: false, reason: "currency-mismatch", expectedKobo };
   }
-  if (paidAmount < expectedKobo) {
+  if (paidKobo < expectedKobo) {
     return { ok: false, reason: "underpaid", expectedKobo };
   }
   return {
     ok: true,
-    reason: paidAmount > expectedKobo ? "overpaid" : "exact",
+    reason: paidKobo > expectedKobo ? "overpaid" : "exact",
     expectedKobo,
   };
 };

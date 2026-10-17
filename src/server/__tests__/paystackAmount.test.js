@@ -46,8 +46,30 @@ describe("checkPaidAmount", () => {
     expect(result).toMatchObject({ ok: false, reason: "currency-mismatch" });
   });
 
+  it("accepts a correct amount sent as a numeric string", () => {
+    // Must not refuse a real payment over a type surprise: the customer has
+    // already been charged at this point.
+    expect(
+      checkPaidAmount({
+        paidAmount: "7050000",
+        paidCurrency: "NGN",
+        expectedTotal: 70500,
+      }),
+    ).toMatchObject({ ok: true, reason: "exact" });
+  });
+
+  it("still rejects an underpaying numeric string", () => {
+    expect(
+      checkPaidAmount({
+        paidAmount: "100",
+        paidCurrency: "NGN",
+        expectedTotal: 70500,
+      }),
+    ).toMatchObject({ ok: false, reason: "underpaid" });
+  });
+
   it("rejects missing, non-integer or negative amounts", () => {
-    for (const paidAmount of [undefined, null, "7050000", 70.5, -100, NaN]) {
+    for (const paidAmount of [undefined, null, "", "abc", 70.5, "70.5", -100, NaN]) {
       expect(
         checkPaidAmount({ paidAmount, paidCurrency: "NGN", expectedTotal: 70500 })
           .ok,
