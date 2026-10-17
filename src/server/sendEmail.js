@@ -1,6 +1,15 @@
 import { Resend } from "resend";
+import { htmlToText } from "./htmlToText.js";
 
-export const sendEmail = async ({ to, subject, html, from, replyTo } = {}) => {
+export const sendEmail = async ({
+  to,
+  subject,
+  html,
+  from,
+  replyTo,
+  text,
+  headers,
+} = {}) => {
   try {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey || !to || !subject || !html) {
@@ -17,7 +26,12 @@ export const sendEmail = async ({ to, subject, html, from, replyTo } = {}) => {
       to,
       subject,
       html,
+      // An HTML-only message with no text/plain alternative is a long-standing
+      // spam signal. Derived from the HTML so there is only one template to
+      // maintain, and overridable if a caller wants to write its own.
+      text: text || htmlToText(html),
       ...(replyTo ? { replyTo } : {}),
+      ...(headers ? { headers } : {}),
     });
 
     if (!error) return { sent: true };

@@ -12,7 +12,7 @@ import { prisma as defaultPrisma } from "./prisma.js";
 import { sendEmail as defaultSendEmail } from "./sendEmail.js";
 import { FROM_INFO, FROM_SUPPORT } from "./emailSenders.js";
 import { renderEmail, escapeHtml, siteUrl, MUTED, BORDER } from "./emailTemplates.js";
-import { ensureToken } from "./campaigns.js";
+import { ensureToken, unsubscribeHeaders } from "./campaigns.js";
 
 export const SENDERS = {
   INFO: { label: "Info", from: FROM_INFO },
@@ -125,15 +125,21 @@ export const sendDirectEmails = async (
     for (let recipient = queue.shift(); recipient; recipient = queue.shift()) {
       try {
         const token = withUnsubscribe && recipient.kind === "user" ? await ensureToken(prisma, recipient) : null;
+        const unsubscribeLink = token
+          ? `${siteUrl()}/unsubscribe?token=${encodeURIComponent(token)}`
+          : null;
         const result = await sendEmail({
           to: recipient.email,
           subject: personalize(subject, recipient.name),
           html: directEmailHtml({
             subject: personalize(subject, recipient.name),
             body: personalize(body, recipient.name),
-            unsubscribeUrl: token ? `${siteUrl()}/unsubscribe?token=${encodeURIComponent(token)}` : null,
+            unsubscribeUrl: unsubscribeLink,
           }),
           from,
+          // Only group marketing carries a link; a service message or a
+          // one-to-one reply is not bulk mail and must not claim to be.
+          headers: unsubscribeHeaders(unsubscribeLink),
         });
         if (result?.sent) sent += 1;
         else {

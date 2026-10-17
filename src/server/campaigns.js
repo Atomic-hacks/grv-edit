@@ -104,6 +104,18 @@ const loadFeaturedProducts = async (prisma, productIds) => {
  * and only one wins. A campaign that ends in FAILED never reports itself as
  * sent — `sentAt` is only written when at least one message was accepted.
  */
+// Gmail and Yahoo expect bulk mail to carry a one-click unsubscribe header
+// (RFC 8058), not just a link buried in the footer. Without it, promotional
+// mail is treated as unsolicited however clean the sending domain is —
+// which is why marketing lands in spam while order emails do not.
+export const unsubscribeHeaders = (url) =>
+  url
+    ? {
+        "List-Unsubscribe": `<${url}>`,
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      }
+    : undefined;
+
 export const sendCampaign = async (
   campaignId,
   { prisma = defaultPrisma, sendEmail = defaultSendEmail } = {},
@@ -152,6 +164,7 @@ export const sendCampaign = async (
             unsubscribeUrl: unsubscribeUrl(token),
           }),
           from: FROM_INFO,
+          headers: unsubscribeHeaders(unsubscribeUrl(token)),
         });
         if (result?.sent) sentCount += 1;
         else {
