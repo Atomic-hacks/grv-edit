@@ -72,19 +72,15 @@ export const setStaffRole = async (request, email) => {
     );
   }
 
-  const updated = await prisma.user.update({
-    where: { id: target.id },
-    data: { role },
-    select: staffSelect,
-  });
-
-  await recordAdminAction({
-    actorId: guard.user.id,
-    action: "staff.role_changed",
-    entityType: "User",
-    entityId: target.id,
-    previousState: { role: target.role },
-    newState: { role },
+  const updated = await prisma.$transaction(async (transaction) => {
+    const changed = await transaction.user.update({
+      where: { id: target.id }, data: { role }, select: staffSelect,
+    });
+    await recordAdminAction({
+      actorId: guard.user.id, action: "staff.role_changed", entityType: "User", entityId: target.id,
+      previousState: { role: target.role }, newState: { role },
+    }, { prisma: transaction, required: true });
+    return changed;
   });
 
   return jsonResponse(updated);

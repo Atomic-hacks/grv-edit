@@ -48,6 +48,19 @@ model FirstOrderPromo {
   updatedAt       DateTime @updatedAt
 }
 
+// A reservation is created in the same transaction as inventory allocation.
+// The unique user key makes the first-order offer impossible to reserve twice.
+model FirstOrderPromoRedemption {
+  id                String                    @id @default(cuid())
+  userId            String                    @unique @db.Uuid
+  checkoutReference String                    @unique
+  status            PromotionRedemptionStatus @default(RESERVED)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@index([status, createdAt])
+}
+
 model ShippingFee {
   id     String @id @default(cuid())
   region String @unique
@@ -143,6 +156,7 @@ model Order {
   deliveryNotes         String?
   fulfillmentEvents     OrderFulfillmentEvent[]
   supportCases          SupportCase[]
+  refundAttempts        RefundAttempt[]
 
   @@index([userId])
 }
@@ -173,6 +187,7 @@ enum FulfillmentStatus {
   OUT_FOR_DELIVERY
   DELIVERED
   DELIVERY_FAILED
+  RETURN_PENDING
   CANCELLED
   RETURNED
 }
@@ -227,15 +242,35 @@ enum OrderEmailType {
 }
 
 model Discount {
-  id        String       @id @default(cuid())
-  code      String       @unique
-  type      DiscountType
-  value     Float
-  active    Boolean      @default(true)
-  expiresAt DateTime?
-  maxUses   Int?
-  usedCount Int          @default(0)
-  orders    Order[]
+  id          String               @id @default(cuid())
+  code        String               @unique
+  type        DiscountType
+  value       Float
+  active      Boolean              @default(true)
+  expiresAt   DateTime?
+  maxUses     Int?
+  usedCount   Int                  @default(0)
+  orders      Order[]
+  redemptions DiscountRedemption[]
+}
+
+model DiscountRedemption {
+  id                String                    @id @default(cuid())
+  discountId        String
+  discount          Discount                  @relation(fields: [discountId], references: [id], onDelete: Restrict)
+  userId            String                    @db.Uuid
+  checkoutReference String                    @unique
+  status            PromotionRedemptionStatus @default(RESERVED)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@index([discountId, status])
+  @@index([userId, discountId])
+}
+
+enum PromotionRedemptionStatus {
+  RESERVED
+  REDEEMED
 }
 
 // Sliding-window rate limiting for the storefront's public, unauthenticated
@@ -255,14 +290,14 @@ model RateLimitHit {
 // random id kept in the browser (no cookies, no IP stored); userId is set
 // only while someone is signed in. Pruned after ~180 days.
 model SiteVisit {
-  id          String   @id @default(cuid())
-  visitorId   String
-  userId      String?  @db.Uuid
-  path        String
-  referrer    String?
-  device      String?
-  country     String?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  visitorId String
+  userId    String?  @db.Uuid
+  path      String
+  referrer  String?
+  device    String?
+  country   String?
+  createdAt DateTime @default(now())
 
   @@index([createdAt])
   @@index([visitorId, createdAt])
@@ -288,6 +323,8 @@ enum OrderStatus {
   SHIPPED
   DELIVERED
   CANCELLED
+  RETURN_PENDING
+  RETURNED
 }
 
 model OrderItem {
@@ -321,15 +358,29 @@ model Wishlist {
 }
 
 model WaitlistEntry {
-  id        String         @id @default(cuid())
-  userId    String         @db.Uuid
-  user      User           @relation(fields: [userId], references: [id])
-  variantId String
-  variant   Variant        @relation(fields: [variantId], references: [id])
-  status    WaitlistStatus @default(WAITING)
-  createdAt DateTime       @default(now())
+  id                String                 @id @default(cuid())
+  userId            String                 @db.Uuid
+  user              User                   @relation(fields: [userId], references: [id])
+  variantId         String
+  variant           Variant                @relation(fields: [variantId], references: [id])
+  status            WaitlistStatus         @default(WAITING)
+  deliveryStatus    WaitlistDeliveryStatus @default(NOT_QUEUED)
+  deliveryAttempts  Int                    @default(0)
+  lastDeliveryError String?
+  providerMessageId String?
+  notifiedAt        DateTime?
+  fulfilledAt       DateTime?
+  notification      Notification?
+  createdAt         DateTime               @default(now())
 
   @@unique([userId, variantId])
+}
+
+enum WaitlistDeliveryStatus {
+  NOT_QUEUED
+  QUEUED
+  SENT
+  FAILED
 }
 
 enum WaitlistStatus {
@@ -339,14 +390,16 @@ enum WaitlistStatus {
 }
 
 model Notification {
-  id        String           @id @default(cuid())
-  userId    String           @db.Uuid
-  user      User             @relation(fields: [userId], references: [id])
-  productId String
-  type      NotificationType
-  message   String
-  sent      Boolean          @default(false)
-  createdAt DateTime         @default(now())
+  id              String           @id @default(cuid())
+  userId          String           @db.Uuid
+  user            User             @relation(fields: [userId], references: [id])
+  productId       String
+  type            NotificationType
+  message         String
+  sent            Boolean          @default(false)
+  waitlistEntryId String?          @unique
+  waitlistEntry   WaitlistEntry?   @relation(fields: [waitlistEntryId], references: [id], onDelete: SetNull)
+  createdAt       DateTime         @default(now())
 }
 
 enum NotificationType {
@@ -478,13 +531,13 @@ model Category {
   showOnHomepage Boolean @default(false)
   homepageOrder  Int?
 
-  products  ProductCategory[]
+  products        ProductCategory[]
   // Sections shown on this category's own landing page, and PRODUCTS
   // sections elsewhere that pull their products from this category.
-  landingSections ContentSection[] @relation("CategoryLandingSections")
-  sourcedSections ContentSection[] @relation("ContentSectionSourceCategory")
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @default(now()) @updatedAt
+  landingSections ContentSection[]  @relation("CategoryLandingSections")
+  sourcedSections ContentSection[]  @relation("ContentSectionSourceCategory")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @default(now()) @updatedAt
 
   @@index([parentId])
 }
@@ -683,6 +736,7 @@ enum CaseStatus {
   APPROVED
   REJECTED
   REFUND_PROCESSING
+  REFUND_UNKNOWN
   REFUNDED
   REFUND_FAILED
   RESOLVED
@@ -694,22 +748,22 @@ enum CaseStatus {
 // stops a double form-submit or a network retry from creating two cases for
 // the same thing, without having to guess at a time window.
 model SupportCase {
-  id                     String       @id @default(cuid())
-  reference              String       @unique
-  userId                 String       @db.Uuid
-  user                   User         @relation(fields: [userId], references: [id])
-  customerEmail          String
-  orderId                String?
-  order                  Order?       @relation(fields: [orderId], references: [id])
-  orderItemIds           String[]     @default([])
-  paystackReference      String?
-  issueType              CaseType
-  category               CaseCategory
-  description            String
-  requestedRefundAmount  Float?
-  evidenceUrls           String[]     @default([])
-  status                 CaseStatus   @default(SUBMITTED)
-  dedupeKey              String       @unique
+  id                    String       @id @default(cuid())
+  reference             String       @unique
+  userId                String       @db.Uuid
+  user                  User         @relation(fields: [userId], references: [id])
+  customerEmail         String
+  orderId               String?
+  order                 Order?       @relation(fields: [orderId], references: [id])
+  orderItemIds          String[]     @default([])
+  paystackReference     String?
+  issueType             CaseType
+  category              CaseCategory
+  description           String
+  requestedRefundAmount Float?
+  evidenceUrls          String[]     @default([])
+  status                CaseStatus   @default(SUBMITTED)
+  dedupeKey             String       @unique
 
   // Refund execution state — only meaningful once an admin approves a
   // REFUND case. `refundedAmount` is set only after Paystack confirms the
@@ -719,15 +773,47 @@ model SupportCase {
   refundedAmount  Float?
   refundedAt      DateTime?
 
-  notes     CaseNote[]
-  events    CaseEvent[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  notes          CaseNote[]
+  events         CaseEvent[]
+  refundAttempts RefundAttempt[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   @@index([userId])
   @@index([orderId])
   @@index([status])
   @@index([category])
+}
+
+// One durable row per request to move money back to a customer. CREATED is
+// persisted before Paystack is called; UNKNOWN is deliberately not retryable
+// until reconciliation proves whether the provider accepted the request.
+model RefundAttempt {
+  id                   String              @id @default(cuid())
+  caseId               String
+  supportCase          SupportCase         @relation(fields: [caseId], references: [id])
+  orderId              String
+  order                Order               @relation(fields: [orderId], references: [id])
+  transactionReference String
+  providerRefundId     String?             @unique
+  amountKobo           Int
+  currency             String              @default("NGN")
+  status               RefundAttemptStatus @default(CREATED)
+  lastError            String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@index([orderId, status])
+  @@index([caseId, status])
+  @@index([transactionReference])
+}
+
+enum RefundAttemptStatus {
+  CREATED
+  PENDING
+  UNKNOWN
+  PROCESSED
+  FAILED
 }
 
 // Internal admin-only notes on a case — never shown to the customer.
@@ -745,15 +831,15 @@ model CaseNote {
 
 // Status-change history for a case — "view case history" in the admin UI.
 model CaseEvent {
-  id         String       @id @default(cuid())
+  id         String      @id @default(cuid())
   caseId     String
-  case       SupportCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case       SupportCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
   fromStatus CaseStatus?
   toStatus   CaseStatus
-  actorId    String?      @db.Uuid
-  actor      User?        @relation(fields: [actorId], references: [id])
+  actorId    String?     @db.Uuid
+  actor      User?       @relation(fields: [actorId], references: [id])
   note       String?
-  createdAt  DateTime     @default(now())
+  createdAt  DateTime    @default(now())
 
   @@index([caseId, createdAt])
 }

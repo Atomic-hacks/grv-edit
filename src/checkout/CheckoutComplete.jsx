@@ -158,6 +158,10 @@ const CheckoutCompleteContent = () => {
         setResult({ status: "UNKNOWN", orderId: null, error: "" });
       } catch (requestError) {
         if (cancelled) return;
+        if (requestError.code === "PAYMENT_REVIEW_REQUIRED") {
+          setResult({ status: "UNKNOWN", orderId: null, error: `${requestError.message} Reference: ${reference}` });
+          return;
+        }
         if (attempt < MAX_ATTEMPTS - 1) {
           retryTimer = window.setTimeout(
             () => checkPayment(attempt + 1),

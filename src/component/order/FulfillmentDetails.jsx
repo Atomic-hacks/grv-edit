@@ -25,6 +25,15 @@ const formatDateTime = (value) =>
     timeStyle: "short",
   }).format(new Date(value));
 
+const safeTrackingUrl = (value) => {
+  try {
+    const parsed = new URL(value);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
 // Shows the manual (pre-courier-API) fulfilment state: current status,
 // whatever courier/tracking detail an admin has entered, and the
 // chronological history of status changes. Renders nothing extra beyond
@@ -41,6 +50,7 @@ const FulfillmentDetails = ({ fulfillment }) => {
     deliveryNotes,
     events,
   } = fulfillment;
+  const trackingHref = safeTrackingUrl(trackingUrl);
 
   return (
     <section className="mt-8 border border-gray-200 p-6">
@@ -70,9 +80,9 @@ const FulfillmentDetails = ({ fulfillment }) => {
                 Tracking number
               </dt>
               <dd className="mt-1">
-                {trackingUrl ? (
+                {trackingHref ? (
                   <a
-                    href={trackingUrl}
+                    href={trackingHref}
                     target="_blank"
                     rel="noreferrer"
                     className="underline underline-offset-4"

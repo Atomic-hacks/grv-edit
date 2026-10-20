@@ -1,9 +1,11 @@
+import { Link } from "react-router-dom";
 import React, { useLayoutEffect, useRef, useState } from "react";
 import WishlistButton from "./WishlistButton";
 import { getOptimizedImageUrl } from "../../lib/imageHelpers";
 import DiscountPrice from "./DiscountPrice";
 
 const Card = ({
+  href,
   img,
   hoverImg,
   alt,
@@ -52,7 +54,8 @@ const Card = ({
   const brandName = product?.brandName;
 
   return (
-    <div className="group w-full">
+    <div className="group relative w-full">
+      {(href || product?.id) && <Link to={href || `/product/${product.id}`} aria-label={title || product.name} className="absolute inset-0 z-20 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black" onClick={(event) => event.stopPropagation()} />}
       {/* Image. 3:4 portrait is the ratio every product photo should be shot
           or cropped to before upload — it's what every product card, the
           wishlist grid and the brand/department tiles use, so a mismatched
@@ -63,7 +66,7 @@ const Card = ({
           crops at the hem/background instead of randomly slicing through a
           head or logo. */}
       <div className="relative aspect-3/4 w-full overflow-hidden bg-[var(--surface-muted)]">
-        {!imagesLoaded && <div className="skeleton absolute inset-0 z-20" />}
+        {!imagesLoaded && <div className="skeleton pointer-events-none absolute inset-0 z-10" />}
         {badge && (
           <span className="absolute left-0 top-0 z-10 bg-white/95 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-900)]">
             {badge}

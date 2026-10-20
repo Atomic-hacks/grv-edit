@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "set -a && . ./.env.local && set +a && vite",
-    "build": "node scripts/generateSitemap.js && prisma generate && vite build",
+    "build": "node scripts/generateAddressData.js && node scripts/generateSitemap.js && prisma generate && vite build && node scripts/removePublicSourceMaps.js",
     "lint": "eslint .",
-    "preview": "vite preview",
+    "preview": "set -a && . ./.env.local && set +a && vite preview",
     "db:push": "set -a && . ./.env.local && set +a && prisma db push",
     "db:pull": "set -a && . ./.env.local && set +a && prisma db pull",
     "db:backup": "set -a && . ./.env.local && set +a && node scripts/backupDatabase.js",
@@ -15,7 +15,8 @@
     "db:generate": "set -a && . ./.env.local && set +a && prisma generate",
     "db:seed-content": "set -a && . ./.env.local && set +a && node scripts/seedContentSections.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:check-security": "node scripts/checkDatabaseSecurity.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

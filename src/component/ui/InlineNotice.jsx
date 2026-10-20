@@ -13,11 +13,19 @@ const ICONS = {
       <path d="M3 7.3 5.8 10 11 3.8" />
     </svg>
   ),
+  warning: (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 1.5 13 12H1L7 1.5Z" />
+      <path d="M7 5v3.2" />
+      <circle cx="7" cy="10.2" r="0.4" fill="currentColor" stroke="none" />
+    </svg>
+  ),
 };
 
 const TONES = {
   error: "border-red-200 bg-red-50 text-red-800",
   success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  warning: "border-amber-200 bg-amber-50 text-amber-900",
 };
 
 // One look for every inline form message on the storefront — a failed

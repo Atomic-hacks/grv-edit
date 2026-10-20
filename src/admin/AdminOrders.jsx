@@ -51,7 +51,7 @@ const formatDate = (value) =>
     new Date(value),
   );
 
-const statuses = ["", "PENDING", "PAID", "SHIPPED", "DELIVERED", "CANCELLED"];
+const statuses = ["", "PENDING", "PAID", "SHIPPED", "DELIVERED", "RETURN_PENDING", "RETURNED", "CANCELLED"];
 
 // What each status change does beyond changing the status. Shown next to
 // the button so an admin knows an email is about to reach a customer.
@@ -67,12 +67,22 @@ const TRANSITION_EFFECTS = {
     warning: "Stock is returned to inventory. This cannot be undone.",
     confirm: true,
   },
+  RETURN_PENDING: {
+    email: "No refund is sent automatically. The order waits for the physical return.",
+    warning: "Stock stays unavailable until the return is received and the order is cancelled.",
+    confirm: true,
+  },
+  RETURNED: {
+    title: "Mark return received",
+    description: "Confirms the returned goods are physically received and restores their stock.",
+  },
 };
 const statusLabel = (status) =>
-  status.charAt(0) + status.slice(1).toLowerCase();
+  status.split("_").map((word) => word.charAt(0) + word.slice(1).toLowerCase()).join(" ");
 
 const AdminOrders = () => {
-  const { session } = useAuth();
+  const { session, appUser } = useAuth();
+  const canChangeStatus = ["OWNER", "ADMIN"].includes(appUser?.role);
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -184,7 +194,9 @@ const AdminOrders = () => {
     selectedOrder?.status === "PAID"
       ? ["SHIPPED", "CANCELLED"]
       : selectedOrder?.status === "SHIPPED"
-        ? ["DELIVERED", "CANCELLED"]
+        ? ["DELIVERED", "RETURN_PENDING"]
+        : selectedOrder?.status === "RETURN_PENDING"
+          ? ["RETURNED"]
         : [];
 
   const toggleSelected = (id) => {
@@ -249,6 +261,7 @@ const AdminOrders = () => {
           ["Total orders", counts.total],
           ["Delivered", counts.DELIVERED || 0],
           ["Cancelled", counts.CANCELLED || 0],
+          ["Returned", counts.RETURNED || 0],
         ].map(([label, value]) => (
           <div key={label} className="border border-[var(--line)] px-4 py-4">
             <p className="text-xs uppercase tracking-[0.15em] text-[var(--ink-500)]">
@@ -329,7 +342,7 @@ const AdminOrders = () => {
         </div>
       )}
 
-      {selectedIds.length > 0 && (
+      {canChangeStatus && selectedIds.length > 0 && (
         <div className="mt-6 flex flex-wrap items-center gap-3 border border-[var(--ink-900)] bg-[var(--surface-muted)] px-4 py-3 text-sm">
           <span className="font-medium">{selectedIds.length} selected</span>
           <select
@@ -341,6 +354,8 @@ const AdminOrders = () => {
             <option value="SHIPPED">Shipped</option>
             <option value="DELIVERED">Delivered</option>
             <option value="CANCELLED">Cancelled</option>
+            <option value="RETURN_PENDING">Return pending</option>
+            <option value="RETURNED">Return received</option>
           </select>
           <button
             type="button"
@@ -403,6 +418,7 @@ const AdminOrders = () => {
                 >
                   <input
                     type="checkbox"
+                      disabled={!canChangeStatus}
                     checked={selectedIds.includes(order.id)}
                     onChange={() => toggleSelected(order.id)}
                   />
@@ -515,7 +531,7 @@ const AdminOrders = () => {
                           {statusLabel(selectedOrder.status)}
                         </p>
                       </div>
-                      {availableTransitions.length > 0 && (
+                      {canChangeStatus && availableTransitions.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {availableTransitions.map((nextStatus) => (
                             <button
@@ -536,7 +552,7 @@ const AdminOrders = () => {
 
                     {/* The consequences are stated before the click, not
                         discovered after it. */}
-                    {availableTransitions.length > 0 && !pendingStatus && (
+                    {canChangeStatus && availableTransitions.length > 0 && !pendingStatus && (
                       <ul className="mt-4 space-y-1.5">
                         {availableTransitions.map((nextStatus) => {
                           const effect = TRANSITION_EFFECTS[nextStatus];

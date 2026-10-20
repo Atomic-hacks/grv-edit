@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+import { canAccessAdminPath } from "../../lib/adminNav";
 import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -31,6 +33,9 @@ const AdminRoute = ({ children }) => {
     return <Navigate to="/" replace />;
   }
 
+  if (!canAccessAdminPath(appUser.role, location.pathname)) return (
+    <section className="page-shell py-20"><h1 className="text-2xl font-semibold">Access unavailable</h1><p className="mt-4">Your staff role does not have access to this page.</p><Link className="mt-4 inline-block underline" to="/admin">Back to your dashboard</Link></section>
+  );
   return children;
 };
 

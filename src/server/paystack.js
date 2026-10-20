@@ -43,3 +43,21 @@ export const claimPendingCheckout = async (transaction, reference) => {
   });
   return claim.count > 0;
 };
+
+export const paymentMatchesCheckout = (payment, reference, payload) =>
+  payment?.status === "success" &&
+  payment.reference === reference &&
+  Number.isSafeInteger(payment.amount) &&
+  payment.amount === Math.round(payload.total * 100) &&
+  payment.currency === "NGN";
+
+export const fetchPaystackPayment = async (reference, { fetcher = fetch, secret = process.env.PAYSTACK_SECRET_KEY } = {}) => {
+  if (!secret) throw new Error("Payment verification is not configured");
+  const response = await fetcher(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+    headers: { Authorization: `Bearer ${secret}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.status || !body.data) throw new Error("Payment status is unavailable");
+  return body.data;
+};

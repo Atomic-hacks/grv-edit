@@ -1130,8 +1130,8 @@ const AdminProductForm = () => {
                 step="1"
                 value={singleItemStock}
                 onChange={(event) => setSingleItemStock(event.target.value)}
-                placeholder="Stock"
-                aria-label="Stock"
+                placeholder="Available stock"
+                aria-label="Available stock"
                 className="w-28 border border-[var(--line)] px-3 py-2 text-sm"
               />
             )}
@@ -1171,8 +1171,8 @@ const AdminProductForm = () => {
                 step="1"
                 value={noOptionStock}
                 onChange={(event) => setNoOptionStock(event.target.value)}
-                placeholder="Stock"
-                aria-label="Stock"
+                placeholder="Available stock"
+                aria-label="Available stock"
                 className="w-28 border border-[var(--line)] px-3 py-2 text-sm"
               />
               <button
@@ -1464,7 +1464,7 @@ const AdminProductForm = () => {
                     </span>
                   </span>
                   <span className="shrink-0 text-[var(--ink-700)]">
-                    {variant.stock} in stock
+                    {variant.stock} available
                   </span>
                 </summary>
                 <div className="grid gap-5 border-t border-[var(--line)] py-5 md:grid-cols-[auto_1fr]">
@@ -1503,7 +1503,8 @@ const AdminProductForm = () => {
                   </div>
                   <div className="flex flex-wrap items-end gap-4">
                     <label className="text-sm">
-                      <span className="mb-2 block font-medium">Stock</span>
+                      <span className="mb-2 block font-medium">Available stock</span>
+                      <span className="mb-2 block text-xs text-gray-500">Enter units available to buy, excluding units already held for pending payments.</span>
                       <input
                         type="number"
                         min="0"

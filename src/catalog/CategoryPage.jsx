@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import Card from "../component/ui/Card";
 import { ProductGridSkeleton } from "../component/ui/LoadingSkeletons";
@@ -29,7 +29,6 @@ const CategoryPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isBrowseOpen, setIsBrowseOpen] = useState(false);
-  const navigate = useNavigate();
   const { addToCart } = useCart();
 
   const categoriesQuery = useQuery({ queryKey: ["categories"], queryFn: fetchCategories });
@@ -48,6 +47,7 @@ const CategoryPage = () => {
     maxPrice: searchParams.get("maxPrice") || "",
   };
   const sort = searchParams.get("sort") || "";
+  const page = Math.max(1, Number.parseInt(searchParams.get("page"), 10) || 1);
   const activeFilterCount =
     filters.brand.length +
     filters.subcategory.length +
@@ -62,6 +62,7 @@ const CategoryPage = () => {
     maxPrice: filters.maxPrice,
     sort,
     pageSize: 60,
+    page,
   };
 
   const productsQuery = useQuery({
@@ -98,6 +99,7 @@ const CategoryPage = () => {
   const setSort = (nextSort) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
+      next.delete("page");
       if (nextSort) next.set("sort", nextSort);
       else next.delete("sort");
       return next;
@@ -111,6 +113,10 @@ const CategoryPage = () => {
       </main>
     );
   }
+
+  if (categoriesQuery.error) return (
+    <main className="page-shell min-h-screen"><ErrorState title="Couldn't load this page" message="Please check your connection and try again." onRetry={() => categoriesQuery.refetch()} retryPending={categoriesQuery.isRefetching} /></main>
+  );
 
   if (!categoryPath) {
     return (
@@ -184,9 +190,9 @@ const CategoryPage = () => {
                 <div
                   key={product.id}
                   className="relative group"
-                  onClick={() => navigate(`/product/${product.id}`)}
                 >
                   <Card
+                    href={`/product/${product.id}`}
                     img={images[0]}
                     hoverImg={images[1] || images[0]}
                     alt={product.name}
@@ -226,6 +232,14 @@ const CategoryPage = () => {
               </button>
             )}
           </div>
+        )}
+
+        {total > 60 && (
+          <nav aria-label="Product pages" className="mt-8 flex items-center justify-center gap-6">
+            {page > 1 && <Link to={`?${(() => { const params = new URLSearchParams(searchParams); params.set("page", String(page - 1)); return params; })()}`} onClick={() => window.scrollTo({ top: 0 })}>Previous</Link>}
+            <span aria-live="polite">Page {page} of {Math.ceil(total / 60)}</span>
+            {page * 60 < total && <Link to={`?${(() => { const params = new URLSearchParams(searchParams); params.set("page", String(page + 1)); return params; })()}`} onClick={() => window.scrollTo({ top: 0 })}>Next</Link>}
+          </nav>
         )}
 
         <FilterDrawer

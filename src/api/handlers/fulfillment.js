@@ -21,6 +21,7 @@ export const FULFILLMENT_STATUSES = [
   "OUT_FOR_DELIVERY",
   "DELIVERED",
   "DELIVERY_FAILED",
+  "RETURN_PENDING",
   "CANCELLED",
   "RETURNED",
 ];
@@ -66,6 +67,19 @@ export const updateOrderFulfillment = async (request, id) => {
       data[field] = date;
     }
   }
+  if (data.trackingUrl) {
+    try {
+      const parsed = new URL(data.trackingUrl);
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("protocol");
+      data.trackingUrl = parsed.toString();
+    } catch {
+      return jsonResponse({ error: "trackingUrl must be a valid http or https URL" }, 400);
+    }
+  }
+  const maxLengths = { courierName: 120, trackingNumber: 160, trackingUrl: 2048, deliveryNotes: 2000 };
+  for (const [field, max] of Object.entries(maxLengths)) {
+    if (data[field] && data[field].length > max) return jsonResponse({ error: `${field} must be ${max} characters or fewer` }, 400);
+  }
   if (Object.keys(data).length === 0) {
     return jsonResponse(
       { error: "At least one fulfilment field is required" },
@@ -87,29 +101,27 @@ export const updateOrderFulfillment = async (request, id) => {
     );
   }
 
-  const [updated] = await prisma.$transaction([
-    prisma.order.update({ where: { id }, data }),
-    ...(statusChanged
-      ? [
-          prisma.orderFulfillmentEvent.create({
+  const updated = await prisma.$transaction(async (transaction) => {
+    const changed = await transaction.order.update({ where: { id }, data });
+    if (statusChanged) {
+      await transaction.orderFulfillmentEvent.create({
             data: {
               orderId: id,
               status: data.fulfillmentStatus,
               note:
                 typeof body.note === "string" ? body.note.trim() || null : null,
             },
-          }),
-        ]
-      : []),
-  ]);
-
-  await recordAdminAction({
+          });
+    }
+    await recordAdminAction({
     actorId: guard.user.id,
     action: "order.fulfillment_updated",
     entityType: "Order",
     entityId: id,
     previousState: { fulfillmentStatus: order.fulfillmentStatus },
     newState: data,
+    }, { prisma: transaction, required: true });
+    return changed;
   });
 
   const events = await prisma.orderFulfillmentEvent.findMany({
@@ -141,26 +153,25 @@ export const bulkUpdateOrderFulfillment = async (request) => {
   });
   const validIds = orders.map((order) => order.id);
 
-  await prisma.$transaction([
-    prisma.order.updateMany({
+  await prisma.$transaction(async (transaction) => {
+    await transaction.order.updateMany({
       where: { id: { in: validIds } },
       data: { fulfillmentStatus: status },
-    }),
-    prisma.orderFulfillmentEvent.createMany({
+    });
+    await transaction.orderFulfillmentEvent.createMany({
       data: validIds.map((orderId) => ({
         orderId,
         status,
         note: "Bulk update",
       })),
-    }),
-  ]);
-
-  await recordAdminAction({
+    });
+    await recordAdminAction({
     actorId: guard.user.id,
     action: "order.bulk_fulfillment_updated",
     entityType: "Order",
     entityId: validIds.join(","),
     newState: { status, count: validIds.length },
+    }, { prisma: transaction, required: true });
   });
 
   return jsonResponse({

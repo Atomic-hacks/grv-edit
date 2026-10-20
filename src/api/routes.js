@@ -1,3 +1,13 @@
+import { isReservedCategorySlug } from "../lib/reservedRoutes.js";
+import { getAdminOperations } from "./handlers/operations.js";
+import { handleAdminWaitlistRequest } from "./handlers/adminWaitlist.js";
+import { requireRole } from "../server/requireRole.js";
+import { reconcileCheckouts } from "../server/reconcileCheckouts.js";
+import { aggregateCheckoutItems, allocateCheckoutStock, lockCheckout, releaseCheckoutStock, CheckoutInventoryError } from "../server/checkoutInventory.js";
+import { paymentMatchesCheckout, fetchPaystackPayment } from "../server/paystack.js";
+import { processWaitlistRestocks, queueWaitlistRestock } from "../server/waitlistNotifications.js";
+import { isRestock } from "../lib/variantOptions.js";
+import { handleWaitlistRequest } from "./handlers/waitlist.js";
 import { Sentry } from "../server/sentry.js";
 import { prisma } from "../server/prisma.js";
 import { getCurrentUser } from "../server/getCurrentUser.js";
@@ -47,7 +57,7 @@ import { formatPrice } from "../lib/productHelpers.js";
 import { getRegionForState, NIGERIAN_REGIONS } from "../lib/nigeriaRegions.js";
 import { v2 as cloudinary } from "cloudinary";
 import { parse } from "csv-parse/sync";
-import { randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import { recordAdminAction } from "../server/auditLog.js";
 import {
   handleCaseRequest,
@@ -72,7 +82,7 @@ import { getUploadSignature } from "./handlers/uploads.js";
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 
 const VERIFICATION_CODE_TTL_MS = 15 * 60 * 1000;
@@ -97,7 +107,7 @@ const getShippingFeeForState = async (state) => {
           select: shippingFeeSelect,
         })
       : null);
-  return { region, fee: fallback?.fee ?? 0 };
+  return { region, fee: fallback?.fee ?? null };
 };
 
 const findActiveDiscount = async (code) => {
@@ -340,19 +350,25 @@ const sendNotificationEmail = async (
       to: user.email,
       subject: content.subject,
       html: notificationEmail({
-        message: content.message(productName),
+        message: notification.message || content.message(productName),
         productUrl,
       }),
       from: FROM_INFO,
+      idempotencyKey: `notification/${notification.id}`,
     });
 
     if (emailSent.sent) {
-      await transaction.notification.update({
-        where: { id: notification.id },
-        data: { sent: true },
+      await transaction.notification.update({ where: { id: notification.id }, data: { sent: true } });
+      if (notification.waitlistEntryId) await transaction.waitlistEntry.updateMany({
+          where: { id: notification.waitlistEntryId },
+          data: { deliveryStatus: "SENT", deliveryAttempts: { increment: 1 }, lastDeliveryError: null, providerMessageId: emailSent.id },
       });
       return true;
     }
+    if (notification.waitlistEntryId) await transaction.waitlistEntry.updateMany({
+      where: { id: notification.waitlistEntryId },
+      data: { deliveryStatus: "FAILED", deliveryAttempts: { increment: 1 }, lastDeliveryError: emailSent.message || "Email provider rejected the message" },
+    });
   }
 
   return false;
@@ -370,68 +386,22 @@ const createNotificationAndSendEmail = async (
   return notification;
 };
 
+const retryNotificationEmails = async (where = {}) => {
+  const notifications = await prisma.notification.findMany({ where: { sent: false, ...where }, orderBy: { createdAt: "asc" }, take: 50 });
+  let succeeded = 0;
+  for (const notification of notifications) {
+    try {
+      const product = await prisma.product.findUnique({ where: { id: notification.productId }, select: { name: true } });
+      if (product && await sendNotificationEmail(prisma, notification, product.name)) succeeded++;
+    } catch (error) { console.error("Notification retry failed", { notificationId: notification.id, error }); }
+  }
+  return { found: notifications.length, succeeded, failed: notifications.length - succeeded };
+};
+
 const processUnsentNotifications = async (request) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  const notifications = await prisma.notification.findMany({
-    where: { sent: false },
-    select: {
-      id: true,
-      userId: true,
-      productId: true,
-      type: true,
-      message: true,
-    },
-  });
-
-  let succeeded = 0;
-  let failed = 0;
-
-  for (const notification of notifications) {
-    try {
-      const sent = await prisma.$transaction(async (transaction) => {
-        const currentNotification = await transaction.notification.findUnique({
-          where: { id: notification.id },
-          select: {
-            id: true,
-            userId: true,
-            productId: true,
-            type: true,
-            sent: true,
-          },
-        });
-        if (!currentNotification || currentNotification.sent) return false;
-
-        const product = await transaction.product.findUnique({
-          where: { id: currentNotification.productId },
-          select: { name: true },
-        });
-        if (!product) return false;
-
-        return sendNotificationEmail(
-          transaction,
-          currentNotification,
-          product.name,
-        );
-      });
-
-      if (sent) succeeded += 1;
-      else failed += 1;
-    } catch (error) {
-      console.error("Notification processing failed", {
-        notificationId: notification.id,
-        error,
-      });
-      failed += 1;
-    }
-  }
-
-  return jsonResponse({
-    found: notifications.length,
-    succeeded,
-    failed,
-  });
+  return jsonResponse(await retryNotificationEmails());
 };
 
 const createContactSubmission = async (request) => {
@@ -1452,6 +1422,7 @@ const createAdminCategory = async (request) => {
   if (input.error) return jsonResponse({ error: input.error }, 400);
   if (!body.slug) input.data.slug = await uniqueCategorySlug(input.data.name, input.data.parentId);
   if (!input.data.slug) return jsonResponse({ error: "name must contain letters or numbers" }, 400);
+  if (isReservedCategorySlug(input.data.slug, input.data.parentId)) return jsonResponse({ error: "This slug is reserved for a site page. Choose another category slug." }, 400);
 
   try {
     const category = await prisma.category.create({ data: input.data });
@@ -1476,6 +1447,13 @@ const updateAdminCategory = async (request, id) => {
   if (input.error) return jsonResponse({ error: input.error }, 400);
   if (Object.keys(input.data).length === 0) {
     return jsonResponse({ error: "At least one field is required" }, 400);
+  }
+  if (input.data.slug !== undefined || input.data.parentId !== undefined) {
+    const existing = await prisma.category.findUnique({ where: { id }, select: { slug: true, parentId: true } });
+    if (!existing) return jsonResponse({ error: "Category not found" }, 404);
+    const slug = input.data.slug ?? existing.slug;
+    const parentId = input.data.parentId === undefined ? existing.parentId : input.data.parentId;
+    if (isReservedCategorySlug(slug, parentId) && (slug !== existing.slug || parentId !== existing.parentId)) return jsonResponse({ error: "This slug is reserved for a site page. Choose another category slug." }, 400);
   }
   // A category can't become its own descendant's child — that would create
   // a cycle. `getCategoryAndDescendantIds` includes the category itself,
@@ -2126,7 +2104,7 @@ const serializeAdminOrder = async (order) => ({
 });
 
 const listAdminOrders = async (request, url) => {
-  const guard = await requireAdmin(request);
+  const guard = await requireRole(request, ["ADMIN", "FULFILMENT"]);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
   const status = url.searchParams.get("status");
@@ -2136,6 +2114,7 @@ const listAdminOrders = async (request, url) => {
     "SHIPPED",
     "DELIVERED",
     "CANCELLED",
+    "RETURN_PENDING",
     "FAILED",
   ];
   if (status && !validStatuses.includes(status)) {
@@ -2165,7 +2144,7 @@ const listAdminOrders = async (request, url) => {
 };
 
 const getAdminOrder = async (request, id) => {
-  const guard = await requireAdmin(request);
+  const guard = await requireRole(request, ["ADMIN", "FULFILMENT"]);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
   const order = await prisma.order.findUnique({
@@ -2185,15 +2164,18 @@ const FULFILLMENT_STATUS_FOR_ORDER_STATUS = {
   SHIPPED: "SHIPPED",
   DELIVERED: "DELIVERED",
   CANCELLED: "CANCELLED",
+  RETURN_PENDING: "RETURN_PENDING",
+  RETURNED: "RETURNED",
 };
 
 // Core order-status transition: validates, restocks on cancellation, and
 // returns either an { error, status } pair or { order, restockedVariants }.
 // Shared by the single-order and bulk-status endpoints below.
-const applyOrderStatusChange = async (id, status) => {
+const applyOrderStatusChange = async (id, status, actorId) => {
   const restockedVariants = [];
 
   const result = await prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
     const order = await transaction.order.findUnique({
       where: { id },
       select: {
@@ -2204,14 +2186,24 @@ const applyOrderStatusChange = async (id, status) => {
     });
     if (!order) return { error: "Order not found", status: 404 };
 
-    if (status === "CANCELLED" && !["PAID", "SHIPPED"].includes(order.status)) {
+    const transitions = {
+      PAID: ["SHIPPED", "CANCELLED"],
+      SHIPPED: ["DELIVERED", "RETURN_PENDING"],
+      RETURN_PENDING: ["RETURNED"],
+    };
+    if (!(transitions[order.status] || []).includes(status)) return { error: `Cannot change ${order.status} to ${status}`, status: 409 };
+
+    const restoresStock =
+      (status === "CANCELLED" && order.status === "PAID") ||
+      (status === "RETURNED" && order.status === "RETURN_PENDING");
+    if (["CANCELLED", "RETURNED"].includes(status) && !restoresStock) {
       return {
-        error: `Only PAID or SHIPPED orders can be cancelled; this order is ${order.status}`,
+        error: `Only unshipped or received-return orders can be cancelled; this order is ${order.status}`,
         status: 409,
       };
     }
 
-    if (status === "CANCELLED") {
+    if (restoresStock) {
       const quantitiesByVariant = new Map();
       for (const item of order.items) {
         quantitiesByVariant.set(
@@ -2247,7 +2239,7 @@ const applyOrderStatusChange = async (id, status) => {
           data: { stock: { increment: quantity } },
         });
 
-        if (variant.stock === 0 && stockAfter > 0) {
+        if (isRestock(variant.stock, stockAfter)) {
           restockedVariants.push({
             variantId: variant.id,
             productId: variant.productId,
@@ -2255,6 +2247,7 @@ const applyOrderStatusChange = async (id, status) => {
             color: variant.color,
             size: variant.size,
           });
+          await queueWaitlistRestock(transaction, restockedVariants[restockedVariants.length - 1]);
         }
       }
     }
@@ -2276,6 +2269,7 @@ const applyOrderStatusChange = async (id, status) => {
         },
       });
     }
+    await recordAdminAction({ actorId, action: "order.status_changed", entityType: "Order", entityId: id, previousState: { status: order.status }, newState: { status } }, { prisma: transaction, required: true });
     return { order: updatedOrder, restockedVariants };
   });
 
@@ -2290,7 +2284,7 @@ const dispatchOrderStatusSideEffects = (id, status, restockedVariants) => {
   const emailType = EMAIL_TYPE_FOR_STATUS[status];
   if (emailType) queueOrderEmail(id, emailType);
 
-  if (status === "CANCELLED" && restockedVariants?.length > 0) {
+  if (["CANCELLED", "RETURNED"].includes(status) && restockedVariants?.length > 0) {
     runInBackground(
       processRestockNotificationsBestEffort(restockedVariants),
       `Restock notification batch for order ${id}`,
@@ -2303,29 +2297,22 @@ const updateAdminOrderStatus = async (request, id) => {
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
   const body = await request.json();
-  const allowedStatuses = ["SHIPPED", "DELIVERED", "CANCELLED"];
+  const allowedStatuses = ["SHIPPED", "DELIVERED", "RETURN_PENDING", "RETURNED", "CANCELLED"];
   if (
     typeof body.status !== "string" ||
     !allowedStatuses.includes(body.status) ||
     Object.keys(body).some((key) => key !== "status")
   ) {
     return jsonResponse(
-      { error: "status must be SHIPPED, DELIVERED, or CANCELLED" },
+      { error: "status must be SHIPPED, DELIVERED, RETURN_PENDING, RETURNED, or CANCELLED" },
       400,
     );
   }
 
-  const result = await applyOrderStatusChange(id, body.status);
+  const result = await applyOrderStatusChange(id, body.status, guard.user.id);
   if (result.error) return jsonResponse({ error: result.error }, result.status);
 
   dispatchOrderStatusSideEffects(id, body.status, result.restockedVariants);
-  await recordAdminAction({
-    actorId: guard.user.id,
-    action: "order.status_changed",
-    entityType: "Order",
-    entityId: id,
-    newState: { status: body.status },
-  });
   return jsonResponse(await serializeAdminOrder(result.order));
 };
 
@@ -2341,12 +2328,12 @@ const bulkUpdateAdminOrderStatus = async (request) => {
   const ids = Array.isArray(body.ids)
     ? body.ids.filter((id) => typeof id === "string")
     : [];
-  const allowedStatuses = ["SHIPPED", "DELIVERED", "CANCELLED"];
+  const allowedStatuses = ["SHIPPED", "DELIVERED", "RETURN_PENDING", "RETURNED", "CANCELLED"];
   if (!ids.length)
     return jsonResponse({ error: "ids must be a non-empty array" }, 400);
   if (!allowedStatuses.includes(body.status)) {
     return jsonResponse(
-      { error: "status must be SHIPPED, DELIVERED, or CANCELLED" },
+      { error: "status must be SHIPPED, DELIVERED, RETURN_PENDING, RETURNED, or CANCELLED" },
       400,
     );
   }
@@ -2354,7 +2341,7 @@ const bulkUpdateAdminOrderStatus = async (request) => {
   const succeeded = [];
   const failed = [];
   for (const id of ids) {
-    const result = await applyOrderStatusChange(id, body.status);
+    const result = await applyOrderStatusChange(id, body.status, guard.user.id);
     if (result.error) {
       failed.push({ id, error: result.error });
       continue;
@@ -3287,35 +3274,22 @@ const updateAdminProduct = async (request, id) => {
 const deleteAdminProduct = async (request, id) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  // OrderItem keeps productId as a plain string, not a real foreign key
-  // (it has to survive the product being deleted, for exactly this
-  // reason) — so the database will never stop this delete on its own.
-  // Once a product has been ordered, deleting it would permanently erase
-  // that line's name/image from a real customer's order history and
-  // receipts. Archive it instead.
-  const orderItemCount = await prisma.orderItem.count({
-    where: { productId: id },
+  return prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT id FROM "Variant" WHERE "productId" = ${id} ORDER BY id FOR UPDATE`;
+    const product = await transaction.product.findUnique({ where: { id }, select: { id: true } });
+    if (!product) return jsonResponse({ error: "Product not found" }, 404);
+    const [orders, attempts] = await Promise.all([
+      transaction.orderItem.count({ where: { productId: id } }),
+      transaction.pendingCheckout.count({ where: { payload: { path: ["items"], array_contains: [{ productId: id }] } } }),
+    ]);
+    if (orders || attempts) return jsonResponse({ error: "Orders or retained payment attempts reference this product. Archive it to preserve payment recovery and order history." }, 409);
+    await transaction.productTag.deleteMany({ where: { productId: id } });
+    await transaction.wishlist.deleteMany({ where: { productId: id } });
+    await transaction.waitlistEntry.deleteMany({ where: { variant: { productId: id } } });
+    await transaction.product.delete({ where: { id } });
+    await recordAdminAction({ actorId: guard.user.id, action: "product.deleted", entityType: "Product", entityId: id }, { prisma: transaction, required: true });
+    return jsonResponse({ deleted: true, id });
   });
-  if (orderItemCount > 0) {
-    return jsonResponse(
-      {
-        error: `${orderItemCount} past order${orderItemCount === 1 ? "" : "s"} reference this product. Archive it instead of deleting so order history stays intact.`,
-      },
-      409,
-    );
-  }
-
-  await prisma.$transaction([
-    prisma.productTag.deleteMany({ where: { productId: id } }),
-    // Wishlist.productId is nullable and ON DELETE SET NULL at the DB
-    // level (it's shared with the brand-follow feature) — without this,
-    // deleting a favorited product leaves a ghost Wishlist row with
-    // neither productId nor brandId set, invisible in the UI forever.
-    prisma.wishlist.deleteMany({ where: { productId: id } }),
-    prisma.product.delete({ where: { id } }),
-  ]);
-  return jsonResponse({ deleted: true, id });
 };
 
 const replaceAdminProductTags = async (request, id) => {
@@ -3376,38 +3350,6 @@ const parseVariantInput = (body, { partial = false } = {}) => {
     }
   }
   return { data };
-};
-
-const notifyWaitlistEntriesOnRestock = async (
-  transaction,
-  { variantId, productId, productName, color, size, stockBefore, stockAfter },
-) => {
-  if (stockBefore !== 0 || stockAfter <= 0) return 0;
-
-  const waitingEntries = await transaction.waitlistEntry.findMany({
-    where: { variantId, status: "WAITING" },
-    select: { id: true, userId: true },
-  });
-
-  if (waitingEntries.length === 0) return 0;
-
-  for (const { userId } of waitingEntries) {
-    await createNotificationAndSendEmail(
-      transaction,
-      {
-        userId,
-        productId,
-        type: "WAITLIST_RESTOCK",
-        message: `${productName} (${color}, ${size}) is back in stock!`,
-      },
-      productName,
-    );
-  }
-  await transaction.waitlistEntry.updateMany({
-    where: { id: { in: waitingEntries.map(({ id }) => id) } },
-    data: { status: "NOTIFIED" },
-  });
-  return waitingEntries.length;
 };
 
 // "Follow" a brand (the same heart/save action as favoriting a product,
@@ -3498,6 +3440,7 @@ const updateAdminVariant = async (request, id) => {
     );
   }
 
+  let restockedVariant = null;
   const variant = await prisma.$transaction(async (transaction) => {
     const existingVariant = await transaction.variant.findUnique({
       where: { id },
@@ -3519,56 +3462,49 @@ const updateAdminVariant = async (request, id) => {
 
     const restocked =
       input.data.stock !== undefined &&
-      existingVariant.stock === 0 &&
-      input.data.stock > 0;
+      isRestock(existingVariant.stock, input.data.stock);
     if (restocked) {
-      await notifyWaitlistEntriesOnRestock(transaction, {
+      restockedVariant = {
         variantId: id,
         productId: existingVariant.productId,
         productName: existingVariant.product.name,
         color: existingVariant.color,
         size: existingVariant.size,
-        stockBefore: existingVariant.stock,
-        stockAfter: input.data.stock,
-      });
+      };
+      await queueWaitlistRestock(transaction, restockedVariant);
     }
 
     return updatedVariant;
   });
   if (!variant) return jsonResponse({ error: "Variant not found" }, 404);
+  if (restockedVariant) {
+    runInBackground(
+      processRestockNotificationsBestEffort([restockedVariant]),
+      `Restock notifications for ${id}`,
+    );
+  }
   return jsonResponse(variant);
 };
 
 const deleteAdminVariant = async (request, id) => {
   const guard = await requireAdmin(request);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
-
-  const variant = await prisma.variant.findUnique({
-    where: { id },
-    select: { id: true, productId: true },
+  return prisma.$transaction(async (transaction) => {
+    const candidate = await transaction.variant.findUnique({ where: { id }, select: { productId: true } });
+    if (!candidate) return jsonResponse({ error: "Variant not found" }, 404);
+    await transaction.$queryRaw`SELECT id FROM "Variant" WHERE "productId" = ${candidate.productId} ORDER BY id FOR UPDATE`;
+    const [variants, orders, attempts] = await Promise.all([
+      transaction.variant.count({ where: { productId: candidate.productId } }),
+      transaction.orderItem.count({ where: { variantId: id } }),
+      transaction.pendingCheckout.count({ where: { payload: { path: ["items"], array_contains: [{ variantId: id }] } } }),
+    ]);
+    if (variants <= 1) return jsonResponse({ error: "Cannot delete the product's only variant" }, 409);
+    if (orders || attempts) return jsonResponse({ error: "Orders or payment attempts reference this variant. Keep it for payment recovery and order history." }, 409);
+    await transaction.waitlistEntry.deleteMany({ where: { variantId: id } });
+    await transaction.variant.delete({ where: { id } });
+    await recordAdminAction({ actorId: guard.user.id, action: "variant.deleted", entityType: "Variant", entityId: id }, { prisma: transaction, required: true });
+    return jsonResponse({ deleted: true, id });
   });
-  if (!variant) return jsonResponse({ error: "Variant not found" }, 404);
-
-  const variantCount = await prisma.variant.count({
-    where: { productId: variant.productId },
-  });
-  if (variantCount <= 1) {
-    return jsonResponse(
-      { error: "Cannot delete the product's only variant" },
-      409,
-    );
-  }
-
-  // WaitlistEntry.variantId is ON DELETE RESTRICT and there is no admin
-  // screen to clear these by hand — without this, a variant with anyone
-  // waiting on it becomes permanently undeletable. Once the variant is
-  // gone there is nothing left to notify those entries about, so they're
-  // cleared along with it rather than left to block the delete forever.
-  await prisma.$transaction([
-    prisma.waitlistEntry.deleteMany({ where: { variantId: id } }),
-    prisma.variant.delete({ where: { id } }),
-  ]);
-  return jsonResponse({ deleted: true, id });
 };
 
 const addAdminVariantImage = async (request, id) => {
@@ -3600,7 +3536,9 @@ const handleAdminVariantRequest = async (request, segments) => {
 const handleAdminProductRequest = async (request, segments) => {
   const id = segments[3] ? decodeURIComponent(segments[3]) : null;
   if (id === "bulk" && segments[4]) {
-    return handleAdminProductBulkRequest(request, segments);
+    return handleAdminProductBulkRequest(request, segments, {
+      processRestocks: processRestockNotificationsBestEffort,
+    });
   }
   if (
     request.method === "POST" &&
@@ -3642,7 +3580,7 @@ const getBrandBySlug = async (idOrSlug) => {
   return jsonResponse(brand);
 };
 
-const initializeCheckout = async (request) => {
+const initializeCheckout = async (request, reconciled = false) => {
   const user = await getCurrentUser(request);
   if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
 
@@ -3665,7 +3603,9 @@ const initializeCheckout = async (request) => {
     return jsonResponse({ error: "Payment processing is not configured" }, 500);
   }
 
-  const body = await request.json();
+  const retryRequest = reconciled ? null : request.clone();
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return jsonResponse({ error: "Invalid checkout body" }, 400);
   const requiredFields = [
     "fullName",
     "country",
@@ -3692,25 +3632,26 @@ const initializeCheckout = async (request) => {
     return jsonResponse({ error: "Checkout items cannot be empty" }, 400);
   }
 
-  const lineItems = items.map((item) => ({
-    productId: item?.productId,
-    variantId: item?.variantId,
-    quantity: item?.quantity,
-  }));
-  const invalidLine = lineItems.find(
-    ({ productId, variantId, quantity }) =>
-      typeof productId !== "string" ||
-      typeof variantId !== "string" ||
-      !Number.isInteger(quantity) ||
-      quantity <= 0,
-  );
-  if (invalidLine) {
-    return jsonResponse({ error: "Goody Bag contains an invalid item" }, 400);
+  let lineItems;
+  try { lineItems = aggregateCheckoutItems(items); }
+  catch (error) { return jsonResponse({ error: error.message }, 400); }
+
+  if (body.checkoutKey !== undefined && (typeof body.checkoutKey !== "string" || !/^[a-zA-Z0-9-]{16,80}$/.test(body.checkoutKey))) return jsonResponse({ error: "Invalid checkout key" }, 400);
+  const reference = body.checkoutKey
+    ? `grv_${createHash("sha256").update(JSON.stringify([user.id, body.checkoutKey, lineItems, requiredFields.map((field) => body[field].trim()), String(body.discountCode || "").trim().toUpperCase()])).digest("hex")}`
+    : `grv_${crypto.randomUUID()}`;
+  const existingAttempt = body.checkoutKey ? await prisma.pendingCheckout.findUnique({ where: { reference } }) : null;
+  if (existingAttempt) {
+    if (["failed", "abandoned", "reversed", "initialization_rejected"].includes(existingAttempt.payload.paymentStatus)) return jsonResponse({ error: "The previous payment attempt did not complete. You can try again.", code: "CHECKOUT_FAILED", reference }, 409);
+    if (existingAttempt.payload.authorizationUrl) return jsonResponse({ authorization_url: existingAttempt.payload.authorizationUrl, reference });
+    return jsonResponse({ error: "This payment attempt is still being confirmed. Please check its status before starting another payment.", code: "CHECKOUT_IN_PROGRESS", reference }, 409);
   }
+  if (body.checkoutKey && await prisma.order.findUnique({ where: { paystackReference: reference }, select: { id: true } })) return jsonResponse({ authorization_url: `/checkout/complete?reference=${encodeURIComponent(reference)}`, reference });
 
   const products = await prisma.product.findMany({
     where: {
       id: { in: [...new Set(lineItems.map((item) => item.productId))] },
+      archived: false,
     },
     select: {
       id: true,
@@ -3764,6 +3705,10 @@ const initializeCheckout = async (request) => {
   }
 
   if (insufficientItems.length) {
+    if (!reconciled) {
+      const recovery = await reconcileCheckouts({ prisma, finalize: finalizeOrderFromReference, variantIds: insufficientItems.map((item) => item.variantId) });
+      if (recovery.released > 0) return initializeCheckout(retryRequest, true);
+    }
     return jsonResponse(
       {
         error: "Some items do not have enough stock",
@@ -3806,12 +3751,21 @@ const initializeCheckout = async (request) => {
   const firstOrderFreeShipping = Boolean(
     firstOrderEligible && firstOrderPromo.freeShipping,
   );
-  const { fee: regionalShippingFee } = await getShippingFeeForState(body.state);
+  const { fee: regionalShippingFee, region: shippingRegion } = await getShippingFeeForState(body.state);
+  if (regionalShippingFee === null) {
+    Sentry.captureMessage("Checkout blocked: shipping fee is not configured", {
+      level: "error",
+      tags: { shippingRegion },
+    });
+    return jsonResponse({ error: "Delivery pricing is temporarily unavailable. Please contact support." }, 503);
+  }
   const shippingFee = firstOrderFreeShipping ? 0 : regionalShippingFee;
   const orderTotal = Math.max(
     0,
     subtotalAfterFirstOrderDiscount - discountAmount + shippingFee,
   );
+
+  if (!Number.isSafeInteger(Math.round(orderTotal * 100)) || orderTotal <= 0) return jsonResponse({ error: "Checkout total is invalid. Please contact support." }, 400);
 
   // Nothing is written to the Order table yet — only once Paystack confirms
   // payment (in finalizeOrderFromReference) does a real Order get created.
@@ -3819,6 +3773,7 @@ const initializeCheckout = async (request) => {
   // the reference we're about to hand Paystack.
   const checkoutPayload = {
     userId: user.id,
+    inventoryReserved: process.env.CHECKOUT_RESERVE_STOCK !== "false",
     total: orderTotal,
     discountId: discount?.id ?? null,
     discountAmount,
@@ -3836,15 +3791,49 @@ const initializeCheckout = async (request) => {
     postalCode: body.postalCode.trim(),
     items: orderItems,
   };
-  const reference = `grv_${crypto.randomUUID()}`;
 
-  // Only the newest attempt for this customer matters — clear out any
-  // earlier checkout attempts they abandoned or that failed, rather than
-  // letting them pile up.
-  await prisma.pendingCheckout.deleteMany({ where: { userId: user.id } });
-  await prisma.pendingCheckout.create({
-    data: { reference, userId: user.id, payload: checkoutPayload },
-  });
+  // Do not discard earlier attempts: customers can still complete them.
+  // Reserve before handing the reference to Paystack, atomically with its payload.
+  try {
+    await prisma.$transaction(async (transaction) => {
+      if (firstOrderEligible) {
+        await transaction.$queryRaw`SELECT id FROM "User" WHERE id = ${user.id}::uuid FOR UPDATE`;
+        const currentUser = await transaction.user.findUnique({ where: { id: user.id }, select: { firstOrderPromoUsed: true } });
+        const existingRedemption = await transaction.firstOrderPromoRedemption.findUnique({ where: { userId: user.id } });
+        if (!currentUser || currentUser.firstOrderPromoUsed || existingRedemption) {
+          const error = new Error("The first-order offer has already been reserved or used.");
+          error.code = "PROMOTION_UNAVAILABLE";
+          throw error;
+        }
+        await transaction.firstOrderPromoRedemption.create({
+          data: { userId: user.id, checkoutReference: reference },
+        });
+      }
+      if (discount) {
+        await transaction.$queryRaw`SELECT id FROM "Discount" WHERE id = ${discount.id} FOR UPDATE`;
+        const currentDiscount = await transaction.discount.findUnique({ where: { id: discount.id } });
+        const reservedCount = await transaction.discountRedemption.count({
+          where: { discountId: discount.id, status: "RESERVED" },
+        });
+        if (!currentDiscount?.active || (currentDiscount.expiresAt && currentDiscount.expiresAt <= new Date()) ||
+            (currentDiscount.maxUses !== null && currentDiscount.usedCount + reservedCount >= currentDiscount.maxUses)) {
+          const error = new Error("This promo code is no longer available.");
+          error.code = "PROMOTION_UNAVAILABLE";
+          throw error;
+        }
+        await transaction.discountRedemption.create({
+          data: { discountId: discount.id, userId: user.id, checkoutReference: reference },
+        });
+      }
+      if (checkoutPayload.inventoryReserved) await allocateCheckoutStock(transaction, orderItems);
+      await transaction.pendingCheckout.create({ data: { reference, userId: user.id, payload: checkoutPayload } });
+    });
+  } catch (error) {
+    if (error instanceof CheckoutInventoryError) return jsonResponse({ error: error.message }, 409);
+    if (error.code === "PROMOTION_UNAVAILABLE") return jsonResponse({ error: error.message }, 409);
+    if (error.code === "P2002" && body.checkoutKey) return jsonResponse({ error: "This payment attempt is already being initialized. Please wait before trying again.", code: "CHECKOUT_IN_PROGRESS", reference }, 409);
+    throw error;
+  }
 
   try {
     const paystackResponse = await fetch(
@@ -3855,6 +3844,7 @@ const initializeCheckout = async (request) => {
           Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
           "Content-Type": "application/json",
         },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({
           reference,
           amount: Math.round(orderTotal * 100),
@@ -3880,30 +3870,36 @@ const initializeCheckout = async (request) => {
         amount: Math.round(orderTotal * 100),
         hasEmail: Boolean(user.email),
       });
-      await prisma.pendingCheckout
-        .delete({ where: { reference } })
-        .catch(() => {});
+      // Only a definite provider rejection can release the reservation.
+      // Server errors/timeouts can occur after a transaction was created.
+      if (paystackResponse.status >= 400 && paystackResponse.status < 500) {
+        await releaseCheckoutStock(prisma, reference, "initialization_rejected");
+      }
       return jsonResponse(
         {
           error:
             paystackBody?.message ||
             paystackBody?.data?.gateway_response ||
             "Unable to initialize payment",
+          code: paystackResponse.status >= 400 && paystackResponse.status < 500 ? "INITIALIZATION_REJECTED" : "CHECKOUT_IN_PROGRESS",
+          reference,
         },
         502,
       );
     }
 
+    await prisma.$transaction(async (transaction) => {
+      const attempt = await lockCheckout(transaction, reference);
+      if (attempt) await transaction.pendingCheckout.update({ where: { reference }, data: { payload: { ...attempt.payload, authorizationUrl: paystackBody.data.authorization_url } } });
+    });
     return jsonResponse({
       authorization_url: paystackBody.data.authorization_url,
       reference,
     });
   } catch (error) {
-    await prisma.pendingCheckout
-      .delete({ where: { reference } })
-      .catch(() => {});
+    // Retain the reservation and payload until provider reconciliation.
     console.error("Paystack checkout initialization failed", error);
-    return jsonResponse({ error: "Unable to initialize payment" }, 502);
+    return jsonResponse({ error: "Payment setup could not be confirmed. No order has been completed; please contact support if money was taken.", reference }, 502);
   }
 };
 
@@ -3950,6 +3946,7 @@ const processOrderPaidNotificationsBestEffort = async (notifications) => {
             userId: true,
             productId: true,
             type: true,
+            message: true,
             sent: true,
           },
         });
@@ -3970,51 +3967,9 @@ const processOrderPaidNotificationsBestEffort = async (notifications) => {
   }
 };
 
-const processRestockNotificationsBestEffort = async (restockedVariants) => {
-  const simulatedFailure =
-    process.env.SIMULATE_RESTOCK_NOTIFICATION_FAILURE === "1";
-
-  for (const variant of restockedVariants) {
-    try {
-      if (simulatedFailure) {
-        throw new Error("Simulated restock notification failure");
-      }
-
-      const waitingEntries = await prisma.waitlistEntry.findMany({
-        where: { variantId: variant.variantId, status: "WAITING" },
-        select: { id: true, userId: true },
-      });
-
-      if (waitingEntries.length === 0) continue;
-
-      await prisma.$transaction(async (transaction) => {
-        for (const { userId } of waitingEntries) {
-          await createNotificationAndSendEmail(
-            transaction,
-            {
-              userId,
-              productId: variant.productId,
-              type: "WAITLIST_RESTOCK",
-              message: `${variant.productName} (${variant.color}, ${variant.size}) is back in stock!`,
-            },
-            variant.productName,
-          );
-        }
-        await transaction.waitlistEntry.updateMany({
-          where: {
-            id: { in: waitingEntries.map(({ id }) => id) },
-            status: "WAITING",
-          },
-          data: { status: "NOTIFIED" },
-        });
-      });
-    } catch (error) {
-      console.error("Restock notification processing failed", {
-        variantId: variant.variantId,
-        error,
-      });
-    }
-  }
+const processRestockNotificationsBestEffort = async (variants) => {
+  await processWaitlistRestocks(variants, { prisma, sendNotificationEmail });
+  await retryNotificationEmails();
 };
 
 // Creates the real Order the instant Paystack confirms payment — the only
@@ -4024,7 +3979,7 @@ const processRestockNotificationsBestEffort = async (restockedVariants) => {
 // nothing left to claim and falls through to look up the Order that
 // resulted, so both call sites can safely call this for the same
 // reference without creating (or decrementing stock) twice.
-const finalizeOrderFromReference = async (reference) => {
+const finalizeOrderFromReference = async (reference, payment) => {
   const existingOrder = await prisma.order.findUnique({
     where: { paystackReference: reference },
     include: { items: true, user: { select: { email: true } } },
@@ -4034,13 +3989,18 @@ const finalizeOrderFromReference = async (reference) => {
   const notificationsToProcess = [];
   let createdOrder = null;
 
+  try {
   await prisma.$transaction(async (transaction) => {
     // Read the payload before claiming — claimPendingCheckout deletes the
     // row, so it has to happen after we've captured what's in it.
-    const pending = await transaction.pendingCheckout.findUnique({
-      where: { reference },
-    });
+    const pending = await lockCheckout(transaction, reference);
     if (!pending) return;
+    if (!paymentMatchesCheckout(payment, reference, pending.payload)) {
+      throw new Error(`Payment integrity mismatch for ${reference}`);
+    }
+    // Old attempts and late payments after a released reservation must allocate
+    // atomically too. On shortage the claim rolls back and remains reviewable.
+    if (!pending.payload.inventoryReserved) await allocateCheckoutStock(transaction, pending.payload.items);
 
     const claimed = await claimPendingCheckout(transaction, reference);
     // Lost a race with a concurrent call that claimed it first — there's
@@ -4078,10 +4038,23 @@ const finalizeOrderFromReference = async (reference) => {
       data: { orderId: createdOrder.id, status: "PAYMENT_CONFIRMED" },
     });
 
+    await transaction.waitlistEntry?.updateMany({
+      where: {
+        userId: payload.userId,
+        variantId: { in: payload.items.map((item) => item.variantId) },
+        status: { in: ["WAITING", "NOTIFIED"] },
+      },
+      data: { status: "FULFILLED", fulfilledAt: new Date() },
+    });
+
     if (payload.discountId) {
       await transaction.discount.update({
         where: { id: payload.discountId },
         data: { usedCount: { increment: 1 } },
+      });
+      await transaction.discountRedemption.updateMany({
+        where: { checkoutReference: reference, status: "RESERVED" },
+        data: { status: "REDEEMED" },
       });
     }
 
@@ -4093,6 +4066,10 @@ const finalizeOrderFromReference = async (reference) => {
         where: { id: payload.userId, firstOrderPromoUsed: false },
         data: { firstOrderPromoUsed: true },
       });
+      await transaction.firstOrderPromoRedemption.updateMany({
+        where: { checkoutReference: reference, status: "RESERVED" },
+        data: { status: "REDEEMED" },
+      });
     }
 
     for (const item of createdOrder.items) {
@@ -4100,30 +4077,10 @@ const finalizeOrderFromReference = async (reference) => {
         where: { id: item.variantId },
         select: { id: true, stock: true, product: { select: { name: true } } },
       });
-      if (!variant) {
-        console.error(
-          "Serious warning: paid order references a missing variant",
-          { orderId: createdOrder.id, variantId: item.variantId },
-        );
-        continue;
-      }
-      if (variant.stock < item.quantity) {
-        console.error(
-          "Serious warning: stock race caused paid order to go below zero",
-          {
-            orderId: createdOrder.id,
-            variantId: item.variantId,
-            stock: variant.stock,
-            quantity: item.quantity,
-          },
-        );
-      }
-      const stockBefore = variant.stock;
-      const stockAfter = stockBefore - item.quantity;
-      await transaction.variant.update({
-        where: { id: item.variantId },
-        data: { stock: { decrement: item.quantity } },
-      });
+      if (!variant) throw new CheckoutInventoryError("A paid item requires inventory review. Contact support with your payment reference.");
+      // Inventory was allocated at reservation time (or above for legacy rows).
+      const stockAfter = variant.stock;
+      const stockBefore = stockAfter + item.quantity;
 
       if (
         stockBefore > LOW_STOCK_THRESHOLD &&
@@ -4151,6 +4108,12 @@ const finalizeOrderFromReference = async (reference) => {
       }
     }
   });
+  } catch (error) {
+    try {
+      await prisma.$executeRaw`UPDATE "PendingCheckout" SET payload = jsonb_set(payload, '{paymentStatus}', to_jsonb(${"review_required"}::text)) WHERE reference = ${reference}`;
+    } catch { /* Preserve the original failure if the database is unavailable. */ }
+    throw error;
+  }
 
   if (!createdOrder) {
     // Someone else's transaction is (or already has) creating this order —
@@ -4239,33 +4202,26 @@ const verifyCheckout = async (request, url) => {
   }
 
   let paystackBody;
-  try {
-    const paystackResponse = await fetch(
-      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-      {
-        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
-      },
-    );
-    paystackBody = await paystackResponse.json().catch(() => null);
-    if (!paystackResponse.ok || !paystackBody?.status || !paystackBody.data) {
-      // Paystack itself errored or hasn't settled the transaction yet — not
-      // proof of failure, just not resolved. Keep the checkout session
-      // alive and let the frontend poll again.
-      return jsonResponse({ status: "PENDING" });
-    }
-  } catch (error) {
+  try { paystackBody = { data: await fetchPaystackPayment(reference) }; }
+  catch (error) {
     console.error("Paystack verify request failed", { reference, error });
     return jsonResponse({ status: "PENDING" });
   }
 
   if (paystackBody.data.status === "success") {
-    const { order } = await finalizeOrderFromReference(reference);
+    let order;
+    try { ({ order } = await finalizeOrderFromReference(reference, paystackBody.data)); }
+    catch (error) {
+      console.error("Paid checkout requires review", { reference, error });
+      Sentry.captureException(error);
+      return jsonResponse({ error: "Your payment was received and needs review. Please contact support with this payment reference. Do not pay again.", code: "PAYMENT_REVIEW_REQUIRED", reference }, 409);
+    }
     if (!order) return jsonResponse({ status: "PENDING" });
     return jsonResponse({ orderId: order.id, status: order.status });
   }
 
   if (PAYSTACK_TERMINAL_FAILURE_STATUSES.has(paystackBody.data.status)) {
-    await prisma.pendingCheckout.deleteMany({ where: { reference } });
+    await releaseCheckoutStock(prisma, reference, paystackBody.data.status);
     return jsonResponse({ status: "FAILED" });
   }
 
@@ -4521,6 +4477,7 @@ const getCheckoutShippingFee = async (request, url) => {
   const { region, fee } = await getShippingFeeForState(
     url.searchParams.get("state"),
   );
+  if (fee === null) return jsonResponse({ error: "Delivery pricing is not configured for this address" }, 503);
   const promo = await getFirstOrderPromoConfig();
   const freeShipping = Boolean(
     promo?.active && promo.freeShipping && !user.firstOrderPromoUsed,
@@ -5042,105 +4999,6 @@ const removeBrandFromWishlist = async (request, brandId) => {
   return jsonResponse({ success: true, brandId });
 };
 
-const waitlistEntrySelect = {
-  id: true,
-  variantId: true,
-  status: true,
-  createdAt: true,
-  variant: {
-    select: {
-      color: true,
-      size: true,
-      product: { select: { id: true, name: true } },
-    },
-  },
-};
-
-const listWaitlist = async (request) => {
-  const user = await getCurrentUser(request);
-  if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
-
-  const entries = await prisma.waitlistEntry.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    select: waitlistEntrySelect,
-  });
-  return jsonResponse(entries);
-};
-
-const addToWaitlist = async (request) => {
-  const user = await getCurrentUser(request);
-  if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
-  if (!user.emailVerified) {
-    return jsonResponse(
-      { error: "Verify your email before joining the waitlist" },
-      403,
-    );
-  }
-
-  const body = await request.json();
-  if (typeof body.variantId !== "string" || !body.variantId.trim()) {
-    return jsonResponse({ error: "variantId is required" }, 400);
-  }
-
-  const variant = await prisma.variant.findUnique({
-    where: { id: body.variantId },
-    select: { id: true },
-  });
-  if (!variant) return jsonResponse({ error: "Variant not found" }, 404);
-
-  const existing = await prisma.waitlistEntry.findUnique({
-    where: {
-      userId_variantId: { userId: user.id, variantId: variant.id },
-    },
-    select: waitlistEntrySelect,
-  });
-  if (
-    existing &&
-    (existing.status === "WAITING" || existing.status === "NOTIFIED")
-  ) {
-    return jsonResponse({ success: true, entry: existing });
-  }
-
-  let entry;
-  try {
-    entry = await prisma.waitlistEntry.upsert({
-      where: {
-        userId_variantId: { userId: user.id, variantId: variant.id },
-      },
-      create: { userId: user.id, variantId: variant.id },
-      update: { status: "WAITING" },
-      select: waitlistEntrySelect,
-    });
-  } catch (error) {
-    if (error?.code !== "P2002") throw error;
-    entry = await prisma.waitlistEntry.findUnique({
-      where: {
-        userId_variantId: { userId: user.id, variantId: variant.id },
-      },
-      select: waitlistEntrySelect,
-    });
-  }
-
-  return jsonResponse({ success: true, entry });
-};
-
-const removeFromWaitlist = async (request, id) => {
-  const user = await getCurrentUser(request);
-  if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
-
-  await prisma.waitlistEntry.deleteMany({ where: { id, userId: user.id } });
-  return jsonResponse({ success: true, id });
-};
-
-const handleWaitlistRequest = async (request, segments) => {
-  const id = segments[2] ? decodeURIComponent(segments[2]) : null;
-  if (request.method === "GET" && !id) return listWaitlist(request);
-  if (request.method === "POST" && !id) return addToWaitlist(request);
-  if (request.method === "DELETE" && id) return removeFromWaitlist(request, id);
-  return jsonResponse({ error: "Method not allowed" }, 405);
-};
-
 const handlePaystackWebhook = async (request) => {
   const rawBody = await request.text();
   const signature = request.headers.get("x-paystack-signature");
@@ -5165,9 +5023,7 @@ const handlePaystackWebhook = async (request) => {
   if (event.event === "charge.failed") {
     const failedReference = event.data?.reference;
     if (typeof failedReference === "string" && failedReference) {
-      await prisma.pendingCheckout.deleteMany({
-        where: { reference: failedReference },
-      });
+      await releaseCheckoutStock(prisma, failedReference, "failed");
     }
     return jsonResponse({ ok: true });
   }
@@ -5179,7 +5035,8 @@ const handlePaystackWebhook = async (request) => {
     return jsonResponse({ error: "Missing payment reference" }, 400);
   }
 
-  await finalizeOrderFromReference(reference);
+  const result = await finalizeOrderFromReference(reference, event.data);
+  if (!result.order) throw new Error(`Successful payment has no recoverable checkout: ${reference}`);
 
   // A webhook has no browser session, so it cannot identify which persisted
   // cart should be cleared after checkout.
@@ -5237,6 +5094,7 @@ const prefix = (...segments) => ({
 });
 
 const ROUTES = [
+  { method: "GET", ...path("api", "admin", "operations"), handler: ({ request, url }) => getAdminOperations(request, url), errorMessage: "Unable to load recovery status" },
   {
     method: "POST",
     ...path("api", "auth", "send-verification"),
@@ -5392,6 +5250,59 @@ const ROUTES = [
     errorMessage: "Notification processing failed",
   },
   {
+    method: "POST",
+    ...path("api", "admin", "waitlist", "retry"),
+    handler: async ({ request }) => {
+      const guard = await requireAdmin(request);
+      if (!guard.ok) return jsonResponse(guard.body, guard.status);
+      return jsonResponse(
+        await retryNotificationEmails({ type: "WAITLIST_RESTOCK" }),
+      );
+    },
+    errorLog: "Waitlist notification retry failed",
+    errorMessage: "Waitlist notification retry failed",
+  },
+  {
+    method: "POST",
+    ...path("api", "admin", "waitlist", "process"),
+    handler: async ({ request }) => {
+      const guard = await requireAdmin(request);
+      if (!guard.ok) return jsonResponse(guard.body, guard.status);
+      const variants = await prisma.variant.findMany({
+        where: {
+          stock: { gt: 0 },
+          waitlistEntries: { some: { status: "WAITING" } },
+        },
+        orderBy: { id: "asc" },
+        select: {
+          id: true,
+          productId: true,
+          color: true,
+          size: true,
+          product: { select: { name: true } },
+        },
+      });
+      await processWaitlistRestocks(
+        variants.map((variant) => ({
+          variantId: variant.id,
+          productId: variant.productId,
+          productName: variant.product.name,
+          color: variant.color,
+          size: variant.size,
+        })),
+        { prisma, sendNotificationEmail },
+      );
+      return jsonResponse({
+        eligibleVariants: variants.length,
+        notificationRetries: await retryNotificationEmails({
+          type: "WAITLIST_RESTOCK",
+        }),
+      });
+    },
+    errorLog: "Eligible waitlist processing failed",
+    errorMessage: "Eligible waitlist processing failed",
+  },
+  {
     // Reachable either by Vercel Cron (GET + CRON_SECRET bearer token) or
     // by an authenticated admin (POST). Kept self-contained rather than
     // expressed through the generic `method` field because of that dual
@@ -5406,10 +5317,20 @@ const ROUTES = [
         const guard = await requireAdmin(request);
         if (!guard.ok) return jsonResponse(guard.body, guard.status);
       }
-      return jsonResponse(await runReminderChecks());
+      return jsonResponse(await runReminderChecks({
+        reconcilePayments: () => reconcileCheckouts({ prisma, finalize: finalizeOrderFromReference }),
+        retryNotifications: () => retryNotificationEmails(),
+      }));
     },
     errorLog: "Reminder check request failed",
     errorMessage: "Reminder check failed",
+  },
+  {
+    ...prefix("api", "admin", "waitlist"),
+    handler: ({ request, segments, url }) =>
+      handleAdminWaitlistRequest(request, segments, url),
+    errorLog: "Admin waitlist request failed",
+    errorMessage: "Waitlist request failed",
   },
   {
     ...prefix("api", "admin", "content-sections"),
@@ -5669,6 +5590,7 @@ const ROUTES = [
 
 export const handleApiRequest = async (request) => {
   const url = new URL(request.url);
+  try { decodeURIComponent(url.pathname); } catch { return jsonResponse({ error: "Invalid URL path" }, 400); }
   const segments = url.pathname.split("/").filter(Boolean); // e.g. ["api","products",":id"]
 
   let pathMatched = false;
@@ -5681,7 +5603,7 @@ export const handleApiRequest = async (request) => {
     try {
       const response = await route.handler({ request, url, segments, params });
       const cacheControl = publicCacheControl(request, response.status);
-      if (cacheControl) response.headers.set("Cache-Control", cacheControl);
+      response.headers.set("Cache-Control", cacheControl || "no-store");
       return response;
     } catch (error) {
       console.error(route.errorLog || route.errorMessage, error);

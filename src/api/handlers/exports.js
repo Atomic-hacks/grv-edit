@@ -5,10 +5,7 @@
 import { prisma } from "../../server/prisma.js";
 import { requireRole } from "../../server/requireRole.js";
 
-const csvCell = (value) => {
-  const cell = value === null || value === undefined ? "" : String(value);
-  return /[",\n\r]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
-};
+import { csvCell } from "../../server/csv.js";
 
 const toCsv = (columns, rows) =>
   [columns, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n") +

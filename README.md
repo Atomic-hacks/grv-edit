@@ -97,3 +97,20 @@ does not enforce it for you.
 - The Content-Security-Policy in `vercel.json` is report-only. Once the browser console shows
   no violations on your real pages, change it to enforcing.
 - Take a backup (`pnpm run db:backup`) before and after loading real data.
+
+
+## Safety fixes and rollout
+
+See [audits/REMEDIATION.md](audits/REMEDIATION.md) for current fixes, verification,
+release gates and the checkout rollback procedure. The original findings remain
+in [audits/PROJECT_AUDIT.md](audits/PROJECT_AUDIT.md) as historical context.
+
+`pnpm run db:check-security` inspects RLS, public grants and the signup trigger
+without modifying database state. `pnpm run preview` now loads `.env.local` like
+development and includes the API middleware; use staging/provider test settings
+for end-to-end QA.
+
+Checkout stock now represents units available for purchase, excluding pending
+payment reservations. Admin → Delivery & Payments shows outstanding holds and
+runs recovery checks. Do not delete old PendingCheckout records based only on
+age, and do not roll back to the old finalizer while reservations remain.

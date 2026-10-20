@@ -3,8 +3,10 @@
 // product editor — a bulk archive simply applies that same check per
 // product and reports which ones were skipped, rather than overriding it.
 import { prisma } from "../../server/prisma.js";
+import { Prisma } from "@prisma/client";
 import { requireRole } from "../../server/requireRole.js";
 import { recordAdminAction } from "../../server/auditLog.js";
+import { queueWaitlistRestock } from "../../server/waitlistNotifications.js";
 
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -111,7 +113,7 @@ export const bulkSetProductCategories = async (request) => {
 // Adjusts every variant's stock for the selected products by the same
 // delta (positive to restock, negative to correct a count). Stock never
 // drops below zero.
-export const bulkAdjustProductStock = async (request) => {
+export const bulkAdjustProductStock = async (request, { processRestocks } = {}) => {
   const guard = await requireRole(request, ["ADMIN"]);
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
@@ -126,37 +128,67 @@ export const bulkAdjustProductStock = async (request) => {
     return jsonResponse({ error: "delta must be a non-zero integer" }, 400);
   }
 
-  const variants = await prisma.variant.findMany({
-    where: { productId: { in: ids } },
-    select: { id: true, stock: true },
-  });
-
-  await prisma.$transaction(
-    variants.map((variant) =>
-      prisma.variant.update({
+  const restockedVariants = [];
+  let variantsUpdated = 0;
+  await prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT id FROM "Variant" WHERE "productId" IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`;
+    const variants = await transaction.variant.findMany({
+      where: { productId: { in: ids } },
+      orderBy: { id: "asc" },
+      select: {
+        id: true,
+        stock: true,
+        color: true,
+        size: true,
+        productId: true,
+        product: { select: { name: true } },
+      },
+    });
+    variantsUpdated = variants.length;
+    for (const variant of variants) {
+      const stock = Math.max(0, variant.stock + delta);
+      await transaction.variant.update({
         where: { id: variant.id },
-        data: { stock: Math.max(0, variant.stock + delta) },
-      }),
-    ),
-  );
+        data: { stock },
+      });
+      if (variant.stock <= 0 && stock > 0) {
+        const restock = {
+          variantId: variant.id,
+          productId: variant.productId,
+          productName: variant.product.name,
+          color: variant.color,
+          size: variant.size,
+        };
+        restockedVariants.push(restock);
+        await queueWaitlistRestock(transaction, restock);
+      }
+    }
+  });
 
   await recordAdminAction({
     actorId: guard.user.id,
     action: "product.bulk_stock_adjusted",
     entityType: "Product",
     entityId: ids.join(","),
-    newState: { delta, variantsUpdated: variants.length },
+    newState: { delta, variantsUpdated },
   });
 
-  return jsonResponse({ variantsUpdated: variants.length });
+  if (restockedVariants.length && processRestocks) {
+    await processRestocks(restockedVariants);
+  }
+
+  return jsonResponse({
+    variantsUpdated,
+    restockedVariants: restockedVariants.length,
+  });
 };
 
-export const handleAdminProductBulkRequest = async (request, segments) => {
+export const handleAdminProductBulkRequest = async (request, segments, deps) => {
   const action = segments[4] || null;
   if (request.method !== "PUT")
     return jsonResponse({ error: "Method not allowed" }, 405);
   if (action === "archived") return bulkSetProductArchived(request);
   if (action === "categories") return bulkSetProductCategories(request);
-  if (action === "stock") return bulkAdjustProductStock(request);
+  if (action === "stock") return bulkAdjustProductStock(request, deps);
   return jsonResponse({ error: "Unknown bulk action" }, 404);
 };

@@ -7,6 +7,7 @@ const jsonOrThrow = async (response) => {
     // have to pattern-match on English prose.
     error.status = response.status;
     if (body.code) error.code = body.code;
+    if (typeof body.reference === "string") error.reference = body.reference;
     throw error;
   }
   return response.json();

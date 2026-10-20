@@ -35,11 +35,14 @@ export const initiatePaystackRefund = async ({
         ...(amountKobo ? { amount: Math.round(amountKobo) } : {}),
         ...(reason ? { customer_note: reason, merchant_note: reason } : {}),
       }),
+      signal: AbortSignal.timeout(15_000),
     });
     const body = await response.json().catch(() => null);
     if (!response.ok || !body?.status) {
       return {
         ok: false,
+        uncertain: response.status >= 500,
+        statusCode: response.status,
         error:
           body?.message ||
           `Paystack refund request failed (${response.status})`,
@@ -55,7 +58,7 @@ export const initiatePaystackRefund = async ({
     };
   } catch (error) {
     console.error("Paystack refund request threw", error);
-    return { ok: false, error: "Could not reach Paystack" };
+    return { ok: false, uncertain: true, error: "Could not confirm whether Paystack accepted the refund" };
   }
 };
 
@@ -71,7 +74,7 @@ export const verifyPaystackTransaction = async (
   try {
     const response = await fetch(
       `${PAYSTACK_API}/transaction/verify/${encodeURIComponent(reference)}`,
-      { headers: { Authorization: `Bearer ${secretKey}` } },
+      { headers: { Authorization: `Bearer ${secretKey}` }, signal: AbortSignal.timeout(10_000) },
     );
     const body = await response.json().catch(() => null);
     if (!response.ok || !body?.status) return null;
@@ -80,4 +83,21 @@ export const verifyPaystackTransaction = async (
     console.error("Paystack transaction verify threw", error);
     return null;
   }
+};
+
+export const listPaystackRefundsForTransaction = async (
+  transactionReference,
+  secretKey = process.env.PAYSTACK_SECRET_KEY,
+) => {
+  if (!secretKey || !transactionReference) return null;
+  const url = new URL(`${PAYSTACK_API}/refund`);
+  url.searchParams.set("transaction", transactionReference);
+  url.searchParams.set("perPage", "100");
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${secretKey}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.status || !Array.isArray(body.data)) return null;
+  return body.data;
 };

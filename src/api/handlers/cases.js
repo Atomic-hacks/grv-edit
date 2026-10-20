@@ -23,6 +23,7 @@ import {
   verifyPaystackTransaction,
 } from "../../server/paystackRefund.js";
 import { v2 as cloudinary } from "cloudinary";
+import { Prisma } from "@prisma/client";
 
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -49,6 +50,7 @@ const CASE_STATUSES = [
   "APPROVED",
   "REJECTED",
   "REFUND_PROCESSING",
+  "REFUND_UNKNOWN",
   "REFUNDED",
   "REFUND_FAILED",
   "RESOLVED",
@@ -59,9 +61,30 @@ const CASE_STATUSES = [
 // below, never by an admin directly setting a status.
 const REFUND_EXECUTION_ONLY_STATUSES = new Set([
   "REFUND_PROCESSING",
+  "REFUND_UNKNOWN",
   "REFUNDED",
   "REFUND_FAILED",
 ]);
+
+const CASE_TRANSITIONS = {
+  SUBMITTED: ["UNDER_REVIEW", "AWAITING_CUSTOMER_INFO", "REJECTED", "CLOSED"],
+  UNDER_REVIEW: [
+    "AWAITING_CUSTOMER_INFO",
+    "APPROVED",
+    "REJECTED",
+    "RESOLVED",
+    "CLOSED",
+  ],
+  AWAITING_CUSTOMER_INFO: ["UNDER_REVIEW", "REJECTED", "CLOSED"],
+  APPROVED: ["UNDER_REVIEW", "REJECTED"],
+  REJECTED: ["UNDER_REVIEW", "CLOSED"],
+  RESOLVED: ["CLOSED"],
+  CLOSED: [],
+  REFUND_PROCESSING: [],
+  REFUND_UNKNOWN: [],
+  REFUNDED: [],
+  REFUND_FAILED: [],
+};
 
 const cloudinaryReady = Boolean(
   process.env.CLOUDINARY_CLOUD_NAME &&
@@ -231,25 +254,27 @@ export const createSupportCase = async (request) => {
     throw error;
   }
 
-  runInBackground(sendEmail({
-    to: user.email,
-    subject: `We've received your request — ${supportCase.reference}`,
-    html: caseAcknowledgementEmail({
-      reference: supportCase.reference,
-      orderId: supportCase.orderId,
-      issueType: supportCase.issueType,
-      submittedAt: new Intl.DateTimeFormat("en", {
-        dateStyle: "long",
-        timeStyle: "short",
-      }).format(supportCase.createdAt),
+  runInBackground(
+    sendEmail({
+      to: user.email,
+      subject: `We've received your request — ${supportCase.reference}`,
+      html: caseAcknowledgementEmail({
+        reference: supportCase.reference,
+        orderId: supportCase.orderId,
+        issueType: supportCase.issueType,
+        submittedAt: new Intl.DateTimeFormat("en", {
+          dateStyle: "long",
+          timeStyle: "short",
+        }).format(supportCase.createdAt),
+      }),
+      from: FROM_SUPPORT,
+    }).catch((error) => {
+      console.error("Case acknowledgement email failed", {
+        caseId: supportCase.id,
+        error,
+      });
     }),
-    from: FROM_SUPPORT,
-  }).catch((error) => {
-    console.error("Case acknowledgement email failed", {
-      caseId: supportCase.id,
-      error,
-    });
-  }));
+  );
 
   return jsonResponse({ case: supportCase, duplicate: false }, 201);
 };
@@ -422,6 +447,7 @@ export const getAdminCase = async (request, id) => {
         select: {
           id: true,
           total: true,
+          shippingAmount: true,
           shippingFee: true,
           status: true,
           paystackReference: true,
@@ -588,6 +614,15 @@ export const updateCaseStatus = async (request, id) => {
     },
   });
   if (!existing) return jsonResponse({ error: "Case not found" }, 404);
+  if (status === "APPROVED" && !["ADMIN", "OWNER"].includes(guard.user.role)) {
+    return jsonResponse({ error: "Only an admin can approve a refund" }, 403);
+  }
+  if (!(CASE_TRANSITIONS[existing.status] || []).includes(status)) {
+    return jsonResponse(
+      { error: `Cannot change ${existing.status} to ${status}` },
+      409,
+    );
+  }
   if (
     approvedAmount !== undefined &&
     existing.order &&
@@ -631,18 +666,20 @@ export const updateCaseStatus = async (request, id) => {
   });
 
   if (updated.customerEmail) {
-    runInBackground(sendEmail({
-      to: updated.customerEmail,
-      subject: `Update on your request — ${updated.reference}`,
-      html: caseStatusUpdateEmail({
-        reference: updated.reference,
-        status,
-        note,
+    runInBackground(
+      sendEmail({
+        to: updated.customerEmail,
+        subject: `Update on your request — ${updated.reference}`,
+        html: caseStatusUpdateEmail({
+          reference: updated.reference,
+          status,
+          note,
+        }),
+        from: FROM_SUPPORT,
+      }).catch((error) => {
+        console.error("Case status update email failed", { caseId: id, error });
       }),
-      from: FROM_SUPPORT,
-    }).catch((error) => {
-      console.error("Case status update email failed", { caseId: id, error });
-    }));
+    );
   }
 
   return jsonResponse(updated);
@@ -677,26 +714,59 @@ export const bulkUpdateCaseStatus = async (request) => {
     );
   }
 
-  const result = await prisma.supportCase.updateMany({
-    where: { id: { in: ids } },
-    data: { status },
-  });
-  await prisma.caseEvent.createMany({
-    data: ids.map((caseId) => ({
-      caseId,
-      toStatus: status,
-      actorId: guard.user.id,
-      note: "Bulk update",
-    })),
-  });
-  await recordAdminAction({
-    actorId: guard.user.id,
-    action: "case.bulk_status_changed",
-    entityType: "SupportCase",
-    entityId: ids.join(","),
-    newState: { status, count: result.count },
-  });
-  return jsonResponse({ updated: result.count });
+  const uniqueIds = [...new Set(ids)];
+  const updatedCount = await prisma
+    .$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM "SupportCase" WHERE id IN (${Prisma.join(uniqueIds)}) ORDER BY id FOR UPDATE`;
+      const cases = await transaction.supportCase.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { id: true, status: true },
+      });
+      if (cases.length !== uniqueIds.length)
+        throw Object.assign(new Error("One or more cases no longer exist"), {
+          code: "CASE_SET",
+        });
+      const invalid = cases.find(
+        (item) => !(CASE_TRANSITIONS[item.status] || []).includes(status),
+      );
+      if (invalid)
+        throw Object.assign(
+          new Error(`Cannot change ${invalid.status} to ${status}`),
+          { code: "CASE_STATE" },
+        );
+      await transaction.supportCase.updateMany({
+        where: { id: { in: uniqueIds } },
+        data: { status },
+      });
+      await transaction.caseEvent.createMany({
+        data: cases.map((item) => ({
+          caseId: item.id,
+          fromStatus: item.status,
+          toStatus: status,
+          actorId: guard.user.id,
+          note: "Bulk update",
+        })),
+      });
+      await recordAdminAction(
+        {
+          actorId: guard.user.id,
+          action: "case.bulk_status_changed",
+          entityType: "SupportCase",
+          entityId: uniqueIds.join(","),
+          previousState: cases,
+          newState: { status, count: cases.length },
+        },
+        { prisma: transaction, required: true },
+      );
+      return cases.length;
+    })
+    .catch((error) => {
+      if (["CASE_SET", "CASE_STATE"].includes(error?.code)) return { error };
+      throw error;
+    });
+  if (typeof updatedCount === "object")
+    return jsonResponse({ error: updatedCount.error.message }, 409);
+  return jsonResponse({ updated: updatedCount });
 };
 
 // Financial action — restricted to ADMIN (OWNER always allowed via
@@ -726,6 +796,7 @@ export const initiateCaseRefund = async (request, id) => {
         select: {
           id: true,
           total: true,
+          shippingAmount: true,
           paystackReference: true,
           status: true,
         },
@@ -755,7 +826,11 @@ export const initiateCaseRefund = async (request, id) => {
   const amount =
     overrideAmount ??
     supportCase.requestedRefundAmount ??
-    supportCase.order.total;
+    (["RETURN_PENDING", "RETURNED", "CANCELLED"].includes(
+      supportCase.order.status,
+    )
+      ? Math.max(0, supportCase.order.total - supportCase.order.shippingAmount)
+      : supportCase.order.total);
   if (amount > supportCase.order.total) {
     return jsonResponse(
       { error: "Refund amount cannot exceed the order total" },
@@ -763,73 +838,178 @@ export const initiateCaseRefund = async (request, id) => {
     );
   }
 
-  // Claim the case before calling Paystack: only one request can move it out
-  // of APPROVED, so a double-click (or a retry) cannot trigger two refunds.
-  const claim = await prisma.supportCase.updateMany({
-    where: { id, status: "APPROVED" },
-    data: { status: "REFUND_PROCESSING" },
-  });
-  if (claim.count === 0) {
+  const payment = await verifyPaystackTransaction(
+    supportCase.order.paystackReference,
+  );
+  if (
+    !payment ||
+    payment.status !== "success" ||
+    payment.reference !== supportCase.order.paystackReference ||
+    payment.currency !== "NGN" ||
+    !Number.isSafeInteger(payment.amount)
+  ) {
     return jsonResponse(
-      { error: "This refund is already being processed" },
+      { error: "The original payment could not be verified for refund" },
       409,
     );
   }
 
+  const requestedKobo = Math.round(amount * 100);
+  let attempt;
+  try {
+    attempt = await prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM "Order" WHERE id = ${supportCase.order.id} FOR UPDATE`;
+      await transaction.$queryRaw`SELECT id FROM "SupportCase" WHERE id = ${id} FOR UPDATE`;
+      const current = await transaction.supportCase.findUnique({
+        where: { id },
+      });
+      if (!current || current.status !== "APPROVED") {
+        throw Object.assign(
+          new Error(
+            "This refund is already being processed or is no longer approved",
+          ),
+          { code: "REFUND_STATE" },
+        );
+      }
+      const committed = await transaction.refundAttempt.aggregate({
+        where: {
+          orderId: supportCase.order.id,
+          status: { in: ["CREATED", "PENDING", "UNKNOWN", "PROCESSED"] },
+        },
+        _sum: { amountKobo: true },
+      });
+      const remainingKobo = payment.amount - (committed._sum.amountKobo || 0);
+      if (requestedKobo > remainingKobo) {
+        throw Object.assign(
+          new Error(
+            `Only ${remainingKobo} kobo remains refundable on this payment`,
+          ),
+          { code: "REFUND_AMOUNT" },
+        );
+      }
+      const created = await transaction.refundAttempt.create({
+        data: {
+          caseId: id,
+          orderId: supportCase.order.id,
+          transactionReference: supportCase.order.paystackReference,
+          amountKobo: requestedKobo,
+          currency: "NGN",
+          status: "CREATED",
+        },
+      });
+      await transaction.supportCase.update({
+        where: { id },
+        data: {
+          status: "REFUND_PROCESSING",
+          requestedRefundAmount: requestedKobo / 100,
+        },
+      });
+      await transaction.caseEvent.create({
+        data: {
+          caseId: id,
+          fromStatus: "APPROVED",
+          toStatus: "REFUND_PROCESSING",
+          actorId: guard.user.id,
+          note: `Refund of ${requestedKobo} kobo prepared for Paystack`,
+        },
+      });
+      await recordAdminAction(
+        {
+          actorId: guard.user.id,
+          action: "case.refund_prepared",
+          entityType: "SupportCase",
+          entityId: id,
+          newState: { attemptId: created.id, amountKobo: requestedKobo },
+        },
+        { prisma: transaction, required: true },
+      );
+      return created;
+    });
+  } catch (error) {
+    if (["REFUND_STATE", "REFUND_AMOUNT"].includes(error?.code))
+      return jsonResponse({ error: error.message }, 409);
+    throw error;
+  }
+
   const refundResult = await initiatePaystackRefund({
     transactionReference: supportCase.order.paystackReference,
-    amountKobo: Math.round(amount * 100),
+    amountKobo: requestedKobo,
     reason: supportCase.description,
   });
 
   if (!refundResult.ok) {
-    // Paystack didn't even accept the request — revert to APPROVED so the
-    // admin can see the error and retry, rather than getting stuck in
-    // REFUND_PROCESSING with nothing actually happening.
-    await prisma.$transaction([
-      prisma.supportCase.update({
+    const uncertain = refundResult.uncertain === true;
+    await prisma.$transaction(async (transaction) => {
+      await transaction.refundAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: uncertain ? "UNKNOWN" : "FAILED",
+          lastError: refundResult.error,
+        },
+      });
+      await transaction.supportCase.update({
         where: { id },
-        data: { status: "APPROVED" },
-      }),
-      prisma.caseEvent.create({
+        data: { status: uncertain ? "REFUND_UNKNOWN" : "APPROVED" },
+      });
+      await transaction.caseEvent.create({
         data: {
           caseId: id,
           fromStatus: "REFUND_PROCESSING",
-          toStatus: "APPROVED",
+          toStatus: uncertain ? "REFUND_UNKNOWN" : "APPROVED",
           actorId: guard.user.id,
-          note: `Paystack refund request failed: ${refundResult.error}`,
+          note: uncertain
+            ? "Paystack outcome is unknown; retry blocked pending reconciliation"
+            : `Paystack rejected refund: ${refundResult.error}`,
         },
-      }),
-    ]);
-    return jsonResponse({ error: refundResult.error }, 502);
+      });
+      await recordAdminAction(
+        {
+          actorId: guard.user.id,
+          action: uncertain ? "case.refund_unknown" : "case.refund_rejected",
+          entityType: "SupportCase",
+          entityId: id,
+          newState: { attemptId: attempt.id, error: refundResult.error },
+        },
+        { prisma: transaction, required: true },
+      );
+    });
+    return jsonResponse(
+      {
+        error: refundResult.error,
+        code: uncertain ? "REFUND_UNKNOWN" : "REFUND_REJECTED",
+      },
+      uncertain ? 409 : 502,
+    );
   }
 
-  const [updated] = await prisma.$transaction([
-    prisma.supportCase.update({
+  const updated = await prisma.$transaction(async (transaction) => {
+    await transaction.refundAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        status: "PENDING",
+        providerRefundId: refundResult.refundReference,
+      },
+    });
+    const current = await transaction.supportCase.update({
       where: { id },
-      data: {
-        refundReference: refundResult.refundReference,
-        requestedRefundAmount: amount,
-      },
+      data: { refundReference: refundResult.refundReference },
       select: caseSummarySelect,
-    }),
-    prisma.caseEvent.create({
-      data: {
-        caseId: id,
-        fromStatus: "APPROVED",
-        toStatus: "REFUND_PROCESSING",
+    });
+    await recordAdminAction(
+      {
         actorId: guard.user.id,
-        note: `Refund of ${amount} submitted to Paystack (ref ${refundResult.refundReference})`,
+        action: "case.refund_initiated",
+        entityType: "SupportCase",
+        entityId: id,
+        newState: {
+          attemptId: attempt.id,
+          amountKobo: requestedKobo,
+          refundReference: refundResult.refundReference,
+        },
       },
-    }),
-  ]);
-
-  await recordAdminAction({
-    actorId: guard.user.id,
-    action: "case.refund_initiated",
-    entityType: "SupportCase",
-    entityId: id,
-    newState: { amount, refundReference: refundResult.refundReference },
+      { prisma: transaction, required: true },
+    );
+    return current;
   });
 
   return jsonResponse(updated);
@@ -884,25 +1064,40 @@ export const applyPaystackRefundEvent = async (event) => {
           : "Paystack reported the refund failed",
       },
     }),
+    ...(refundReference
+      ? [
+          prisma.refundAttempt.updateMany({
+            where: { providerRefundId: refundReference },
+            data: {
+              status: succeeded ? "PROCESSED" : "FAILED",
+              lastError: succeeded
+                ? null
+                : "Paystack reported the refund failed",
+            },
+          }),
+        ]
+      : []),
   ]);
 
-  runInBackground(sendEmail({
-    to: supportCase.customerEmail,
-    subject: `Update on your request — ${supportCase.reference}`,
-    html: caseStatusUpdateEmail({
-      reference: supportCase.reference,
-      status: toStatus,
-      note: succeeded
-        ? "Your refund has been completed by our payment provider."
-        : "Your refund could not be completed automatically. Our team has been notified and will follow up.",
+  runInBackground(
+    sendEmail({
+      to: supportCase.customerEmail,
+      subject: `Update on your request — ${supportCase.reference}`,
+      html: caseStatusUpdateEmail({
+        reference: supportCase.reference,
+        status: toStatus,
+        note: succeeded
+          ? "Your refund has been completed by our payment provider."
+          : "Your refund could not be completed automatically. Our team has been notified and will follow up.",
+      }),
+      from: FROM_SUPPORT,
+    }).catch((error) => {
+      console.error("Refund outcome email failed", {
+        caseId: supportCase.id,
+        error,
+      });
     }),
-    from: FROM_SUPPORT,
-  }).catch((error) => {
-    console.error("Refund outcome email failed", {
-      caseId: supportCase.id,
-      error,
-    });
-  }));
+  );
 };
 
 export const handleAdminCaseRequest = async (request, segments, url) => {

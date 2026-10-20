@@ -5,12 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { createAuthenticatedRequest } from "../lib/apiClient";
 import { formatPrice } from "../lib/productHelpers";
 import FadeIn from "../component/ui/FadeIn";
-import { adminNavGroups } from "../lib/adminNav";
-
-const groups = adminNavGroups.map((group) => ({
-  ...group,
-  links: group.items.map((item) => [item.label, item.to]),
-}));
+import { adminNavigationFor } from "../lib/adminNav";
 
 // A stat tile is a hero number, not a chart — one figure, one label, and
 // (when it names something worth acting on) a tone that flags it.
@@ -48,6 +43,8 @@ const StatTile = ({ label, value, loading, to, tone = "neutral" }) => {
 
 const AdminHome = () => {
   const { session, appUser } = useAuth();
+  const fullAccess = ["ADMIN", "OWNER"].includes(appUser?.role);
+  const groups = adminNavigationFor(appUser?.role).map((group) => ({ ...group, links: group.items.map((item) => [item.label, item.to]) }));
   const request = useMemo(() => createAuthenticatedRequest(session), [session]);
 
   // The same four lists the Orders, Products, Customers and Contact
@@ -56,37 +53,37 @@ const AdminHome = () => {
   const ordersQuery = useQuery({
     queryKey: ["admin", "orders"],
     queryFn: () => request("/api/admin/orders"),
-    enabled: Boolean(session),
+    enabled: Boolean(session) && fullAccess,
   });
   const productsQuery = useQuery({
     queryKey: ["admin", "products"],
     queryFn: () => request("/api/admin/products"),
-    enabled: Boolean(session),
+    enabled: Boolean(session) && fullAccess,
   });
   const customersQuery = useQuery({
     queryKey: ["admin", "customers"],
     queryFn: () => request("/api/admin/customers"),
-    enabled: Boolean(session),
+    enabled: Boolean(session) && fullAccess,
   });
   const submissionsQuery = useQuery({
     queryKey: ["admin", "contact-submissions", { query: "", filter: "" }],
     queryFn: () => request("/api/admin/contact-submissions"),
-    enabled: Boolean(session),
+    enabled: Boolean(session) && fullAccess,
   });
   const campaignsQuery = useQuery({
     queryKey: ["admin", "campaigns", { query: "" }],
     queryFn: () => request("/api/admin/campaigns"),
-    enabled: Boolean(session),
+    enabled: Boolean(session) && fullAccess,
   });
   const refundCasesQuery = useQuery({
     queryKey: ["admin", "cases", "REFUND"],
     queryFn: () => request("/api/admin/cases?category=REFUND"),
-    enabled: Boolean(session),
+    enabled: Boolean(session) && fullAccess,
   });
   const complaintCasesQuery = useQuery({
     queryKey: ["admin", "cases", "COMPLAINT"],
     queryFn: () => request("/api/admin/cases?category=COMPLAINT"),
-    enabled: Boolean(session),
+    enabled: Boolean(session) && fullAccess,
   });
 
   const orders = ordersQuery.data || [];
@@ -161,6 +158,7 @@ const AdminHome = () => {
         </p>
       </FadeIn>
 
+      {fullAccess && <>
       <FadeIn
         delay={0.05}
         className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4"
@@ -257,6 +255,7 @@ const AdminHome = () => {
         </FadeIn>
       )}
 
+      </>}
       <div className="mt-12 grid gap-4 md:grid-cols-3">
         {groups.map((group, index) => (
           <FadeIn

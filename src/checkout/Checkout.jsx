@@ -53,6 +53,7 @@ const CheckoutContent = () => {
   const [selectedAddressId, setSelectedAddressId] = useState(null);
   const [saveAsDefaultAddress, setSaveAsDefaultAddress] = useState(false);
   const [error, setError] = useState("");
+  const [pendingReference, setPendingReference] = useState(null);
   const [needsVerification, setNeedsVerification] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
@@ -140,9 +141,11 @@ const CheckoutContent = () => {
     }
   };
 
+  const [checkoutKey, setCheckoutKey] = useState(() => crypto.randomUUID());
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setPendingReference(null);
     setNeedsVerification(false);
     setSubmitting(true);
 
@@ -184,6 +187,7 @@ const CheckoutContent = () => {
           method: "POST",
           body: JSON.stringify({
             ...addressPayload,
+            checkoutKey,
             items: cartItems.map((item) => ({
               productId: item.product.id,
               variantId: item.product.variantId,
@@ -195,12 +199,14 @@ const CheckoutContent = () => {
       );
       window.location.href = authorizationUrl;
     } catch (requestError) {
+      if (requestError.code === "INITIALIZATION_REJECTED" || requestError.code === "CHECKOUT_FAILED") setCheckoutKey(crypto.randomUUID());
+      else if (requestError.reference) setPendingReference(requestError.reference);
       // An unverified email is a fixable problem, not a dead end — it gets
       // its own notice with the way out rather than a bare error string.
       if (requestError.code === "EMAIL_NOT_VERIFIED") {
         setNeedsVerification(true);
       } else {
-        setError(requestError.message || "Could not initialize payment.");
+        setError(`${requestError.message || "Could not initialize payment."}${requestError.reference ? ` Reference: ${requestError.reference}` : ""}`);
       }
       setSubmitting(false);
     }
@@ -314,6 +320,7 @@ const CheckoutContent = () => {
             )}
             <InlineNotice tone="error" className="mt-5">
               {error}
+              {pendingReference && <Link className="mt-2 block underline" to={`/checkout/complete?reference=${encodeURIComponent(pendingReference)}`}>Check this payment’s status</Link>}
             </InlineNotice>
             {needsVerification && (
               <div className="mt-5 border border-[var(--line)] bg-[var(--surface-muted)] p-5">

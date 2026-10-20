@@ -2,7 +2,7 @@ import React from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { AnimatePresence, motion as Motion } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
-import { adminNavGroups as navigationGroups } from "../../lib/adminNav";
+import { adminNavigationFor } from "../../lib/adminNav";
 
 const isItemActive = (pathname, item) =>
   item.exact ? pathname === item.to : pathname.startsWith(item.to);
@@ -25,6 +25,7 @@ const AdminLayout = () => {
   const location = useLocation();
   const { pathname } = location;
   const { appUser, signOut } = useAuth();
+  const navigationGroups = adminNavigationFor(appUser?.role);
 
   return (
     <div className="min-h-screen bg-white">

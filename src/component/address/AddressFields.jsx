@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Country, State } from "country-state-city";
+import locations from "../../data/addressLocations.json";
 import PhoneInput from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 
@@ -24,7 +24,7 @@ const normalizePhoneValue = (phone, countryCode) => {
   return phone;
 };
 
-const countries = Country.getAllCountries();
+const countries = locations.countries;
 
 const CountrySelect = ({ value, onChange }) => {
   const [open, setOpen] = useState(false);
@@ -170,7 +170,7 @@ const AddressFields = ({ value, onChange, idPrefix, showHeader = true }) => {
     (country) => country.name === value.country,
   );
   const states = selectedCountry
-    ? State.getStatesOfCountry(selectedCountry.isoCode)
+    ? (locations.statesByCountry[selectedCountry.isoCode] || [])
     : [];
 
   const update = (field, nextValue) =>

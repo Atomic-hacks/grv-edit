@@ -3,7 +3,7 @@ import { checkRateLimit } from "../rateLimit.js";
 
 const fakePrisma = () => {
   const hits = [];
-  return {
+  const client = {
     hits,
     rateLimitHit: {
       count: async ({ where }) =>
@@ -18,6 +18,10 @@ const fakePrisma = () => {
       deleteMany: async () => ({ count: 0 }),
     },
   };
+  let previous = Promise.resolve();
+  client.$queryRaw = async () => [];
+  client.$transaction = (work) => { const next = previous.then(() => work(client)); previous = next.catch(() => {}); return next; };
+  return client;
 };
 
 describe("checkRateLimit", () => {
@@ -49,9 +53,8 @@ describe("checkRateLimit", () => {
     expect(otherIp.allowed).toBe(true);
   });
 
-  it("fails open if the database check throws", async () => {
-    // A rate limiter that takes the endpoint down when the DB hiccups is
-    // worse than no rate limiter.
+  it("fails closed if the database check throws", async () => {
+    // A failed admission check must not silently admit public writes.
     const prisma = {
       rateLimitHit: {
         count: async () => {
@@ -60,6 +63,11 @@ describe("checkRateLimit", () => {
       },
     };
     const result = await checkRateLimit("contact:1.2.3.4", { prisma });
-    expect(result.allowed).toBe(true);
+    expect(result.allowed).toBe(false);
+  });
+  it("admits only the configured number in a concurrent burst", async () => {
+    const prisma = fakePrisma();
+    const results = await Promise.all(Array.from({ length: 20 }, () => checkRateLimit("same-key", { max: 5, prisma })));
+    expect(results.filter((result) => result.allowed)).toHaveLength(5);
   });
 });

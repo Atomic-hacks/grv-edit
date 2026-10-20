@@ -4,49 +4,51 @@ import {
   Routes,
   Route,
   useLocation,
+  useNavigationType,
   Navigate,
 } from "react-router-dom";
 import { motion as Motion } from "framer-motion";
 import Hero from "./component/Hero";
 import Footer from "./component/layout/Footer";
 
-import Shop from "./shop/Shop";
-import Journal from "./journal/Journal";
-import JournalArticle from "./journal/JournalArticle";
-import Contact from "./contact/Contact";
-import About from "./about/About";
-import PrivacyPolicy from "./privacy/PrivacyPolicy";
-import SizeGuide from "./support/SizeGuide";
 import Navbar from "./component/layout/Navbar";
-import ProductDetail from "./ProductDetail";
 import CartDrawer from "./component/cart/CartDrawer";
 import CartPage from "./cart/CartPage";
-import Brands from "./brands/Brands";
-import BrandCatalogue from "./brands/BrandCatalogue";
-import Catalogues from "./catalog/Catalogues";
-import NewArrivals from "./shop/NewArrivals";
-import CategoryPage from "./catalog/CategoryPage";
-import ArchivePage from "./catalog/ArchivePage";
 import NotFound from "./NotFound";
-import ShopBy from "./shop/ShopBy";
-import SignUp from "./auth/SignUp";
-import LogIn from "./auth/LogIn";
-import EmailConfirmed from "./auth/EmailConfirmed";
-import ForgotPassword from "./auth/ForgotPassword";
-import ResetPassword from "./auth/ResetPassword";
-import ConfirmEmail from "./auth/ConfirmEmail";
-import SectionPage from "./section/SectionPage";
-import Faq from "./support/Faq";
-import Unsubscribe from "./support/Unsubscribe";
 import RequireAuth from "./component/auth/RequireAuth";
 import AdminRoute from "./component/auth/AdminRoute";
-import Wishlist from "./wishlist/Wishlist";
 import NewsletterBanner from "./component/ui/NewsletterBanner";
 import FirstOrderPromoBanner from "./component/ui/FirstOrderPromoBanner";
 import Spinner from "./component/ui/Spinner";
 import { trackPageview } from "./lib/analytics";
 import { trackVisit } from "./lib/visitTracking";
 import { useAuth } from "./context/AuthContext";
+
+const Shop = React.lazy(() => import("./shop/Shop"));
+const Journal = React.lazy(() => import("./journal/Journal"));
+const JournalArticle = React.lazy(() => import("./journal/JournalArticle"));
+const Contact = React.lazy(() => import("./contact/Contact"));
+const About = React.lazy(() => import("./about/About"));
+const PrivacyPolicy = React.lazy(() => import("./privacy/PrivacyPolicy"));
+const SizeGuide = React.lazy(() => import("./support/SizeGuide"));
+const ProductDetail = React.lazy(() => import("./ProductDetail"));
+const Brands = React.lazy(() => import("./brands/Brands"));
+const BrandCatalogue = React.lazy(() => import("./brands/BrandCatalogue"));
+const Catalogues = React.lazy(() => import("./catalog/Catalogues"));
+const NewArrivals = React.lazy(() => import("./shop/NewArrivals"));
+const CategoryPage = React.lazy(() => import("./catalog/CategoryPage"));
+const ArchivePage = React.lazy(() => import("./catalog/ArchivePage"));
+const ShopBy = React.lazy(() => import("./shop/ShopBy"));
+const SignUp = React.lazy(() => import("./auth/SignUp"));
+const LogIn = React.lazy(() => import("./auth/LogIn"));
+const EmailConfirmed = React.lazy(() => import("./auth/EmailConfirmed"));
+const ForgotPassword = React.lazy(() => import("./auth/ForgotPassword"));
+const ResetPassword = React.lazy(() => import("./auth/ResetPassword"));
+const ConfirmEmail = React.lazy(() => import("./auth/ConfirmEmail"));
+const SectionPage = React.lazy(() => import("./section/SectionPage"));
+const Faq = React.lazy(() => import("./support/Faq"));
+const Unsubscribe = React.lazy(() => import("./support/Unsubscribe"));
+const Wishlist = React.lazy(() => import("./wishlist/Wishlist"));
 
 // Checkout and account screens pull in the full country/state dataset
 // via AddressFields. They are always reached by navigation, never as a
@@ -63,6 +65,8 @@ const Welcome = React.lazy(() => import("./auth/Welcome"));
 
 // Admin is lazy-loaded: it is ~23 screens that no shopper ever opens,
 // and bundling it with the storefront made every visitor download it.
+const AdminOperations = React.lazy(() => import("./admin/AdminOperations"));
+const AdminWaitlist = React.lazy(() => import("./admin/AdminWaitlist"));
 const AdminHome = React.lazy(() => import("./admin/AdminHome"));
 const AdminLayout = React.lazy(() => import("./component/admin/AdminLayout"));
 const AdminFilterTypes = React.lazy(() => import("./admin/AdminFilterTypes"));
@@ -118,11 +122,21 @@ const shouldShowNewsletter = (pathname) =>
 // halfway down a grid used to open the product page already scrolled past its
 // gallery. Restore the top of the page on every navigation, except when the
 // URL only gained query params (filtering and sorting a listing in place).
+const scrollPositions = new Map();
 const useScrollToTopOnNavigate = () => {
-  const { pathname } = useLocation();
-  React.useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-  }, [pathname]);
+  const { pathname, key } = useLocation();
+  const navigationType = useNavigationType();
+  const previousPath = React.useRef(null);
+  React.useLayoutEffect(() => {
+    if (navigationType === "POP" || previousPath.current !== pathname) {
+      window.scrollTo({ top: navigationType === "POP" ? scrollPositions.get(key) || 0 : 0, left: 0, behavior: "instant" });
+    }
+    previousPath.current = pathname;
+    return () => {
+      scrollPositions.set(key, window.scrollY);
+      if (scrollPositions.size > 100) scrollPositions.delete(scrollPositions.keys().next().value);
+    };
+  }, [pathname, key, navigationType]);
 };
 
 // A SPA never reloads, so GA never sees a navigation on its own — one
@@ -149,6 +163,11 @@ const useAnalyticsPageview = () => {
 const AppLayout = () => {
   const location = useLocation();
   const hideNavbar = location.pathname === "/";
+  React.useLayoutEffect(() => {
+    const labels = { "/": "GRV HQ", "/shop": "Shop", "/catalogues": "Departments", "/cart": "Goody Bag", "/account": "Your account", "/checkout": "Checkout", "/admin": "Admin" };
+    const label = labels[location.pathname] || location.pathname.split("/").filter(Boolean).slice(0, 2).map((part) => part.replace(/-/g, " ")).join(" · ");
+    document.title = location.pathname === "/" ? "GRV HQ" : `${label.charAt(0).toUpperCase()}${label.slice(1)} | GRV HQ`;
+  }, [location.pathname]);
   useScrollToTopOnNavigate();
   useAnalyticsPageview();
 
@@ -239,6 +258,8 @@ const AppLayout = () => {
                     <Routes>
                       <Route element={<AdminLayout />}>
                         <Route index element={<AdminHome />} />
+                        <Route path="operations" element={<AdminOperations />} />
+                        <Route path="waitlist" element={<AdminWaitlist />} />
                         <Route
                           path="categories"
                           element={<AdminCategories />}

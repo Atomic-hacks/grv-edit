@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useRef } from "react";
+import { useModalFocus } from "../../lib/useModalFocus";
 import { AnimatePresence, motion as Motion } from "framer-motion";
 
 // The shared shell behind both the Filter drawer (narrows what you see,
@@ -8,6 +9,8 @@ import { AnimatePresence, motion as Motion } from "framer-motion";
 // which is deliberate: the two feel like siblings, not two unrelated UIs.
 const SidePanel = ({ isOpen, onClose, side = "right", title, children, footer }) => {
   const isRight = side === "right";
+  const panelRef = useRef(null);
+  useModalFocus(isOpen, panelRef, onClose);
 
   return (
     <AnimatePresence>
@@ -21,6 +24,7 @@ const SidePanel = ({ isOpen, onClose, side = "right", title, children, footer })
           <Motion.button
             type="button"
             aria-label="Close"
+            tabIndex={-1}
             className="absolute inset-0 bg-black/40"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -28,6 +32,10 @@ const SidePanel = ({ isOpen, onClose, side = "right", title, children, footer })
             onClick={onClose}
           />
           <Motion.aside
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            tabIndex={-1}
             aria-label={title}
             className={`absolute top-0 flex h-full w-full max-w-md flex-col bg-white text-[var(--ink-900)] shadow-2xl ${
               isRight ? "right-0" : "left-0"
