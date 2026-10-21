@@ -19,8 +19,25 @@ const escapeHtml = (value) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const siteUrl = () =>
-  (process.env.APP_URL || "http://localhost:5176").replace(/\/+$/, "");
+const CANONICAL_SITE_URL = "https://www.grvhq.com";
+
+// Email assets must be reachable from the public internet. A localhost,
+// placeholder, credential-bearing, or malformed APP_URL produces images that
+// work in a browser preview but are impossible for an email client to load.
+// Fall back to the canonical storefront instead of emitting a broken URL.
+const siteUrl = () => {
+  const configured = String(process.env.APP_URL || "").trim();
+  try {
+    const url = new URL(configured || CANONICAL_SITE_URL);
+    const isPublicHttp = ["http:", "https:"].includes(url.protocol) &&
+      !url.username && !url.password &&
+      !["localhost", "127.0.0.1", "::1"].includes(url.hostname) &&
+      !/[<>]/.test(url.href);
+    return isPublicHttp ? url.origin : CANONICAL_SITE_URL;
+  } catch {
+    return CANONICAL_SITE_URL;
+  }
+};
 const emailAssetUrl = (value) => {
   if (!value) return "";
   try {

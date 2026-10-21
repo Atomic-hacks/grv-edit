@@ -70,6 +70,21 @@ describe("email presentation", () => {
     expect(html).toContain("https://www.grvhq.com/products/linen-shirt.jpg");
   });
 
+  it("never emits private or placeholder hosts in email assets", () => {
+    for (const invalidAppUrl of [
+      "http://localhost:5176",
+      "https://<your-vercel-domain>",
+      "not a URL",
+      "",
+    ]) {
+      process.env.APP_URL = invalidAppUrl;
+      expect(emailAssetUrl("/img/logoblack.png")).toBe(
+        "https://www.grvhq.com/img/logoblack.png",
+      );
+    }
+    process.env.APP_URL = "https://www.grvhq.com";
+  });
+
   it("includes product photography and partner brand logos in order emails", () => {
     const html = orderPaidEmail(order);
 
