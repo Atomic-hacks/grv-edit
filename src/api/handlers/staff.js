@@ -1,5 +1,5 @@
 // Owner-only staff role management. Deliberately does not build an invite/
-// signup system — a person must already have a normal GRV account (they
+// signup system — a person must already have a normal GRVHQ account (they
 // sign up like any customer), and an Owner promotes that existing account
 // to a staff role by email.
 import { prisma } from "../../server/prisma.js";

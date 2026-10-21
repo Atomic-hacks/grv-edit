@@ -10,7 +10,7 @@ import SubmitButton from "../component/ui/SubmitButton";
 import Spinner from "../component/ui/Spinner";
 
 const AUDIENCES = [
-  ["CUSTOMERS", "Customers who opted in", "Account holders who ticked 'Send me GRV updates'."],
+  ["CUSTOMERS", "Customers who opted in", "Account holders who ticked 'Send me GRVHQ updates'."],
   ["NEWSLETTER", "Newsletter subscribers", "Everyone who signed up through the site footer."],
   ["ALL", "Both", "Opted-in customers and newsletter subscribers, de-duplicated."],
 ];

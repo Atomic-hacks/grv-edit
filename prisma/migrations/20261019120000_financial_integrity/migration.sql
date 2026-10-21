@@ -1,6 +1,8 @@
 -- Financial-integrity additions. Existing Float money columns are deliberately
 -- retained until a verified backup and restore exist; all new refund amounts
 -- are stored as integer kobo.
+BEGIN;
+
 ALTER TYPE "OrderStatus" ADD VALUE IF NOT EXISTS 'RETURN_PENDING';
 ALTER TYPE "OrderStatus" ADD VALUE IF NOT EXISTS 'RETURNED';
 ALTER TYPE "FulfillmentStatus" ADD VALUE IF NOT EXISTS 'RETURN_PENDING';
@@ -76,3 +78,5 @@ ALTER TABLE "Notification" ADD CONSTRAINT "Notification_waitlistEntryId_fkey" FO
 -- while enforcing the rule for all new and updated rows immediately.
 ALTER TABLE "Order" ADD CONSTRAINT "Order_trackingUrl_http_check"
   CHECK ("trackingUrl" IS NULL OR "trackingUrl" ~* '^https?://') NOT VALID;
+
+COMMIT;

@@ -2,7 +2,10 @@ import React, { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { createAuthenticatedRequest } from "../lib/apiClient";
+import {
+  createAuthenticatedFetch,
+  createAuthenticatedRequest,
+} from "../lib/apiClient";
 import Spinner from "../component/ui/Spinner";
 
 const AdminBulkUpload = () => {
@@ -10,10 +13,42 @@ const AdminBulkUpload = () => {
   const [file, setFile] = useState(null);
   const [result, setResult] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
 
   const request = useMemo(() => createAuthenticatedRequest(session), [session]);
+  const authenticatedFetch = useMemo(
+    () => createAuthenticatedFetch(session),
+    [session],
+  );
   const queryClient = useQueryClient();
+
+  const downloadTemplate = async () => {
+    setDownloading(true);
+    setError("");
+    try {
+      const response = await authenticatedFetch(
+        "/api/admin/products/bulk-upload/template",
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `Download failed (${response.status})`);
+      }
+
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "product-bulk-upload-template.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (downloadError) {
+      setError(downloadError.message);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const uploadCsv = async (event) => {
     event.preventDefault();
@@ -54,12 +89,14 @@ const AdminBulkUpload = () => {
           </Link>
           <h1 className="mt-3 text-3xl font-semibold">Bulk Upload</h1>
         </div>
-        <a
-          href="/api/admin/products/bulk-upload/template"
+        <button
+          type="button"
+          onClick={downloadTemplate}
+          disabled={downloading}
           className="border border-[var(--line)] px-5 py-3 text-sm font-medium transition-colors hover:border-[var(--ink-900)]"
         >
-          Download Template
-        </a>
+          {downloading ? "Downloading…" : "Download Template"}
+        </button>
       </div>
 
       {error && (

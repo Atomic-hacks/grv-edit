@@ -145,7 +145,7 @@ const MessageDetail = ({ submission, onClose, request, onReplied }) => {
               {submission.repliedAt ? "Send another reply" : "Reply"}
             </label>
             <p className="meta-text mt-1.5">
-              Sent as an email to {submission.email} from GRV.
+              Sent as an email to {submission.email} from GRVHQ.
             </p>
             <textarea
               id="reply-body"

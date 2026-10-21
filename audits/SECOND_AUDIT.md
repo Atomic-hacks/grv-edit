@@ -1,4 +1,4 @@
-# GRV second production audit — 19 October 2026
+# GRVHQ second production audit — 19 October 2026
 
 ## Executive assessment
 

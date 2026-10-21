@@ -4,9 +4,12 @@ import {
   siteUrl,
   renderEmail,
   ctaButton,
+  emailAssetUrl,
+  ACCENT,
   INK,
   MUTED,
   BORDER,
+  CANVAS,
 } from "./emailTemplates.js";
 
 const nairaFormatter = new Intl.NumberFormat("en-NG", {
@@ -24,14 +27,17 @@ const money = (value) => nairaFormatter.format(Number(value || 0));
 // dependable here.
 const itemRow = (item) => {
   const variantParts = [variantLabel(item.variant)].filter(Boolean);
-  const thumbnail = item.image
-    ? `<img src="${escapeHtml(item.image)}" width="56" alt="" style="display:block;width:56px;height:72px;object-fit:cover;border:1px solid ${BORDER};" />`
+  const itemImage = emailAssetUrl(item.image);
+  const brandLogo = emailAssetUrl(item.brandLogo);
+  const thumbnail = itemImage
+    ? `<img src="${escapeHtml(itemImage)}" width="56" alt="${escapeHtml(item.productName || "Product")}" style="display:block;width:56px;height:72px;object-fit:cover;border:1px solid ${BORDER};" />`
     : `<div style="width:56px;height:72px;background:#f4f4f4;border:1px solid ${BORDER};"></div>`;
 
   return `
     <tr>
       <td style="padding:12px 12px 12px 0;vertical-align:top;width:56px;">${thumbnail}</td>
       <td style="padding:12px 0;vertical-align:top;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:${INK};">
+        ${brandLogo ? `<img src="${escapeHtml(brandLogo)}" alt="${escapeHtml(item.brandName || "Brand")}" width="64" style="display:block;width:auto;max-width:64px;max-height:22px;margin:0 0 7px;border:0;" />` : ""}
         ${item.brandName ? `<div style="font-weight:700;">${escapeHtml(item.brandName)}</div>` : ""}
         <div style="${item.brandName ? `color:${MUTED};` : "font-weight:700;"}">${escapeHtml(item.productName)}</div>
         ${variantParts.length ? `<div style="color:${MUTED};font-size:12px;margin-top:2px;">${escapeHtml(variantParts.join(" / "))}</div>` : ""}
@@ -179,7 +185,7 @@ export const orderCancelledEmail = (order) =>
 
 // Operational notice to a brand's own inbox: only that brand's lines from
 // the order, nothing about the customer (name, address, phone, email) and
-// nothing about the rest of the basket. GRV owns the customer relationship
+// nothing about the rest of the basket. GRVHQ owns the customer relationship
 // and fulfilment; if a brand ever ships directly, sharing the delivery
 // address should be a deliberate change here, not something it gets by
 // default.
@@ -188,17 +194,20 @@ export const brandOrderEmail = ({ order, brand }) => {
     (sum, item) => sum + item.priceAtPurchase * item.quantity,
     0,
   );
+  const brandLogo = emailAssetUrl(brand.logo);
   return renderEmail({
-    preheader: `A paid GRV order includes ${order.items.length} of your pieces.`,
+    preheader: `A paid GRVHQ order includes ${order.items.length} of your pieces.`,
     bodyHtml: `
+      <p style="margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:${ACCENT};">Partner order notice</p>
+      ${brandLogo ? `<div style="margin:0 0 22px;padding:18px 20px;background:${CANVAS};"><img src="${escapeHtml(brandLogo)}" alt="${escapeHtml(brand.name)}" width="120" style="display:block;width:auto;max-width:120px;max-height:46px;border:0;" /></div>` : ""}
       <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;">New order for ${escapeHtml(brand.name)}</h1>
-      <p style="margin:0 0 20px;color:${MUTED};">A customer has paid for the following ${escapeHtml(brand.name)} pieces on GRV. This is an automated notice from GRV — the customer has already been sent their own confirmation.</p>
-      <p style="margin:0 0 4px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:${MUTED};">GRV order #${escapeHtml(order.id)}</p>
+      <p style="margin:0 0 20px;color:${MUTED};">A customer has paid for the following ${escapeHtml(brand.name)} pieces on GRVHQ. This is an automated notice from GRVHQ; the customer has already received their confirmation.</p>
+      <p style="margin:0 0 4px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:${MUTED};">GRVHQ order #${escapeHtml(order.id)}</p>
       ${itemsTable(order.items)}
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
         ${totalsRow("Your items", money(subtotal), { strong: true })}
       </table>
-      <p style="margin:0;color:${MUTED};font-size:12px;">Questions about this order? Reply to this email and it will reach the GRV team.</p>
+      <p style="margin:0;color:${MUTED};font-size:12px;">Questions about this order? Reply to this email and it will reach the GRVHQ team.</p>
     `,
   });
 };

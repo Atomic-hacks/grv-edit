@@ -1,7 +1,7 @@
 import { createHash, randomInt } from "node:crypto";
 
 // Short, human-friendly reference shown to the customer and used in the
-// acknowledgement email/support conversations — "GRV-3F9K2Q" rather than a
+// acknowledgement email/support conversations — "GRVHQ-3F9K2Q" rather than a
 // raw cuid. Collisions are astronomically unlikely at this volume, and the
 // caller retries on the rare unique-constraint violation same as SKU
 // generation elsewhere in this codebase.
@@ -12,7 +12,7 @@ export const generateCaseReference = () => {
   for (let i = 0; i < 6; i++) {
     code += ALPHABET[randomInt(0, ALPHABET.length)];
   }
-  return `GRV-${code}`;
+  return `GRVHQ-${code}`;
 };
 
 // Fingerprint of "the same complaint" — stops a double form-submit or a

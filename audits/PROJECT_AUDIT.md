@@ -1,4 +1,4 @@
-# GRV project audit — 19 October 2026
+# GRVHQ project audit — 19 October 2026
 
 > Historical findings from the initial review. See [REMEDIATION.md](REMEDIATION.md) for implemented fixes and [SECOND_AUDIT.md](SECOND_AUDIT.md) for the current post-remediation assessment and newly identified release blockers.
 

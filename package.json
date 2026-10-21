@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "set -a && . ./.env.local && set +a && vite",
+    "dev:staging": "set -a && . ./.env.staging.local && set +a && vite --mode staging",
     "build": "node scripts/generateAddressData.js && node scripts/generateSitemap.js && prisma generate && vite build && node scripts/removePublicSourceMaps.js",
     "lint": "eslint .",
     "preview": "set -a && . ./.env.local && set +a && vite preview",
@@ -14,9 +15,13 @@
     "db:lock": "set -a && . ./.env.local && set +a && node scripts/lockDownPublicTables.js",
     "db:generate": "set -a && . ./.env.local && set +a && prisma generate",
     "db:seed-content": "set -a && . ./.env.local && set +a && node scripts/seedContentSections.js",
+    "db:seed-staging": "set -a && . ./.env.staging.local && set +a && EXPECTED_STAGING_PROJECT_REF=adzgqjtymxgycovxxvrh SEED_STAGING_DATA=I_UNDERSTAND_THIS_WRITES_TEST_DATA node scripts/seedStaging.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:check-security": "node scripts/checkDatabaseSecurity.js"
+    "db:check-security": "set -a && . ./.env.local && set +a && node scripts/checkDatabaseSecurity.js",
+    "db:check-security:staging": "set -a && . ./.env.staging.local && set +a && node scripts/checkDatabaseSecurity.js",
+    "db:check-financial-migration": "set -a && . ./.env.local && set +a && node scripts/checkFinancialMigration.js",
+    "db:check-financial-migration:staging": "set -a && . ./.env.staging.local && set +a && node scripts/checkFinancialMigration.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

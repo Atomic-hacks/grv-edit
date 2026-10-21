@@ -81,7 +81,7 @@ export const faqGroups = [
       {
         id: "payment-security",
         q: "Is my payment information secure?",
-        a: "Card details are handled by our payment processor over an encrypted connection — GRV never sees or stores your full card number.",
+        a: "Card details are handled by our payment processor over an encrypted connection — GRVHQ never sees or stores your full card number.",
       },
     ],
   },

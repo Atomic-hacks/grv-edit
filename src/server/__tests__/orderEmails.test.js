@@ -218,7 +218,7 @@ describe("brand order notifications", () => {
     expect(message.html).not.toContain("08000000000");
   });
 
-  it("always sends from a GRV address, never the brand's", async () => {
+  it("always sends from a GRVHQ address, never the brand's", async () => {
     const prisma = fakePrisma({ order: twoBrandOrder, products, brands });
     const sendEmail = vi.fn(async () => ({ sent: true }));
 

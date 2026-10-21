@@ -46,7 +46,7 @@ const addressToForm = (address) => {
 };
 
 const CheckoutContent = () => {
-  const { cartItems, subtotal } = useCart();
+  const { cartItems, subtotal, persistCart } = useCart();
   const { session } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState(emptyForm);
@@ -180,6 +180,11 @@ const CheckoutContent = () => {
           console.error("Save default address failed", saveAddressError);
         }
       }
+
+      // A full-page redirect to Paystack cancels the CartProvider's debounced
+      // sync. Persist the bag now so a declined or abandoned payment can
+      // return the customer to the same checkout.
+      await persistCart();
 
       const { authorization_url: authorizationUrl } = await request(
         "/api/checkout/initialize",
@@ -318,10 +323,19 @@ const CheckoutContent = () => {
                 Save as default address for other orders
               </label>
             )}
-            <InlineNotice tone="error" className="mt-5">
-              {error}
-              {pendingReference && <Link className="mt-2 block underline" to={`/checkout/complete?reference=${encodeURIComponent(pendingReference)}`}>Check this payment’s status</Link>}
-            </InlineNotice>
+            {(error || pendingReference) && (
+              <InlineNotice tone="error" className="mt-5">
+                {error}
+                {pendingReference && (
+                  <Link
+                    className="mt-2 block underline"
+                    to={`/checkout/complete?reference=${encodeURIComponent(pendingReference)}`}
+                  >
+                    Check this payment’s status
+                  </Link>
+                )}
+              </InlineNotice>
+            )}
             {needsVerification && (
               <div className="mt-5 border border-[var(--line)] bg-[var(--surface-muted)] p-5">
                 <p className="text-[13px] font-semibold text-[var(--ink-900)]">

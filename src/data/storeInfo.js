@@ -1,6 +1,6 @@
 // Single source for the storefront's own details.
 //
-// The phone number and address are taken from what GRV already publishes on
+// The phone number and address are taken from what GRVHQ already publishes on
 // the contact page. The support inbox is still a placeholder until inbound mail
 // is set up for it; search this file for "(mock)".
 export const storeInfo = {
@@ -13,7 +13,7 @@ export const storeInfo = {
   email: "support@grvhq.com",
 };
 
-// GRV's social profiles, shown as icons in the footer. Remove an entry to
+// GRVHQ's social profiles, shown as icons in the footer. Remove an entry to
 // hide it; add one only if the matching icon exists in Footer.tsx.
 export const socialLinks = [
   { id: "instagram", label: "Instagram", href: "https://www.instagram.com/grv.hq" },
@@ -24,7 +24,7 @@ export const socialLinks = [
 // storefront actually does today: card payments run through the checkout,
 // orders are visible under the account, and the contact form is monitored in
 // the admin panel. Returns and delivery windows are deliberately absent —
-// GRV has not published those terms, and a trust strip is the worst possible
+// GRVHQ has not published those terms, and a trust strip is the worst possible
 // place to approximate them.
 export const servicePromises = [
   {
@@ -69,7 +69,7 @@ export const helpLinks = [
   {
     id: "contact",
     title: "Need help?",
-    copy: "Reach the GRV team directly.",
+    copy: "Reach the GRVHQ team directly.",
     to: "/contact",
   },
 ];

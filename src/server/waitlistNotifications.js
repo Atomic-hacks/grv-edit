@@ -35,7 +35,10 @@ export const processWaitlistRestocks = async (
       for (const notification of notifications) {
         try {
           // Failed sends stay sent:false for the existing admin retry endpoint.
-          await sendNotificationEmail(prisma, notification, variant.productName);
+          await sendNotificationEmail(prisma, notification, {
+            name: variant.productName,
+            imageUrl: variant.productImageUrl,
+          });
         } catch (error) {
           console.error("Restock email failed", { notificationId: notification.id, error });
         }

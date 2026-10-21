@@ -15,7 +15,7 @@ const WelcomeContent = () => {
   return (
     <main className="page-shell flex min-h-screen items-center justify-center py-24 text-center">
       <FadeIn className="mx-auto max-w-md">
-        <p className="eyebrow">Welcome to GRV</p>
+        <p className="eyebrow">Welcome to GRVHQ</p>
         <h1 className="display-title mt-2 text-4xl md:text-5xl">
           {firstName ? `You're in, ${firstName}` : "Your account is ready"}
         </h1>

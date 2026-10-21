@@ -1,11 +1,11 @@
 // Email sending policy — the one place that decides who an email is *from*.
 //
-// 1. Every email GRV sends, customer-facing or brand-facing, is sent FROM a
-//    GRV address below, through GRV's own Resend account. Provider
+// 1. Every email GRVHQ sends, customer-facing or brand-facing, is sent FROM a
+//    GRVHQ address below, through GRVHQ's own Resend account. Provider
 //    credentials (RESEND_API_KEY) and sender addresses live only in env vars.
 // 2. Brands never supply a sender. Brand configuration (Brand.contactEmail)
 //    only ever decides who *receives* brand-specific operational notices —
-//    see notifyBrandsForOrder in orderEmails.js. A brand can't make GRV send
+//    see notifyBrandsForOrder in orderEmails.js. A brand can't make GRVHQ send
 //    as them (Resend would reject an unverified domain anyway), and nothing
 //    about the provider is reachable from brand settings.
 // 3. Replies to customer and brand emails route to one support inbox
@@ -29,13 +29,13 @@
 const fallback = process.env.RESEND_FROM_EMAIL;
 
 export const FROM_INFO =
-  process.env.RESEND_FROM_INFO || fallback || "GRV <info@grvhq.com>";
+  process.env.RESEND_FROM_INFO || fallback || "GRVHQ <info@grvhq.com>";
 
 export const FROM_NOREPLY =
-  process.env.RESEND_FROM_NOREPLY || fallback || "GRV <noreply@grvhq.com>";
+  process.env.RESEND_FROM_NOREPLY || fallback || "GRVHQ <noreply@grvhq.com>";
 
 export const FROM_SUPPORT =
-  process.env.RESEND_FROM_SUPPORT || fallback || "GRV <support@grvhq.com>";
+  process.env.RESEND_FROM_SUPPORT || fallback || "GRVHQ <support@grvhq.com>";
 
 // Must be a mailbox that actually receives mail — being able to send from
 // grvhq.com doesn't mean anything at grvhq.com receives replies.

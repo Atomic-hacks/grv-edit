@@ -164,9 +164,9 @@ const AppLayout = () => {
   const location = useLocation();
   const hideNavbar = location.pathname === "/";
   React.useLayoutEffect(() => {
-    const labels = { "/": "GRV HQ", "/shop": "Shop", "/catalogues": "Departments", "/cart": "Goody Bag", "/account": "Your account", "/checkout": "Checkout", "/admin": "Admin" };
+    const labels = { "/": "GRVHQ", "/shop": "Shop", "/catalogues": "Departments", "/cart": "Goody Bag", "/account": "Your account", "/checkout": "Checkout", "/admin": "Admin" };
     const label = labels[location.pathname] || location.pathname.split("/").filter(Boolean).slice(0, 2).map((part) => part.replace(/-/g, " ")).join(" · ");
-    document.title = location.pathname === "/" ? "GRV HQ" : `${label.charAt(0).toUpperCase()}${label.slice(1)} | GRV HQ`;
+    document.title = location.pathname === "/" ? "GRVHQ" : `${label.charAt(0).toUpperCase()}${label.slice(1)} | GRVHQ`;
   }, [location.pathname]);
   useScrollToTopOnNavigate();
   useAnalyticsPageview();

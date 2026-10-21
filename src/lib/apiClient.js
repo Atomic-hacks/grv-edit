@@ -13,12 +13,12 @@ const jsonOrThrow = async (response) => {
   return response.json();
 };
 
-export const createAuthenticatedRequest =
+export const createAuthenticatedFetch =
   (session) =>
   async (url, options = {}) => {
     const isMultipart =
       typeof FormData !== "undefined" && options.body instanceof FormData;
-    const response = await fetch(url, {
+    return fetch(url, {
       ...options,
       headers: {
         ...(isMultipart ? {} : { "Content-Type": "application/json" }),
@@ -26,8 +26,13 @@ export const createAuthenticatedRequest =
         ...options.headers,
       },
     });
-    return jsonOrThrow(response);
   };
+
+export const createAuthenticatedRequest = (session) => {
+  const authenticatedFetch = createAuthenticatedFetch(session);
+  return async (url, options = {}) =>
+    jsonOrThrow(await authenticatedFetch(url, options));
+};
 
 // Filter params accept a single value or an array; arrays are sent as
 // repeated params, which the API ORs together within a filter and ANDs

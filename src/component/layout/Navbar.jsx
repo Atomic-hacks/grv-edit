@@ -494,7 +494,7 @@ const Navbar = () => {
             <img
               className="h-6 w-auto xl:h-8"
               src="/img/logoblack.png"
-              alt="GRV"
+              alt="GRVHQ"
             />
           </span>
         </Link>
@@ -537,7 +537,7 @@ const Navbar = () => {
         >
           <img
             src="/img/logoblack.png"
-            alt="GRV"
+            alt="GRVHQ"
             className="h-6 object-contain"
           />
         </Link>
@@ -771,7 +771,7 @@ const Navbar = () => {
                 <span className="text-xl font-bold tracking-tight">
                   <img
                     src="/img/logoblack.png"
-                    alt="GRV"
+                    alt="GRVHQ"
                     className="h-6 "
                   />
                 </span>

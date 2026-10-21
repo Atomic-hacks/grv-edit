@@ -272,6 +272,71 @@ describe("production checkout routes", () => {
       log.mockRestore();
     }
   });
+  it("does not describe an untouched Paystack checkout as payment processing", async () => {
+    state.pending.ref.payload = {
+      ...payload(true),
+      authorizationUrl: "https://checkout.paystack.com/resume",
+    };
+    fetch.mockResolvedValue(
+      Response.json({
+        status: true,
+        data: {
+          ...payment({ status: "ongoing" }),
+          channel: null,
+          paid_at: null,
+          log: { attempts: 0, history: [] },
+        },
+      }),
+    );
+
+    const response = await request("checkout/verify?reference=ref");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: "NOT_STARTED",
+      authorization_url: "https://checkout.paystack.com/resume",
+      reference: "ref",
+      items: payload(true).items,
+    });
+  });
+  it("returns the checkout items so a failed payment can restore the bag", async () => {
+    state.stock = 0;
+    state.pending.ref.payload = payload(true);
+    fetch.mockResolvedValue(
+      Response.json({
+        status: true,
+        data: payment({ status: "abandoned" }),
+      }),
+    );
+
+    const response = await request("checkout/verify?reference=ref");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: "FAILED",
+      items: payload(true).items,
+    });
+    expect(state.stock).toBe(1);
+  });
+  it("keeps a real pending payment in confirmation", async () => {
+    state.pending.ref.payload = {
+      ...payload(true),
+      authorizationUrl: "https://checkout.paystack.com/resume",
+    };
+    fetch.mockResolvedValue(
+      Response.json({
+        status: true,
+        data: {
+          ...payment({ status: "ongoing" }),
+          channel: "bank_transfer",
+          paid_at: null,
+          log: { attempts: 1, history: [{ type: "action" }] },
+        },
+      }),
+    );
+
+    expect(
+      await (await request("checkout/verify?reference=ref")).json(),
+    ).toEqual({ status: "PENDING" });
+  });
   it("reuses the same initialized attempt on a browser retry without reserving or charging twice", async () => {
     const body = {
       checkoutKey: "request-key-12345678",

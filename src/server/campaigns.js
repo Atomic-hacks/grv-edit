@@ -85,7 +85,7 @@ const loadFeaturedProducts = async (prisma, productIds) => {
       name: true,
       basePrice: true,
       imageUrl: true,
-      brand: { select: { name: true } },
+      brand: { select: { name: true, logo: true } },
     },
   });
   // Preserve the order the admin chose rather than the database's.
@@ -93,7 +93,11 @@ const loadFeaturedProducts = async (prisma, productIds) => {
   return productIds
     .map((id) => byId.get(id))
     .filter(Boolean)
-    .map((product) => ({ ...product, brandName: product.brand?.name || null }));
+    .map((product) => ({
+      ...product,
+      brandName: product.brand?.name || null,
+      brandLogo: product.brand?.logo || null,
+    }));
 };
 
 /**

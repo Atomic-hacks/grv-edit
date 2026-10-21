@@ -23,7 +23,7 @@ export const sendEmail = async ({
 
     const resend = new Resend(apiKey);
     const { data, error } = await resend.emails.send({
-      from: from || process.env.RESEND_FROM_EMAIL || "GRV <onboarding@resend.dev>",
+      from: from || process.env.RESEND_FROM_EMAIL || "GRVHQ <onboarding@resend.dev>",
       to,
       subject,
       html,

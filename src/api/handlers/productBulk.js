@@ -141,7 +141,7 @@ export const bulkAdjustProductStock = async (request, { processRestocks } = {}) 
         color: true,
         size: true,
         productId: true,
-        product: { select: { name: true } },
+        product: { select: { name: true, imageUrl: true } },
       },
     });
     variantsUpdated = variants.length;
@@ -156,6 +156,7 @@ export const bulkAdjustProductStock = async (request, { processRestocks } = {}) 
           variantId: variant.id,
           productId: variant.productId,
           productName: variant.product.name,
+          productImageUrl: variant.product.imageUrl,
           color: variant.color,
           size: variant.size,
         };

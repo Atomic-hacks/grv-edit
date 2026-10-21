@@ -1,10 +1,15 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { safeReturnTo } from "../lib/safeReturnTo";
 
 const EmailConfirmed = () => {
   const { user, loading } = useAuth();
-  const destination = user ? "/" : "/login";
+  const [searchParams] = useSearchParams();
+  const returnTo = safeReturnTo(searchParams.get("returnTo"));
+  const destination = user
+    ? returnTo
+    : `/login?returnTo=${encodeURIComponent(returnTo)}`;
   const linkLabel = user ? "Continue Shopping" : "Log in to continue";
 
   return (

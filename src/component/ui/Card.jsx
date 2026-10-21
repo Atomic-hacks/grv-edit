@@ -61,7 +61,7 @@ const Card = ({
           wishlist grid and the brand/department tiles use, so a mismatched
           photo is the one that stands out. object-top (rather than the
           default center) keeps the crop anchored to the top of the frame,
-          which is where the garment/model starts in nearly every shot GRV
+          which is where the garment/model starts in nearly every shot GRVHQ
           uses — so a photo that's slightly taller or shorter than 3:4 still
           crops at the hem/background instead of randomly slicing through a
           head or logo. */}

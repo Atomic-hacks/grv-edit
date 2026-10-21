@@ -4,7 +4,7 @@ import { handleAdminWaitlistRequest } from "./handlers/adminWaitlist.js";
 import { requireRole } from "../server/requireRole.js";
 import { reconcileCheckouts } from "../server/reconcileCheckouts.js";
 import { aggregateCheckoutItems, allocateCheckoutStock, lockCheckout, releaseCheckoutStock, CheckoutInventoryError } from "../server/checkoutInventory.js";
-import { paymentMatchesCheckout, fetchPaystackPayment } from "../server/paystack.js";
+import { paymentMatchesCheckout, fetchPaystackPayment, hasPaystackPaymentAttempt } from "../server/paystack.js";
 import { processWaitlistRestocks, queueWaitlistRestock } from "../server/waitlistNotifications.js";
 import { isRestock } from "../lib/variantOptions.js";
 import { handleWaitlistRequest } from "./handlers/waitlist.js";
@@ -72,6 +72,7 @@ import { recordVisit } from "../server/visits.js";
 import { handleAdminExportRequest } from "./handlers/exports.js";
 import { handleAdminStaffRequest } from "./handlers/staff.js";
 import { handleAdminProductBulkRequest } from "./handlers/productBulk.js";
+import { reconcileFirstOrderPromoReservation } from "../server/promotionReservations.js";
 import {
   handleAdminContentSectionRequest,
   listPublicContentSections,
@@ -92,6 +93,47 @@ const FIRST_ORDER_PROMO_ID = "first-order-promo";
 const SHIPPING_FEE_REGIONS = [...NIGERIAN_REGIONS, "DEFAULT"];
 
 const shippingFeeSelect = { id: true, region: true, fee: true };
+
+const resolvePendingVerificationUser = async (body) => {
+  const requestedUserId =
+    typeof body?.userId === "string" ? body.userId.trim() : "";
+  const requestedEmail =
+    typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+
+  let userId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    requestedUserId,
+  )
+    ? requestedUserId
+    : "";
+
+  // Keep confirmation links created before userId was added usable. The
+  // response stays generic and attempts are limited, so this does not expose
+  // whether an address has an account.
+  if (!userId && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestedEmail)) {
+    const existingUser = await prisma.user.findFirst({
+      where: { email: { equals: requestedEmail, mode: "insensitive" } },
+      select: { id: true },
+    });
+    userId = existingUser?.id || "";
+  }
+  if (!userId) return null;
+
+  const { data, error } =
+    await getSupabaseAdmin().auth.admin.getUserById(userId);
+  if (error || !data?.user?.email) return null;
+
+  const syncedUser = await prisma.user.upsert({
+    where: { id: userId },
+    update: { email: data.user.email },
+    create: {
+      id: userId,
+      email: data.user.email,
+      name: data.user.user_metadata?.name || null,
+    },
+  });
+  if (!syncedUser.active) return null;
+  return { id: syncedUser.id, email: syncedUser.email };
+};
 
 const getShippingFeeForState = async (state) => {
   const region = getRegionForState(state) || "DEFAULT";
@@ -169,31 +211,8 @@ const sendVerificationCode = async (request) => {
   let user = await getCurrentUser(request);
   if (!user) {
     const body = await request.json().catch(() => ({}));
-    const userId = typeof body.userId === "string" ? body.userId.trim() : "";
-    if (!/^[0-9a-f-]{36}$/i.test(userId)) {
-      return jsonResponse({ error: "Unauthorized" }, 401);
-    }
-
-    const { data, error } =
-      await getSupabaseAdmin().auth.admin.getUserById(userId);
-    if (error || !data?.user?.email) {
-      return jsonResponse({ error: "Unauthorized" }, 401);
-    }
-
-    const syncedUser = await prisma.user.upsert({
-      where: { id: userId },
-      update: { email: data.user.email },
-      create: {
-        id: userId,
-        email: data.user.email,
-        name: data.user.user_metadata?.name || null,
-      },
-    });
-    if (!syncedUser.active) return jsonResponse({ error: "Unauthorized" }, 401);
-    user = {
-      id: syncedUser.id,
-      email: syncedUser.email,
-    };
+    user = await resolvePendingVerificationUser(body);
+    if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
   }
 
   const recentCode = await prisma.emailVerificationCode.findFirst({
@@ -225,7 +244,7 @@ const sendVerificationCode = async (request) => {
 
   const sent = await sendEmail({
     to: user.email,
-    subject: "Confirm your GRV email",
+    subject: "Confirm your GRVHQ email",
     html: verificationCodeEmail(code),
     from: FROM_NOREPLY,
   });
@@ -245,10 +264,22 @@ const sendVerificationCode = async (request) => {
 };
 
 const verifyEmail = async (request) => {
-  const user = await getCurrentUser(request);
+  const limit = await checkRateLimit(`verify-email:${clientIp(request)}`, {
+    max: 10,
+    windowMs: 10 * 60_000,
+  });
+  if (!limit.allowed) {
+    return jsonResponse(
+      { error: "Too many attempts. Please wait before trying again." },
+      429,
+    );
+  }
+
+  const body = await request.json().catch(() => ({}));
+  let user = await getCurrentUser(request);
+  if (!user) user = await resolvePendingVerificationUser(body);
   if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
 
-  const body = await request.json();
   const code = typeof body.code === "string" ? body.code.trim() : "";
   if (!/^\d{6}$/.test(code)) {
     return jsonResponse({ error: "Enter the 6-digit verification code" }, 400);
@@ -305,6 +336,15 @@ const verifyEmail = async (request) => {
       where: { id: user.id },
       data: { emailVerified: true },
     });
+
+    // Supabase does not create a session for password sign-ups until its auth
+    // user is confirmed. Keep this inside the transaction so an API failure
+    // rolls back the code claim and lets the customer retry safely.
+    const { error } = await getSupabaseAdmin().auth.admin.updateUserById(
+      user.id,
+      { email_confirm: true },
+    );
+    if (error) throw new Error("Could not confirm the authentication account");
   });
 
   return jsonResponse({ verified: true });
@@ -336,9 +376,13 @@ const notificationEmailContent = {
 const sendNotificationEmail = async (
   transaction,
   notification,
-  productName,
+  productDetails,
 ) => {
   const content = notificationEmailContent[notification.type];
+  const product =
+    typeof productDetails === "string"
+      ? { name: productDetails, imageUrl: null }
+      : productDetails || { name: "Product", imageUrl: null };
   const user = await transaction.user.findUnique({
     where: { id: notification.userId },
     select: { email: true },
@@ -350,8 +394,10 @@ const sendNotificationEmail = async (
       to: user.email,
       subject: content.subject,
       html: notificationEmail({
-        message: notification.message || content.message(productName),
+        message: notification.message || content.message(product.name),
         productUrl,
+        productName: product.name,
+        imageUrl: product.imageUrl,
       }),
       from: FROM_INFO,
       idempotencyKey: `notification/${notification.id}`,
@@ -391,8 +437,8 @@ const retryNotificationEmails = async (where = {}) => {
   let succeeded = 0;
   for (const notification of notifications) {
     try {
-      const product = await prisma.product.findUnique({ where: { id: notification.productId }, select: { name: true } });
-      if (product && await sendNotificationEmail(prisma, notification, product.name)) succeeded++;
+      const product = await prisma.product.findUnique({ where: { id: notification.productId }, select: { name: true, imageUrl: true } });
+      if (product && await sendNotificationEmail(prisma, notification, product)) succeeded++;
     } catch (error) { console.error("Notification retry failed", { notificationId: notification.id, error }); }
   }
   return { found: notifications.length, succeeded, failed: notifications.length - succeeded };
@@ -2221,7 +2267,7 @@ const applyOrderStatusChange = async (id, status, actorId) => {
           color: true,
           size: true,
           productId: true,
-          product: { select: { name: true } },
+          product: { select: { name: true, imageUrl: true } },
         },
       });
       if (variants.length !== variantIds.length) {
@@ -2244,6 +2290,7 @@ const applyOrderStatusChange = async (id, status, actorId) => {
             variantId: variant.id,
             productId: variant.productId,
             productName: variant.product.name,
+            productImageUrl: variant.product.imageUrl,
             color: variant.color,
             size: variant.size,
           });
@@ -3167,6 +3214,7 @@ const createAdminProduct = async (request) => {
       brandId: product.brandId,
       productId: product.id,
       productName: product.name,
+      productImageUrl: product.imageUrl,
     });
   }
   return jsonResponse(serializeAdminProduct(product), 201);
@@ -3252,7 +3300,7 @@ const updateAdminProduct = async (request, id) => {
               type: "WISHLIST_SALE",
               message: `${updatedProduct.name} just went on sale!`,
             },
-            updatedProduct.name,
+            { name: updatedProduct.name, imageUrl: updatedProduct.imageUrl },
           );
         }
       }
@@ -3263,6 +3311,7 @@ const updateAdminProduct = async (request, id) => {
         brandId: updatedProduct.brandId,
         productId: id,
         productName: updatedProduct.name,
+        productImageUrl: updatedProduct.imageUrl,
       });
     }
 
@@ -3358,7 +3407,7 @@ const parseVariantInput = (body, { partial = false } = {}) => {
 // than a bookmark.
 const notifyBrandFollowersOnFeaturedProduct = async (
   transaction,
-  { brandId, productId, productName },
+  { brandId, productId, productName, productImageUrl },
 ) => {
   const followers = await transaction.wishlist.findMany({
     where: { brandId },
@@ -3375,7 +3424,7 @@ const notifyBrandFollowersOnFeaturedProduct = async (
         type: "BRAND_FEATURED_PRODUCT",
         message: `${productName} just launched from a brand you follow.`,
       },
-      productName,
+      { name: productName, imageUrl: productImageUrl },
     );
   }
   return followers.length;
@@ -3450,7 +3499,7 @@ const updateAdminVariant = async (request, id) => {
         color: true,
         size: true,
         productId: true,
-        product: { select: { name: true } },
+        product: { select: { name: true, imageUrl: true } },
       },
     });
     if (!existingVariant) return null;
@@ -3468,6 +3517,7 @@ const updateAdminVariant = async (request, id) => {
         variantId: id,
         productId: existingVariant.productId,
         productName: existingVariant.product.name,
+        productImageUrl: existingVariant.product.imageUrl,
         color: existingVariant.color,
         size: existingVariant.size,
       };
@@ -3640,6 +3690,46 @@ const initializeCheckout = async (request, reconciled = false) => {
   const reference = body.checkoutKey
     ? `grv_${createHash("sha256").update(JSON.stringify([user.id, body.checkoutKey, lineItems, requiredFields.map((field) => body[field].trim()), String(body.discountCode || "").trim().toUpperCase()])).digest("hex")}`
     : `grv_${crypto.randomUUID()}`;
+  if (!user.firstOrderPromoUsed) {
+    const reservation = await reconcileFirstOrderPromoReservation({
+      prisma,
+      userId: user.id,
+      verifyPayment: fetchPaystackPayment,
+      releaseCheckout: (reservedReference, status) =>
+        releaseCheckoutStock(prisma, reservedReference, status),
+      finalizeCheckout: finalizeOrderFromReference,
+    });
+    if (reservation.state === "PAID") {
+      return jsonResponse(
+        {
+          error:
+            "Your earlier payment succeeded and its order is being completed. Do not pay again.",
+          code: "CHECKOUT_ALREADY_PAID",
+          reference: reservation.reference,
+          orderId: reservation.orderId,
+        },
+        409,
+      );
+    }
+    if (reservation.state === "READY") {
+      return jsonResponse({
+        authorization_url: reservation.authorizationUrl,
+        reference: reservation.reference,
+      });
+    }
+    if (["PENDING", "UNKNOWN"].includes(reservation.state)) {
+      return jsonResponse(
+        {
+          error:
+            "Your earlier first-order payment is still being confirmed. Check its status before trying again; your offer has not been marked as used.",
+          code: "CHECKOUT_IN_PROGRESS",
+          reference: reservation.reference,
+        },
+        409,
+      );
+    }
+  }
+
   const existingAttempt = body.checkoutKey ? await prisma.pendingCheckout.findUnique({ where: { reference } }) : null;
   if (existingAttempt) {
     if (["failed", "abandoned", "reversed", "initialization_rejected"].includes(existingAttempt.payload.paymentStatus)) return jsonResponse({ error: "The previous payment attempt did not complete. You can try again.", code: "CHECKOUT_FAILED", reference }, 409);
@@ -3955,7 +4045,7 @@ const processOrderPaidNotificationsBestEffort = async (notifications) => {
         await sendNotificationEmail(
           transaction,
           notification,
-          pending.productName,
+          { name: pending.productName, imageUrl: pending.productImageUrl },
         );
       });
     } catch (error) {
@@ -4075,7 +4165,7 @@ const finalizeOrderFromReference = async (reference, payment) => {
     for (const item of createdOrder.items) {
       const variant = await transaction.variant.findUnique({
         where: { id: item.variantId },
-        select: { id: true, stock: true, product: { select: { name: true } } },
+        select: { id: true, stock: true, product: { select: { name: true, imageUrl: true } } },
       });
       if (!variant) throw new CheckoutInventoryError("A paid item requires inventory review. Contact support with your payment reference.");
       // Inventory was allocated at reservation time (or above for legacy rows).
@@ -4103,11 +4193,12 @@ const finalizeOrderFromReference = async (reference, payment) => {
           notificationsToProcess.push({
             notificationId: notification.id,
             productName: variant.product.name,
+            productImageUrl: variant.product.imageUrl,
           });
         }
       }
     }
-  });
+  }, { maxWait: 10_000, timeout: 30_000 });
   } catch (error) {
     try {
       await prisma.$executeRaw`UPDATE "PendingCheckout" SET payload = jsonb_set(payload, '{paymentStatus}', to_jsonb(${"review_required"}::text)) WHERE reference = ${reference}`;
@@ -4183,7 +4274,7 @@ const verifyCheckout = async (request, url) => {
 
   const pending = await prisma.pendingCheckout.findFirst({
     where: { reference, userId: user.id },
-    select: { reference: true },
+    select: { reference: true, payload: true },
   });
   if (!pending) {
     // Could genuinely be unknown, or a concurrent webhook call just barely
@@ -4222,7 +4313,23 @@ const verifyCheckout = async (request, url) => {
 
   if (PAYSTACK_TERMINAL_FAILURE_STATUSES.has(paystackBody.data.status)) {
     await releaseCheckoutStock(prisma, reference, paystackBody.data.status);
-    return jsonResponse({ status: "FAILED" });
+    return jsonResponse({
+      status: "FAILED",
+      items: pending.payload.items || [],
+    });
+  }
+
+  if (
+    !hasPaystackPaymentAttempt(paystackBody.data) &&
+    typeof pending.payload?.authorizationUrl === "string" &&
+    pending.payload.authorizationUrl
+  ) {
+    return jsonResponse({
+      status: "NOT_STARTED",
+      authorization_url: pending.payload.authorizationUrl,
+      reference,
+      items: pending.payload.items || [],
+    });
   }
 
   return jsonResponse({ status: "PENDING" });
@@ -4597,7 +4704,7 @@ const updateAdminFirstOrderPromo = async (request) => {
           active: data.active ?? true,
           bannerMessage:
             data.bannerMessage ||
-            "Welcome to GRV. Enjoy 10% off and free shipping on your first order.",
+            "Welcome to GRVHQ. Enjoy 10% off and free shipping on your first order.",
         },
         select: firstOrderPromoSelect,
       });
@@ -5279,7 +5386,7 @@ const ROUTES = [
           productId: true,
           color: true,
           size: true,
-          product: { select: { name: true } },
+          product: { select: { name: true, imageUrl: true } },
         },
       });
       await processWaitlistRestocks(
@@ -5287,6 +5394,7 @@ const ROUTES = [
           variantId: variant.id,
           productId: variant.productId,
           productName: variant.product.name,
+          productImageUrl: variant.product.imageUrl,
           color: variant.color,
           size: variant.size,
         })),

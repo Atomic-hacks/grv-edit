@@ -4,6 +4,7 @@ import {
   abandonedCartEmail,
   wishlistReminderEmail,
   escapeHtml,
+  emailAssetUrl,
 } from "./emailTemplates.js";
 import { retryFailedOrderEmails } from "./orderEmails.js";
 import { processDueCampaigns } from "./campaigns.js";
@@ -19,8 +20,9 @@ const formatCartEmail = (cart, productsById) => {
     .map((item) => {
       const product = productsById.get(item.productId);
       const name = product?.name || "Item from your Goody Bag";
-      const image = product?.imageUrl
-        ? `<img src="${escapeHtml(product.imageUrl)}" alt="${escapeHtml(name)}" width="80" style="display:block;margin-bottom:6px;" />`
+      const imageUrl = emailAssetUrl(product?.imageUrl);
+      const image = imageUrl
+        ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(name)}" width="80" style="display:block;margin-bottom:6px;" />`
         : "";
       return `<li style="margin-bottom:14px;">${image}<strong>${escapeHtml(name)}</strong> &times; ${item.quantity}</li>`;
     })
@@ -31,8 +33,9 @@ const formatCartEmail = (cart, productsById) => {
 
 const formatWishlistEmail = (wishlist) => {
   const product = wishlist.product;
-  const imageHtml = product.imageUrl
-    ? `<img src="${escapeHtml(product.imageUrl)}" alt="${escapeHtml(product.name)}" width="240" style="display:block;" />`
+  const imageUrl = emailAssetUrl(product.imageUrl);
+  const imageHtml = imageUrl
+    ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(product.name)}" width="240" style="display:block;" />`
     : "";
   const productUrl = `${siteUrl()}/product/${encodeURIComponent(product.id)}`;
   return wishlistReminderEmail({

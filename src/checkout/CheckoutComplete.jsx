@@ -88,12 +88,13 @@ const NoticeIcon = ({ tone = "muted" }) => (
 const CheckoutCompleteContent = () => {
   const [searchParams] = useSearchParams();
   const { session } = useAuth();
-  const { clearCart } = useCart();
+  const { clearCart, restoreCart } = useCart();
   const reference = searchParams.get("reference") || searchParams.get("trxref");
   const [result, setResult] = useState({
     status: "loading",
     orderId: null,
     error: "",
+    authorizationUrl: "",
   });
   const clearedCartRef = useRef(false);
 
@@ -130,10 +131,32 @@ const CheckoutCompleteContent = () => {
         // Paystack has definitively confirmed nothing was charged — safe to
         // invite a retry.
         if (data.status === "FAILED") {
+          try {
+            await restoreCart(data.items);
+          } catch (restoreError) {
+            console.error("Could not restore checkout items", restoreError);
+          }
+          if (cancelled) return;
           setResult({
             status: "FAILED",
             orderId: null,
             error: "Your payment was not completed. Nothing was charged.",
+          });
+          return;
+        }
+
+        if (data.status === "NOT_STARTED" && data.authorization_url) {
+          try {
+            await restoreCart(data.items);
+          } catch (restoreError) {
+            console.error("Could not restore checkout items", restoreError);
+          }
+          if (cancelled) return;
+          setResult({
+            status: "NOT_STARTED",
+            orderId: null,
+            error: "",
+            authorizationUrl: data.authorization_url,
           });
           return;
         }
@@ -182,7 +205,7 @@ const CheckoutCompleteContent = () => {
       cancelled = true;
       window.clearTimeout(retryTimer);
     };
-  }, [clearCart, reference, session]);
+  }, [clearCart, reference, restoreCart, session]);
 
   return (
     <main className="min-h-screen px-6 py-24 md:px-12">
@@ -220,6 +243,31 @@ const CheckoutCompleteContent = () => {
                 className="inline-flex border border-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
               >
                 Continue shopping
+              </Link>
+            </div>
+          </div>
+        ) : result.status === "NOT_STARTED" ? (
+          <div className="mt-8 flex flex-col items-center text-center">
+            <NoticeIcon />
+            <h1 className="mt-8 text-4xl font-semibold">
+              Payment was not started
+            </h1>
+            <p className="body-text mt-4 max-w-md">
+              You left Paystack before attempting payment. Your Goody Bag and
+              first-order offer are still reserved for this checkout.
+            </p>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <a
+                href={result.authorizationUrl}
+                className="inline-flex bg-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-(--color-accent-orange)"
+              >
+                Continue payment
+              </a>
+              <Link
+                to="/checkout"
+                className="inline-flex border border-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
+              >
+                Back to checkout
               </Link>
             </div>
           </div>
@@ -266,10 +314,10 @@ const CheckoutCompleteContent = () => {
             )}
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link
-                to="/cart"
+                to="/checkout"
                 className="inline-flex bg-[var(--ink-900)] px-6 py-3.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-(--color-accent-orange)"
               >
-                Back to bag
+                Return to checkout
               </Link>
             </div>
           </div>

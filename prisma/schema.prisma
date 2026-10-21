@@ -490,7 +490,7 @@ enum CampaignAudience {
 }
 
 // A brand only ever supplies *recipient* details — where brand-specific
-// operational email should go. Every email still sends from a GRV address
+// operational email should go. Every email still sends from a GRVHQ address
 // with platform-level credentials (see src/server/emailSenders.js); a brand
 // can never change the sender or reach the email provider configuration.
 model Brand {

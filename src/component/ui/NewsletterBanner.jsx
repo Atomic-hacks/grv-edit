@@ -40,7 +40,7 @@ const NewsletterBanner = ({ compact = false }) => {
           <p className="eyebrow">Stay close</p>
           <h2 className="section-title mt-1.5">
             {compact
-              ? "A little more GRV."
+              ? "A little more GRVHQ."
               : "New collections, when they arrive."}
           </h2>
           <p className="body-text mt-2 max-w-md text-sm">

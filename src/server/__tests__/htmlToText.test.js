@@ -5,9 +5,9 @@ import { unsubscribeHeaders } from "../campaigns.js";
 describe("htmlToText", () => {
   it("produces a readable text part from an email template", () => {
     const text = htmlToText(
-      "<p>Your order is on its way.</p><p>Thanks for shopping with GRV.</p>",
+      "<p>Your order is on its way.</p><p>Thanks for shopping with GRVHQ.</p>",
     );
-    expect(text).toBe("Your order is on its way.\n\nThanks for shopping with GRV.");
+    expect(text).toBe("Your order is on its way.\n\nThanks for shopping with GRVHQ.");
   });
 
   it("keeps link destinations, which is the point of most of these emails", () => {
@@ -30,8 +30,8 @@ describe("htmlToText", () => {
   });
 
   it("decodes the entities the templates emit", () => {
-    expect(htmlToText("<p>GRV &middot; Tops &amp; Tees &mdash; 50% off</p>")).toBe(
-      "GRV · Tops & Tees — 50% off",
+    expect(htmlToText("<p>GRVHQ &middot; Tops &amp; Tees &mdash; 50% off</p>")).toBe(
+      "GRVHQ · Tops & Tees — 50% off",
     );
   });
 

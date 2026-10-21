@@ -23,7 +23,7 @@ const footerColumns = [
       ["Shop by mood", "/shop-by"],
       ["Catalogues", "/catalogues"],
       ["Journal", "/journal"],
-      ["About GRV", "/about"],
+      ["About GRVHQ", "/about"],
     ],
   },
   {
@@ -119,7 +119,7 @@ const Footer = () => {
     <div className="mx-auto flex w-full max-w-[var(--content-max)] flex-col gap-12 lg:flex-row lg:justify-between lg:gap-16">
       <div className="max-w-xs">
         <h3 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em]">
-          A note from GRV
+          A note from GRVHQ
         </h3>
         <p className="text-[13px] leading-relaxed text-neutral-400">
           New collections, quiet discoveries, and the occasional reason to look
@@ -146,7 +146,7 @@ const Footer = () => {
               href={social.href}
               target="_blank"
               rel="noreferrer noopener"
-              aria-label={`GRV on ${social.label}`}
+              aria-label={`GRVHQ on ${social.label}`}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-neutral-300 transition-colors hover:border-white hover:text-white"
             >
               {SOCIAL_ICONS[social.id]}
@@ -182,7 +182,7 @@ const Footer = () => {
       <img
         src="/img/logowhite.png"
         className="w-64 h-14 md:h-18 md:w-80 "
-        alt="GRV Logo"
+        alt="GRVHQ logo"
       />
       <p className="text-[9px] uppercase tracking-[0.14em] text-neutral-500 md:text-[11px]">
         Made by @grvhq
@@ -196,7 +196,7 @@ const Footer = () => {
       >
         Privacy policy
       </Link>
-      <span>© {new Date().getFullYear()} GRV. All rights reserved.</span>
+      <span>© {new Date().getFullYear()} GRVHQ. All rights reserved.</span>
     </div>
   </footer>
 );

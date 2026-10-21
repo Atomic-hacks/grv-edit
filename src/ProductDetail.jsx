@@ -118,7 +118,7 @@ const ProductDetail = () => {
     staleTime: 30 * 1000,
   });
   const [searchParams, setSearchParams] = useSearchParams();
-  useEffect(() => { if (product?.name) document.title = `${product.name} | GRV HQ`; }, [product?.name]);
+  useEffect(() => { if (product?.name) document.title = `${product.name} | GRVHQ`; }, [product?.name]);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const { addToCart } = useCart();
   const { recordView } = useRecentlyViewed();

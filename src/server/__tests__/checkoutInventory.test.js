@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { aggregateCheckoutItems, allocateCheckoutStock, releaseCheckoutStock } from "../checkoutInventory.js";
-import { paymentMatchesCheckout } from "../paystack.js";
+import { hasPaystackPaymentAttempt, paymentMatchesCheckout } from "../paystack.js";
 
 const item = (variantId, quantity = 1) => ({ productId: 'p1', variantId, quantity });
 describe('checkout safety', () => {
@@ -31,6 +31,8 @@ describe('checkout safety', () => {
         update: vi.fn(async ({ data }) => { payload = data.payload; }),
       },
       variant: { updateMany: vi.fn(async ({ data }) => { stock += data.stock.increment; return { count: 1 }; }), findUnique: vi.fn().mockResolvedValue({ id: "v1", stock: 2, productId: "p1", product: { name: "Shirt" } }) },
+      firstOrderPromoRedemption: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      discountRedemption: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
     };
     const prisma = { $transaction: (fn) => fn(transaction) };
     expect(await releaseCheckoutStock(prisma, 'ref', 'failed')).toBe(true);
@@ -38,10 +40,18 @@ describe('checkout safety', () => {
     expect(stock).toBe(2);
     expect(payload.total).toBe(200);
     expect(payload.paymentStatus).toBe('failed');
+    expect(transaction.firstOrderPromoRedemption.deleteMany).toHaveBeenCalledWith({
+      where: { checkoutReference: 'ref', status: 'RESERVED' },
+    });
   });
   it('requires exact reference, amount, currency and payment status', () => {
     const payment = { reference: 'ref', amount: 10001, currency: 'NGN', status: 'success' };
     expect(paymentMatchesCheckout(payment, 'ref', { total: 100.01 })).toBe(true);
     for (const change of [{ reference: 'other' }, { amount: 1 }, { amount: '10001' }, { currency: 'USD' }, { status: 'pending' }]) expect(paymentMatchesCheckout({ ...payment, ...change }, 'ref', { total: 100.01 })).toBe(false);
+  });
+  it('distinguishes an initialized checkout from an attempted payment', () => {
+    expect(hasPaystackPaymentAttempt({ status: 'ongoing', channel: null, log: { attempts: 0, history: [] } })).toBe(false);
+    expect(hasPaystackPaymentAttempt({ status: 'ongoing', channel: 'bank_transfer', log: { attempts: 1 } })).toBe(true);
+    expect(hasPaystackPaymentAttempt({ status: 'pending', log: { history: [{ type: 'action' }] } })).toBe(true);
   });
 });
