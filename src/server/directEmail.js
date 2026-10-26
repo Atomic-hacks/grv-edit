@@ -12,7 +12,7 @@ import { prisma as defaultPrisma } from "./prisma.js";
 import { sendEmail as defaultSendEmail } from "./sendEmail.js";
 import { FROM_INFO, FROM_SUPPORT } from "./emailSenders.js";
 import { renderEmail, escapeHtml, siteUrl, MUTED, BORDER } from "./emailTemplates.js";
-import { ensureToken } from "./campaigns.js";
+import { ensureToken, unsubscribeHeaders } from "./campaigns.js";
 
 export const SENDERS = {
   INFO: { label: "Info", from: FROM_INFO },
@@ -94,7 +94,7 @@ const firstName = (name) => (name ? String(name).trim().split(/\s+/)[0] : "") ||
 
 const unsubscribeFooter = (url) => `
   <p style="margin:28px 0 0;padding-top:20px;border-top:1px solid ${BORDER};font-size:12px;line-height:1.6;color:${MUTED};">
-    You're receiving this because you opted into GRV updates.
+    You're receiving this because you opted into GRVHQ updates.
     <a href="${escapeHtml(url)}" style="color:${MUTED};text-decoration:underline;">Unsubscribe</a>.
   </p>`;
 
@@ -105,6 +105,8 @@ export const directEmailHtml = ({ subject, body, unsubscribeUrl }) =>
   renderEmail({
     preheader: subject,
     bodyHtml: `
+      <p style="margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#ff5a00;">A message from GRVHQ</p>
+      <h1 style="margin:0 0 18px;font-size:25px;line-height:1.3;font-weight:600;">${escapeHtml(subject)}</h1>
       <div style="margin:0;font-size:15px;line-height:1.7;white-space:pre-wrap;">${escapeHtml(body)}</div>
       ${unsubscribeUrl ? unsubscribeFooter(unsubscribeUrl) : ""}
     `,
@@ -125,15 +127,21 @@ export const sendDirectEmails = async (
     for (let recipient = queue.shift(); recipient; recipient = queue.shift()) {
       try {
         const token = withUnsubscribe && recipient.kind === "user" ? await ensureToken(prisma, recipient) : null;
+        const unsubscribeLink = token
+          ? `${siteUrl()}/unsubscribe?token=${encodeURIComponent(token)}`
+          : null;
         const result = await sendEmail({
           to: recipient.email,
           subject: personalize(subject, recipient.name),
           html: directEmailHtml({
             subject: personalize(subject, recipient.name),
             body: personalize(body, recipient.name),
-            unsubscribeUrl: token ? `${siteUrl()}/unsubscribe?token=${encodeURIComponent(token)}` : null,
+            unsubscribeUrl: unsubscribeLink,
           }),
           from,
+          // Only group marketing carries a link; a service message or a
+          // one-to-one reply is not bulk mail and must not claim to be.
+          headers: unsubscribeHeaders(unsubscribeLink),
         });
         if (result?.sent) sent += 1;
         else {

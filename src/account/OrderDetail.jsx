@@ -44,7 +44,7 @@ const OrderDetailContent = () => {
       </Link>
       {error && (
         <InlineNotice tone="error" className="mt-8">
-          {error}
+          {error.message || "Unable to load this page. Please try again."}
         </InlineNotice>
       )}
       {!error && isPending && (

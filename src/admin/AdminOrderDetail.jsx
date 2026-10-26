@@ -15,7 +15,8 @@ const formatDate = (value) =>
 
 const transitionsByStatus = {
   PAID: ["SHIPPED", "CANCELLED"],
-  SHIPPED: ["DELIVERED", "CANCELLED"],
+  SHIPPED: ["DELIVERED", "RETURN_PENDING"],
+  RETURN_PENDING: ["RETURNED"],
 };
 
 const FULFILLMENT_STATUSES = [
@@ -28,6 +29,7 @@ const FULFILLMENT_STATUSES = [
   "OUT_FOR_DELIVERY",
   "DELIVERED",
   "DELIVERY_FAILED",
+  "RETURN_PENDING",
   "CANCELLED",
   "RETURNED",
 ];
@@ -187,7 +189,7 @@ const FulfillmentEditor = ({ order, request, onUpdated }) => {
 
 const AdminOrderDetail = () => {
   const { id } = useParams();
-  const { session } = useAuth();
+  const { session, appUser } = useAuth();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [savingStatus, setSavingStatus] = useState(false);
@@ -283,7 +285,7 @@ const AdminOrderDetail = () => {
               <p className="border border-[var(--line)] px-3 py-2 text-sm font-semibold">
                 {order.status}
               </p>
-              {transitionsByStatus[order.status]?.length > 0 && (
+              {["OWNER", "ADMIN"].includes(appUser?.role) && transitionsByStatus[order.status]?.length > 0 && (
                 <div className="mt-3 flex flex-wrap justify-end gap-2">
                   {transitionsByStatus[order.status].map((status) => (
                     <button

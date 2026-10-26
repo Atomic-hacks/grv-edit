@@ -1,3 +1,4 @@
+import { loadEnv } from "vite";
 // Generates public/sitemap.xml and public/robots.txt from the live
 // catalogue right before each build, so Vite then copies both into dist/
 // as-is. This is a client-rendered SPA with no server-side rendering, so
@@ -9,11 +10,14 @@
 // during a Vercel build, a missing/stale sitemap is a far smaller problem
 // than a broken deploy, so any error here falls back to a minimal
 // static-pages-only sitemap instead of throwing.
-import { writeFileSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { getCategoryPath } from "../src/lib/categoryTree.js";
+
+const buildEnv = loadEnv(process.env.NODE_ENV || "production", process.cwd(), "");
+for (const key of ["DATABASE_URL", "APP_URL"]) if (!process.env[key] && buildEnv[key]) process.env[key] = buildEnv[key];
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, "..", "public");
@@ -28,6 +32,9 @@ const STATIC_PATHS = [
   "/about",
   "/contact",
   "/privacy-policy",
+  "/faq",
+  "/journal",
+  "/catalogues",
 ];
 
 const escapeXml = (value) =>
@@ -54,19 +61,27 @@ const buildRobotsTxt = (baseUrl) =>
 const run = async () => {
   // A build frequently runs without .env.local (CI preview, a fresh
   // checkout). Never publish localhost URLs in that case.
-  const rawBaseUrl = process.env.APP_URL || "https://www.grvhq.com";
-  const baseUrl = rawBaseUrl.replace(/\/$/, "");
+  let baseUrl = "https://www.grvhq.com";
+  if (process.env.APP_URL) {
+    try {
+      const configured = new URL(process.env.APP_URL);
+      if (!["https:", "http:"].includes(configured.protocol) || configured.username || configured.password) throw new Error("Invalid public origin");
+      baseUrl = configured.origin;
+    } catch {
+      if (process.env.VERCEL_ENV === "production") throw new Error("APP_URL must be a valid public site URL");
+      console.warn("APP_URL is invalid; using the canonical storefront URL for the sitemap.");
+    }
+  }
   let dynamicPaths = [];
 
+  const prisma = new PrismaClient();
   try {
-    const prisma = new PrismaClient();
     const [categories, products, brands, journalPosts] = await Promise.all([
       prisma.category.findMany({ select: { id: true, slug: true, parentId: true } }),
       prisma.product.findMany({ where: { archived: false }, select: { id: true } }),
       prisma.brand.findMany({ select: { slug: true } }),
       prisma.journalPost.findMany({ where: { published: true }, select: { slug: true } }),
     ]);
-    await prisma.$disconnect();
 
     // A subcategory's URL is every ancestor's slug joined together
     // (/men/accessories/jewelry), not its own bare slug — same helper the
@@ -83,11 +98,18 @@ const run = async () => {
       ...journalPosts.map((j) => `/journal/${j.slug}`),
     ];
   } catch (error) {
-    console.error(
-      "Sitemap generation: could not reach the database, falling back to static pages only.",
-      error.message,
-    );
-  }
+    console.error("Sitemap catalogue lookup failed", { code: error.code || "DATABASE_UNAVAILABLE" });
+    const sitemapPath = join(publicDir, "sitemap.xml");
+    if (existsSync(sitemapPath)) {
+      const existing = readFileSync(sitemapPath, "utf8");
+      if (existing.includes(`<loc>${escapeXml(baseUrl)}/`) && existing.includes("</urlset>")) {
+        console.warn("Preserving the existing sitemap; catalogue coverage must be checked before release.");
+        writeFileSync(join(publicDir, "robots.txt"), buildRobotsTxt(baseUrl));
+        return;
+      }
+    }
+    if (process.env.VERCEL_ENV === "production") throw new Error("No valid sitemap is available for production");
+  } finally { await prisma.$disconnect(); }
 
   const allPaths = [...STATIC_PATHS, ...dynamicPaths];
   writeFileSync(join(publicDir, "sitemap.xml"), buildSitemapXml(baseUrl, allPaths));
@@ -96,7 +118,8 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  console.error("Sitemap generation failed unexpectedly — writing static fallback.", error);
+  console.error("Sitemap generation failed", error.message);
+  if (process.env.VERCEL_ENV === "production") { process.exitCode = 1; return; }
   try {
     const baseUrl = (process.env.APP_URL || "https://www.grvhq.com").replace(/\/$/, "");
     writeFileSync(join(publicDir, "sitemap.xml"), buildSitemapXml(baseUrl, STATIC_PATHS));

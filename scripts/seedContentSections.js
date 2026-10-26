@@ -39,7 +39,7 @@ const run = async () => {
     HOME: [
       {
         layout: "HERO",
-        title: "GRV",
+        title: "GRVHQ",
         mediaType: "VIDEO",
         videoUrl: img("hero-video", "https://res.cloudinary.com/uzielc9k/video/upload/v1790922371/grv/video/home-hero.mp4"),
       },
@@ -75,7 +75,7 @@ const run = async () => {
     SHOP: [
       {
         layout: "HERO",
-        eyebrow: "The GRV edit",
+        eyebrow: "The GRVHQ edit",
         title: "Shop",
         description: "Considered pieces across the labels and collections shaping the season.",
         ctaLabel: "Shop now",

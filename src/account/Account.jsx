@@ -1,3 +1,4 @@
+import Waitlist from "./Waitlist";
 import React from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -12,6 +13,7 @@ import AccountSettings from "./AccountSettings";
 const SECTIONS = [
   ["orders", "Orders and returns"],
   ["cases", "Refunds & complaints"],
+  ["waitlist", "Restock notifications"],
   ["addresses", "Address book"],
   ["details", "Details and security"],
 ];
@@ -304,6 +306,7 @@ const Account = () => {
               <OrdersList />
             </FadeIn>
           )}
+          {section === "waitlist" && <Waitlist />}
           {section === "cases" && (
             <FadeIn>
               <CasesList />

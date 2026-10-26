@@ -32,9 +32,9 @@ const SignUp = () => {
     }
     setSubmitting(true);
     try {
-      await signUp({ email, password, name });
+      const signUpResult = await signUp({ email, password, name });
       navigate(
-        `/confirm-email?email=${encodeURIComponent(email)}&returnTo=${encodeURIComponent(returnTo)}`,
+        `/confirm-email?email=${encodeURIComponent(email)}&userId=${encodeURIComponent(signUpResult.user.id)}&returnTo=${encodeURIComponent(returnTo)}`,
         { replace: true },
       );
     } catch (err) {

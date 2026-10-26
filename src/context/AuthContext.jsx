@@ -5,24 +5,29 @@ import React, {
   useEffect,
   useMemo,
   useState,
+  useRef,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
+import { clearPrivateQueries } from "../lib/privateQueryCache";
 import { safeReturnTo } from "../lib/safeReturnTo";
 
 const AuthContext = createContext(null);
 const HAS_ACCOUNT_STORAGE_KEY = "grv_has_account";
 
 const rememberAccountOnThisBrowser = () => {
-  window.localStorage.setItem(HAS_ACCOUNT_STORAGE_KEY, "true");
+  try { window.localStorage.setItem(HAS_ACCOUNT_STORAGE_KEY, "true"); } catch { /* Storage can be disabled; authentication still succeeds. */ }
 };
 
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const queryClient = useQueryClient();
+  const identity = useRef(null);
   const appUserQuery = useQuery({
     queryKey: ["me", session?.user?.id],
+    staleTime: 0,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       const response = await fetch("/api/me", {
         headers: { Authorization: `Bearer ${session.access_token}` },
@@ -44,22 +49,34 @@ export const AuthProvider = ({ children }) => {
   );
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    let active = true;
+    let authEventReceived = false;
+    const publishSession = (nextSession) => {
+      if (!active) return;
+      const nextIdentity = nextSession?.user?.id ?? null;
+      if (identity.current !== nextIdentity) {
+        void clearPrivateQueries(queryClient);
+        identity.current = nextIdentity;
+      }
+      setSession(nextSession);
       setLoading(false);
-    });
+    };
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!authEventReceived) publishSession(error ? null : data.session);
+    }).catch(() => { if (!authEventReceived) publishSession(null); });
 
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event, nextSession) => {
-        setSession(nextSession);
+        authEventReceived = true;
+        publishSession(nextSession);
         // Covers the Google OAuth redirect too, not just signIn/signUp —
         // any session appearing at all means this browser has an account.
         if (nextSession) rememberAccountOnThisBrowser();
       },
     );
 
-    return () => subscription.subscription.unsubscribe();
-  }, []);
+    return () => { active = false; subscription.subscription.unsubscribe(); };
+  }, [queryClient]);
 
   // appUser is the Prisma User row (id/email/name/role) — the authoritative
   // source for role, fetched via /api/me rather than trusted from the client.
@@ -100,10 +117,13 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
-  };
+    await clearPrivateQueries(queryClient);
+    identity.current = null;
+    setSession(null);
+  }, [queryClient]);
 
   // Redirects out to Google and back — there's no local result to return,
   // the session shows up via onAuthStateChange once the redirect completes.
@@ -130,7 +150,7 @@ export const AuthProvider = ({ children }) => {
       signInWithGoogle,
       signOut,
     }),
-    [session, appUser, appUserLoading, loading, refreshAppUser],
+    [session, appUser, appUserLoading, loading, refreshAppUser, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

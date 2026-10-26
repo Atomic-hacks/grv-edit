@@ -1,6 +1,6 @@
-import { isPlaceholderColor, isPlaceholderSize } from "./lib/variantOptions";
+import { getDefaultVariant, isPlaceholderColor, isPlaceholderSize } from "./lib/variantOptions";
 import React, { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { getProductImages, getLeafCategory } from "./lib/productHelpers";
 import {
   fetchBrandBySlug,
@@ -117,12 +117,12 @@ const ProductDetail = () => {
     // still paints instantly from cache and refreshes in the background.
     staleTime: 30 * 1000,
   });
-  const [selectedColor, setSelectedColor] = useState("");
-  const [selectedSize, setSelectedSize] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => { if (product?.name) document.title = `${product.name} | GRVHQ`; }, [product?.name]);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const { addToCart } = useCart();
   const { recordView } = useRecentlyViewed();
-  const { user, session } = useAuth();
+  const { user, session, appUser } = useAuth();
   const requireAuthAction = useRequireAuthAction();
   const [waitlistPending, setWaitlistPending] = useState(false);
   const [waitlistError, setWaitlistError] = useState(null);
@@ -135,32 +135,11 @@ const ProductDetail = () => {
   });
   const waitlistedVariantIds = new Set(
     (waitlistQuery.data || [])
-      .filter(
-        (entry) => entry.status === "WAITING" || entry.status === "NOTIFIED",
-      )
+      .filter((entry) => entry.status === "WAITING")
       .map((entry) => entry.variantId),
   );
   const waitlistLoaded =
     !user || waitlistQuery.isSuccess || Boolean(waitlistQuery.error);
-
-  // product now arrives asynchronously, so the default variant can't be
-  // picked at useState-init time — it has to react once product loads.
-  useEffect(() => {
-    const variants = product?.variants || [];
-    const defaultVariant =
-      variants.length === 1
-        ? variants[0]
-        : variants.find((variant) => variant.stock > 0);
-    setSelectedColor(defaultVariant?.color ?? "");
-    setSelectedSize(defaultVariant?.size ?? "");
-  }, [product]);
-
-  useEffect(() => {
-    if (waitlistQuery.error)
-      setWaitlistError(
-        "Couldn't check your waitlist status. Refresh the page to try again.",
-      );
-  }, [waitlistQuery.error]);
 
   const leafCategory = getLeafCategory(product);
   const { data: moreProductsData } = useQuery({
@@ -240,6 +219,13 @@ const ProductDetail = () => {
   const sizes = Array.from(
     new Set(variants.map((variant) => variant.size).filter(Boolean)),
   );
+  const selectedVariant = variants.find((variant) => variant.id === searchParams.get("variant")) || getDefaultVariant(variants);
+  const selectedColor = selectedVariant?.color ?? "";
+  const selectedSize = selectedVariant?.size ?? "";
+  const selectVariant = (variant) => {
+    if (!variant) return;
+    setSearchParams((current) => { const params = new URLSearchParams(current); params.set("variant", variant.id); return params; }, { replace: true });
+  };
   const sizesForSelectedColor = selectedColor
     ? new Set(
         variants
@@ -247,11 +233,6 @@ const ProductDetail = () => {
           .map((variant) => variant.size),
       )
     : new Set(sizes);
-  const selectedVariant =
-    variants.find(
-      (variant) =>
-        variant.color === selectedColor && variant.size === selectedSize,
-    ) || null;
   // A product with no real options is sold as one placeholder variant —
   // there is nothing to pick, so the pickers disappear.
   const hideColor = colors.every(isPlaceholderColor);
@@ -301,13 +282,15 @@ const ProductDetail = () => {
     setWaitlistError(null);
     setWaitlistPending(true);
     try {
-      await createAuthenticatedRequest(session)("/api/waitlist", {
+      const result = await createAuthenticatedRequest(session)("/api/waitlist", {
         method: "POST",
         body: JSON.stringify({ variantId: selectedVariant.id }),
       });
-      await queryClient.invalidateQueries({
-        queryKey: ["waitlist", user.id],
-      });
+      queryClient.setQueryData(["waitlist", user.id], (entries = []) => [
+        result.entry,
+        ...entries.filter((entry) => entry.variantId !== result.entry.variantId),
+      ]);
+      await queryClient.invalidateQueries({ queryKey: ["waitlist", user.id] });
     } catch (requestError) {
       setWaitlistError(
         requestError.message || "Couldn't join the waitlist. Please try again.",
@@ -419,15 +402,7 @@ const ProductDetail = () => {
                             title={color}
                             aria-pressed={selected}
                             onClick={() => {
-                              const matchingSizes = variants
-                                .filter((variant) => variant.color === color)
-                                .map((variant) => variant.size);
-                              setSelectedColor(color);
-                              setSelectedSize(
-                                matchingSizes.includes(selectedSize)
-                                  ? selectedSize
-                                  : matchingSizes[0] || "",
-                              );
+                              selectVariant(variants.find((variant) => variant.color === color && variant.size === selectedSize) || variants.find((variant) => variant.color === color));
                             }}
                             className={`h-9 w-9 border transition-all duration-200 ${
                               selected
@@ -465,7 +440,7 @@ const ProductDetail = () => {
                             aria-label={`Select size ${size}`}
                             aria-pressed={selected}
                             disabled={unavailable}
-                            onClick={() => setSelectedSize(size)}
+                            onClick={() => selectVariant(variants.find((variant) => variant.color === selectedColor && variant.size === size))}
                             className={`min-h-11 min-w-12 border px-3 text-[13px] transition-colors duration-200 ${
                               unavailable
                                 ? "cursor-not-allowed border-[var(--line)] bg-[var(--surface-muted)] text-[var(--ink-300)] line-through"
@@ -497,7 +472,7 @@ const ProductDetail = () => {
               </button>
               {!selectedVariantInStock && (
                 <p className="mt-3 text-[13px] leading-relaxed text-[var(--ink-700)]">
-                  Sorry, this product is out of stock. Would you like{" "}
+                  This option is out of stock.{" "}
                   <button
                     type="button"
                     disabled={
@@ -508,15 +483,19 @@ const ProductDetail = () => {
                     onClick={() => requireAuthAction(joinWaitlist)}
                     className="font-semibold text-[var(--ink-900)] underline underline-offset-4 transition-colors hover:text-(--color-accent-orange) disabled:cursor-not-allowed disabled:text-[var(--ink-300)]"
                   >
-                    Join the waitlist
-                  </button>{" "}
-                  ?
+                    {waitlistPending ? "Joining…" : selectedVariantWaitlisted ? "You’re on the waitlist" : "Join the waitlist"}
+                  </button>
+                  {selectedVariantWaitlisted && (
+                    <span role="status"> We’ll email you when this option is back in stock.</span>
+                  )}
                 </p>
               )}
               <p className="meta-text mt-4">
                 SKU {selectedVariant.sku}
                 {` · Size ${selectedVariant.size}`}
               </p>
+              {user && appUser && !appUser.emailVerified && !selectedVariantInStock && <p className="mt-3 text-sm"><Link className="underline" to={`/confirm-email?email=${encodeURIComponent(user.email || "")}&returnTo=${encodeURIComponent(`/product/${id}?${searchParams}`)}`}>Verify your email to receive restock notifications</Link></p>}
+              {waitlistQuery.error && <p role="alert" className="mt-3 text-xs text-red-700">Couldn't check your subscriptions. <button className="underline" onClick={() => waitlistQuery.refetch()}>Try again</button></p>}
               {waitlistError && (
                 <p className="mt-2 text-xs text-red-700">{waitlistError}</p>
               )}

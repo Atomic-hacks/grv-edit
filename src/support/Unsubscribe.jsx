@@ -45,14 +45,14 @@ const Unsubscribe = () => {
             <h1 className="section-title">You've been unsubscribed</h1>
             <p className="meta-text mt-3">
               {state.email ? `${state.email} will` : "You will"} no longer
-              receive promotional email from GRV. You'll still get order
+              receive promotional email from GRVHQ. You'll still get order
               confirmations and delivery updates for anything you buy.
             </p>
             <Link
               to="/shop"
               className="mt-6 inline-block border border-[var(--ink-900)] px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-[var(--ink-900)] hover:text-white"
             >
-              Back to GRV
+              Back to GRVHQ
             </Link>
           </>
         )}

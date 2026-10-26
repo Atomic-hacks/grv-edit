@@ -4,6 +4,7 @@ import {
   abandonedCartEmail,
   wishlistReminderEmail,
   escapeHtml,
+  emailAssetUrl,
 } from "./emailTemplates.js";
 import { retryFailedOrderEmails } from "./orderEmails.js";
 import { processDueCampaigns } from "./campaigns.js";
@@ -19,8 +20,9 @@ const formatCartEmail = (cart, productsById) => {
     .map((item) => {
       const product = productsById.get(item.productId);
       const name = product?.name || "Item from your Goody Bag";
-      const image = product?.imageUrl
-        ? `<img src="${escapeHtml(product.imageUrl)}" alt="${escapeHtml(name)}" width="80" style="display:block;margin-bottom:6px;" />`
+      const imageUrl = emailAssetUrl(product?.imageUrl);
+      const image = imageUrl
+        ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(name)}" width="80" style="display:block;margin-bottom:6px;" />`
         : "";
       return `<li style="margin-bottom:14px;">${image}<strong>${escapeHtml(name)}</strong> &times; ${item.quantity}</li>`;
     })
@@ -31,8 +33,9 @@ const formatCartEmail = (cart, productsById) => {
 
 const formatWishlistEmail = (wishlist) => {
   const product = wishlist.product;
-  const imageHtml = product.imageUrl
-    ? `<img src="${escapeHtml(product.imageUrl)}" alt="${escapeHtml(product.name)}" width="240" style="display:block;" />`
+  const imageUrl = emailAssetUrl(product.imageUrl);
+  const imageHtml = imageUrl
+    ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(product.name)}" width="240" style="display:block;" />`
     : "";
   const productUrl = `${siteUrl()}/product/${encodeURIComponent(product.id)}`;
   return wishlistReminderEmail({
@@ -49,6 +52,8 @@ export const runReminderChecks = async ({
   prismaClient = prisma,
   emailSender = sendEmail,
   now = new Date(),
+  reconcilePayments,
+  retryNotifications,
 } = {}) => {
   const errors = [];
   let cartsReminded = 0;
@@ -57,10 +62,13 @@ export const runReminderChecks = async ({
   let abandonedCarts = [];
   try {
     abandonedCarts = await prismaClient.cart.findMany({
+      take: 20,
+      orderBy: { updatedAt: "asc" },
       where: {
         updatedAt: { lt: new Date(now.getTime() - SIX_HOURS) },
         abandonedReminderSent: false,
         items: { some: {} },
+        user: { active: true, marketingOptIn: true },
       },
       select: {
         id: true,
@@ -126,9 +134,12 @@ export const runReminderChecks = async ({
   let staleWishlists = [];
   try {
     staleWishlists = await prismaClient.wishlist.findMany({
+      take: 20,
+      orderBy: { createdAt: "asc" },
       where: {
         createdAt: { lt: new Date(now.getTime() - THREE_DAYS) },
         reminderSent: false,
+        user: { active: true, marketingOptIn: true },
         // A followed brand has no product to remind about — only product
         // favorites (productId set) belong in this "still thinking about
         // it?" pass.
@@ -154,31 +165,13 @@ export const runReminderChecks = async ({
         html: formatWishlistEmail(wishlist),
         from: FROM_INFO,
       });
-      if (!sent?.sent) {
-        errors.push(
-          `Wishlist reminder ${wishlist.id}: ${sent?.message || "Email provider did not accept the message"}`,
-        );
-      }
+      if (!sent?.sent) throw new Error(sent?.message || "Email provider did not accept the message");
+      await prismaClient.wishlist.update({ where: { id: wishlist.id }, data: { reminderSent: true } });
+      wishlistsReminded += 1;
     } catch (error) {
       const message = describeError("Wishlist reminder", wishlist.id, error);
       errors.push(message);
       console.error(message);
-    } finally {
-      try {
-        await prismaClient.wishlist.update({
-          where: { id: wishlist.id },
-          data: { reminderSent: true },
-        });
-        wishlistsReminded += 1;
-      } catch (error) {
-        const message = describeError(
-          "Wishlist reminder update",
-          wishlist.id,
-          error,
-        );
-        errors.push(message);
-        console.error(message);
-      }
     }
   }
 
@@ -211,30 +204,27 @@ export const runReminderChecks = async ({
     console.error(message);
   }
 
-  // Abandoned checkout attempts (closed the Paystack tab, never came back)
-  // never became an Order and never will — sweep them so they don't sit
-  // around indefinitely. Two hours is generous; a real payment resolves in
-  // seconds to minutes.
-  let pendingCheckoutsSwept = 0;
-  try {
-    const result = await prismaClient.pendingCheckout.deleteMany({
-      where: {
-        createdAt: { lt: new Date(now.getTime() - 2 * 60 * 60 * 1000) },
-      },
-    });
-    pendingCheckoutsSwept = result.count;
-  } catch (error) {
-    const message = `Pending checkout sweep failed: ${error instanceof Error ? error.message : String(error)}`;
-    errors.push(message);
-    console.error(message);
+  let paymentReconciliation = null;
+  let notificationRetries = null;
+  for (const [name, work] of [["Payment reconciliation", reconcilePayments], ["Notification retry", retryNotifications]]) {
+    if (!work) continue;
+    try {
+      const result = await work();
+      if (name === "Payment reconciliation") paymentReconciliation = result;
+      else notificationRetries = result;
+    } catch (error) { errors.push(`${name}: ${error.message}`); }
   }
+
+  try { await prismaClient.rateLimitHit.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - 24 * 60 * 60_000) } } }); }
+  catch (error) { errors.push(`Rate limit cleanup: ${error.message}`); }
 
   return {
     cartsReminded,
     wishlistsReminded,
     orderEmailRetries,
     campaignsSent: campaignsSent.length,
-    pendingCheckoutsSwept,
+    paymentReconciliation,
+    notificationRetries,
     errors,
   };
 };

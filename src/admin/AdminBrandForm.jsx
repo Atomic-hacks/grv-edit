@@ -199,7 +199,7 @@ const AdminBrandForm = () => {
               placeholder="orders@brand.com"
               className="w-full border border-[var(--line)] px-3 py-2.5 outline-none focus:border-[var(--ink-900)]"
             />
-            <span className="mt-1 block text-xs text-[var(--ink-500)]">Used only as the recipient for brand order notices. Customer emails always come from GRV.</span>
+            <span className="mt-1 block text-xs text-[var(--ink-500)]">Used only as the recipient for brand order notices. Customer emails always come from GRVHQ.</span>
           </label>
           <label className="flex items-start gap-2 text-sm md:col-span-2">
             <input
@@ -210,7 +210,7 @@ const AdminBrandForm = () => {
               }
               className="mt-1"
             />
-            <span><span className="block font-medium">Send paid-order notifications</span><span className="text-xs text-[var(--ink-500)]">GRV sends an operational notice to this email when a paid order includes this brand’s products.</span></span>
+            <span><span className="block font-medium">Send paid-order notifications</span><span className="text-xs text-[var(--ink-500)]">GRVHQ sends an operational notice to this email when a paid order includes this brand’s products.</span></span>
           </label>
         </div>
 

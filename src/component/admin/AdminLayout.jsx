@@ -2,7 +2,7 @@ import React from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { AnimatePresence, motion as Motion } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
-import { adminNavGroups as navigationGroups } from "../../lib/adminNav";
+import { adminNavigationFor } from "../../lib/adminNav";
 
 const isItemActive = (pathname, item) =>
   item.exact ? pathname === item.to : pathname.startsWith(item.to);
@@ -25,6 +25,7 @@ const AdminLayout = () => {
   const location = useLocation();
   const { pathname } = location;
   const { appUser, signOut } = useAuth();
+  const navigationGroups = adminNavigationFor(appUser?.role);
 
   return (
     <div className="min-h-screen bg-white">
@@ -33,7 +34,7 @@ const AdminLayout = () => {
       <header className="border-b border-[var(--ink-900)] bg-white">
         <div className="mx-auto flex max-w-[100rem] items-center justify-between gap-4 px-6 py-3 md:px-12">
           <Link to="/admin" className="text-base font-semibold tracking-tight">
-            GRV Admin
+            GRVHQ Admin
           </Link>
           <div className="flex items-center gap-4 text-[12px]">
             {appUser?.name && (

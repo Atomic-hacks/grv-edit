@@ -43,3 +43,38 @@ export const claimPendingCheckout = async (transaction, reference) => {
   });
   return claim.count > 0;
 };
+
+export const paymentMatchesCheckout = (payment, reference, payload) =>
+  payment?.status === "success" &&
+  payment.reference === reference &&
+  Number.isSafeInteger(payment.amount) &&
+  payment.amount === Math.round(payload.total * 100) &&
+  payment.currency === "NGN";
+
+// Initializing Paystack creates a transaction before the customer chooses a
+// channel or attempts to pay. Treating that empty shell as money in flight
+// produces a false "waiting for confirmation" state when they simply leave
+// the hosted page. Channel/log/paid fields appear once a payment action has
+// actually started; any one of them is enough to keep the conservative
+// pending-payment behavior.
+export const hasPaystackPaymentAttempt = (payment) =>
+  Boolean(
+    payment?.paid_at ||
+      payment?.paidAt ||
+      payment?.channel ||
+      payment?.authorization?.authorization_code ||
+      (Number.isFinite(Number(payment?.log?.attempts)) &&
+        Number(payment.log.attempts) > 0) ||
+      (Array.isArray(payment?.log?.history) && payment.log.history.length > 0),
+  );
+
+export const fetchPaystackPayment = async (reference, { fetcher = fetch, secret = process.env.PAYSTACK_SECRET_KEY } = {}) => {
+  if (!secret) throw new Error("Payment verification is not configured");
+  const response = await fetcher(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+    headers: { Authorization: `Bearer ${secret}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.status || !body.data) throw new Error("Payment status is unavailable");
+  return body.data;
+};

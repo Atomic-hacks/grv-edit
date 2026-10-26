@@ -24,7 +24,7 @@ const values = [
   },
   {
     title: "Built for Lagos",
-    body: "And wherever GRV travels next.",
+    body: "And wherever GRVHQ travels next.",
   },
 ];
 
@@ -64,7 +64,7 @@ const About = () => (
     >
       <div className="mx-auto max-w-2xl space-y-10 text-center">
         <p className="text-xl font-light leading-relaxed md:text-2xl">
-          GRV started with a simple frustration: too much of what's sold as
+          GRVHQ started with a simple frustration: too much of what's sold as
           fashion in Lagos was either priced for export markets or built to be
           disposable.
         </p>
@@ -75,7 +75,7 @@ const About = () => (
           and whether it earns a place in a wardrobe beyond one season.
         </p>
         <p className="text-sm leading-8 tracking-wide text-gray-500">
-          GRV is still early. What we want people to feel when they shop with us
+          GRVHQ is still early. What we want people to feel when they shop with us
           is simple — that someone paid attention before it reached them.
         </p>
       </div>

@@ -46,13 +46,14 @@ const addressToForm = (address) => {
 };
 
 const CheckoutContent = () => {
-  const { cartItems, subtotal } = useCart();
+  const { cartItems, subtotal, persistCart } = useCart();
   const { session } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState(emptyForm);
   const [selectedAddressId, setSelectedAddressId] = useState(null);
   const [saveAsDefaultAddress, setSaveAsDefaultAddress] = useState(false);
   const [error, setError] = useState("");
+  const [pendingReference, setPendingReference] = useState(null);
   const [needsVerification, setNeedsVerification] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
@@ -140,9 +141,11 @@ const CheckoutContent = () => {
     }
   };
 
+  const [checkoutKey, setCheckoutKey] = useState(() => crypto.randomUUID());
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setPendingReference(null);
     setNeedsVerification(false);
     setSubmitting(true);
 
@@ -178,12 +181,18 @@ const CheckoutContent = () => {
         }
       }
 
+      // A full-page redirect to Paystack cancels the CartProvider's debounced
+      // sync. Persist the bag now so a declined or abandoned payment can
+      // return the customer to the same checkout.
+      await persistCart();
+
       const { authorization_url: authorizationUrl } = await request(
         "/api/checkout/initialize",
         {
           method: "POST",
           body: JSON.stringify({
             ...addressPayload,
+            checkoutKey,
             items: cartItems.map((item) => ({
               productId: item.product.id,
               variantId: item.product.variantId,
@@ -195,12 +204,14 @@ const CheckoutContent = () => {
       );
       window.location.href = authorizationUrl;
     } catch (requestError) {
+      if (requestError.code === "INITIALIZATION_REJECTED" || requestError.code === "CHECKOUT_FAILED") setCheckoutKey(crypto.randomUUID());
+      else if (requestError.reference) setPendingReference(requestError.reference);
       // An unverified email is a fixable problem, not a dead end — it gets
       // its own notice with the way out rather than a bare error string.
       if (requestError.code === "EMAIL_NOT_VERIFIED") {
         setNeedsVerification(true);
       } else {
-        setError(requestError.message || "Could not initialize payment.");
+        setError(`${requestError.message || "Could not initialize payment."}${requestError.reference ? ` Reference: ${requestError.reference}` : ""}`);
       }
       setSubmitting(false);
     }
@@ -312,9 +323,19 @@ const CheckoutContent = () => {
                 Save as default address for other orders
               </label>
             )}
-            <InlineNotice tone="error" className="mt-5">
-              {error}
-            </InlineNotice>
+            {(error || pendingReference) && (
+              <InlineNotice tone="error" className="mt-5">
+                {error}
+                {pendingReference && (
+                  <Link
+                    className="mt-2 block underline"
+                    to={`/checkout/complete?reference=${encodeURIComponent(pendingReference)}`}
+                  >
+                    Check this payment’s status
+                  </Link>
+                )}
+              </InlineNotice>
+            )}
             {needsVerification && (
               <div className="mt-5 border border-[var(--line)] bg-[var(--surface-muted)] p-5">
                 <p className="text-[13px] font-semibold text-[var(--ink-900)]">

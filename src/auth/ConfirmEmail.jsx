@@ -10,6 +10,7 @@ const ConfirmEmail = () => {
   const navigate = useNavigate();
   const { session, refreshAppUser } = useAuth();
   const email = searchParams.get("email") || "";
+  const pendingUserId = searchParams.get("userId") || "";
   const returnTo = safeReturnTo(searchParams.get("returnTo"));
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
@@ -17,6 +18,10 @@ const ConfirmEmail = () => {
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  // Password sign-ups have no Supabase session while email confirmation is
+  // enabled. The code itself proves control of the mailbox, so the API also
+  // accepts the pending account identifier (or email for older links).
+  const canConfirm = Boolean(session || pendingUserId || email);
 
   useEffect(() => {
     if (resendCooldown === 0) return undefined;
@@ -43,7 +48,7 @@ const ConfirmEmail = () => {
     try {
       await createAuthenticatedRequest(session)("/api/auth/verify-email", {
         method: "POST",
-        body: JSON.stringify({ code: token }),
+        body: JSON.stringify({ code: token, userId: pendingUserId, email }),
       });
     } catch (verifyError) {
       setError(verifyError.message);
@@ -51,12 +56,19 @@ const ConfirmEmail = () => {
       return;
     }
 
-    refreshAppUser();
-    navigate(returnTo, { replace: true });
+    if (session) {
+      await refreshAppUser();
+      navigate(returnTo, { replace: true });
+    } else {
+      navigate(
+        `/email-confirmed?returnTo=${encodeURIComponent(returnTo)}`,
+        { replace: true },
+      );
+    }
   };
 
   const resendCode = async () => {
-    if (!email || !session || resending || resendCooldown > 0) return;
+    if (!email || !canConfirm || resending || resendCooldown > 0) return;
     setError("");
     setMessage("");
     setResending(true);
@@ -64,6 +76,7 @@ const ConfirmEmail = () => {
     try {
       await createAuthenticatedRequest(session)("/api/auth/send-verification", {
         method: "POST",
+        body: JSON.stringify({ userId: pendingUserId, email }),
       });
     } catch (resendError) {
       setResendCooldown(0);
@@ -107,7 +120,7 @@ const ConfirmEmail = () => {
         )}
         <button
           type="submit"
-          disabled={submitting || !email || !session}
+          disabled={submitting || !email || !canConfirm}
           className="bg-black py-3 text-sm font-semibold text-white disabled:opacity-50"
         >
           {submitting ? "Confirming…" : "Confirm email"}
@@ -116,7 +129,7 @@ const ConfirmEmail = () => {
       <button
         type="button"
         onClick={resendCode}
-        disabled={resending || resendCooldown > 0 || !email || !session}
+        disabled={resending || resendCooldown > 0 || !email || !canConfirm}
         className="mt-6 text-sm underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
       >
         {resending

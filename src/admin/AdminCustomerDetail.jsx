@@ -84,7 +84,7 @@ const AdminCustomerDetail = () => {
           role="alert"
           className="mt-6 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
         >
-          {error}
+          {error.message || "Unable to load this page. Please try again."}
         </div>
       )}
 

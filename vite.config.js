@@ -3,9 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { handleApiRequest } from "./src/api/routes.js";
 
-const apiPlugin = () => ({
-  name: "static-api-routes",
-  configureServer(server) {
+const installApiMiddleware = (server) => {
     server.middlewares.use(async (request, response, next) => {
       if (!request.url?.startsWith("/api/")) {
         next();
@@ -31,7 +29,11 @@ const apiPlugin = () => ({
       result.headers.forEach((value, key) => response.setHeader(key, value));
       response.end(await result.text());
     });
-  },
+};
+const apiPlugin = () => ({
+  name: "static-api-routes",
+  configureServer: installApiMiddleware,
+  configurePreviewServer: installApiMiddleware,
 });
 
 // One id per build, used to invalidate every visitor's saved query cache on
@@ -59,6 +61,6 @@ export default defineConfig({
       }),
   ].filter(Boolean),
   build: {
-    sourcemap: true,
+    sourcemap: "hidden",
   },
 });

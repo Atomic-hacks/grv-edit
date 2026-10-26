@@ -105,8 +105,8 @@ const AccountSettings = ({ embedded = false, activeSection = "details" }) => {
       await queryClient.invalidateQueries({ queryKey: ["me", user.id] });
       setNotice(
         nextValue
-          ? "You're subscribed to GRV updates."
-          : "You've been unsubscribed from GRV updates.",
+          ? "You're subscribed to GRVHQ updates."
+          : "You've been unsubscribed from GRVHQ updates.",
       );
     } catch (saveError) {
       setError(saveError.message || "Unable to update your email preferences.");
@@ -346,7 +346,7 @@ const AccountSettings = ({ embedded = false, activeSection = "details" }) => {
               />
               <span>
                 <span className="block text-[13px] font-medium text-[var(--ink-900)]">
-                  Send me GRV updates
+                  Send me GRVHQ updates
                 </span>
                 <span className="meta-text mt-1 block">
                   New arrivals, collections and the occasional offer. You can

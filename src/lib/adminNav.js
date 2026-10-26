@@ -38,6 +38,7 @@ export const adminNavGroups = [
     name: "Communication",
     description: "Customer messages and promotional email.",
     items: [
+      { label: "Waitlist", to: "/admin/waitlist" },
       { label: "Messages", to: "/admin/contact-submissions" },
       { label: "Campaigns", to: "/admin/campaigns" },
     ],
@@ -53,6 +54,23 @@ export const adminNavGroups = [
   {
     name: "System",
     description: "Who can sign in to the admin, and what they can do.",
-    items: [{ label: "Staff & Roles", to: "/admin/staff" }],
+    items: [{ label: "Staff & Roles", to: "/admin/staff" }, { label: "Delivery & Payments", to: "/admin/operations" }],
   },
 ];
+
+const extraRoles = {
+  "/admin/cases": ["SUPPORT"],
+  "/admin/analytics": ["ANALYST"],
+  "/admin/visitors": ["ANALYST"],
+  "/admin/orders": ["FULFILMENT"],
+};
+export const canAccessAdminPath = (role, pathname) => {
+  if (pathname === "/admin" || pathname === "/admin/") return ["OWNER", "ADMIN", "SUPPORT", "FULFILMENT", "ANALYST"].includes(role);
+  const item = adminNavGroups.flatMap((group) => group.items)
+    .filter((candidate) => pathname === candidate.to || pathname.startsWith(`${candidate.to}/`))
+    .sort((a, b) => b.to.length - a.to.length)[0];
+  if (!item) return false;
+  if (item.to === "/admin/staff") return role === "OWNER";
+  return role === "OWNER" || role === "ADMIN" || (extraRoles[item.to] || []).includes(role);
+};
+export const adminNavigationFor = (role) => adminNavGroups.map((group) => ({ ...group, items: group.items.filter((item) => canAccessAdminPath(role, item.to)) })).filter((group) => group.items.length);

@@ -597,16 +597,39 @@ const AdminProductForm = () => {
     }
   };
 
+  // Some products come in sizes but only one colourway (belts, most
+  // accessories). Forcing a colour name onto those invents an option the
+  // customer never gets to choose, so the grid can drop the colour axis and
+  // file every row under the placeholder colour instead — the storefront
+  // already hides a placeholder colour and shows the size picker alone.
+  const [matrixNoColor, setMatrixNoColor] = useState(false);
+  const toggleMatrixNoColor = (enabled) => {
+    setMatrixNoColor(enabled);
+    setMatrixError("");
+    // Without a colour axis there is only ever one row, so collapse to the
+    // first and keep whatever stock has already been typed into it.
+    if (enabled) setMatrixRows((current) => current.slice(0, 1));
+  };
+  const rowColor = (row) =>
+    matrixNoColor ? NO_OPTION_COLOR : row.color.trim();
+  const rowLabel = (row, size) =>
+    [matrixNoColor ? "" : rowColor(row), size].filter(Boolean).join(" / ") ||
+    size;
+
   const submitMatrixVariants = async () => {
     setMatrixError("");
     setMatrixNotice("");
     const rowsToProcess = matrixRows.filter(
       (row) =>
-        row.color.trim() &&
+        (matrixNoColor || row.color.trim()) &&
         matrixSizes.some((size) => (row.stocks[size] ?? "").trim() !== ""),
     );
     if (rowsToProcess.length === 0) {
-      setMatrixError("Add a color and at least one size's stock count first.");
+      setMatrixError(
+        matrixNoColor
+          ? "Enter at least one size's stock count first."
+          : "Add a color and at least one size's stock count first.",
+      );
       return;
     }
 
@@ -621,7 +644,7 @@ const AdminProductForm = () => {
           imageUrl = await uploadMedia(request, row.imageFile);
         } catch (uploadError) {
           failures.push(
-            `${row.color}: photo upload failed — ${uploadError.message}`,
+            `${matrixNoColor ? "Photo" : row.color}: photo upload failed — ${uploadError.message}`,
           );
         }
       }
@@ -632,13 +655,17 @@ const AdminProductForm = () => {
         const stock = Number(raw);
         if (!Number.isInteger(stock) || stock < 0) {
           failures.push(
-            `${row.color} / ${size}: stock must be a whole number, 0 or more`,
+            `${rowLabel(row, size)}: stock must be a whole number, 0 or more`,
           );
           continue;
         }
         // Trim the product name, not the suffix: truncating the whole string
-        // drops color/size on long names and makes every size collide.
-        const skuSuffix = `-${slugify(row.color)}-${slugify(size)}`;
+        // drops color/size on long names and makes every size collide. With
+        // no colour axis the colour segment is dropped rather than filled
+        // with "DEFAULT", which would be noise in every SKU.
+        const skuSuffix = matrixNoColor
+          ? `-${slugify(size)}`
+          : `-${slugify(row.color)}-${slugify(size)}`;
         const sku =
           `${slugify(form.name).slice(0, 64 - skuSuffix.length)}${skuSuffix}`
             .toUpperCase()
@@ -649,7 +676,7 @@ const AdminProductForm = () => {
             {
               method: "POST",
               body: JSON.stringify({
-                color: row.color.trim(),
+                color: rowColor(row),
                 size,
                 sku,
                 stock,
@@ -672,7 +699,7 @@ const AdminProductForm = () => {
           // in the grid doesn't try to create this one a second time.
           updateMatrixCell(row.key, size, "");
         } catch (variantError) {
-          failures.push(`${row.color} / ${size}: ${variantError.message}`);
+          failures.push(`${rowLabel(row, size)}: ${variantError.message}`);
         }
       }
     }
@@ -1103,8 +1130,8 @@ const AdminProductForm = () => {
                 step="1"
                 value={singleItemStock}
                 onChange={(event) => setSingleItemStock(event.target.value)}
-                placeholder="Stock"
-                aria-label="Stock"
+                placeholder="Available stock"
+                aria-label="Available stock"
                 className="w-28 border border-[var(--line)] px-3 py-2 text-sm"
               />
             )}
@@ -1144,8 +1171,8 @@ const AdminProductForm = () => {
                 step="1"
                 value={noOptionStock}
                 onChange={(event) => setNoOptionStock(event.target.value)}
-                placeholder="Stock"
-                aria-label="Stock"
+                placeholder="Available stock"
+                aria-label="Available stock"
                 className="w-28 border border-[var(--line)] px-3 py-2 text-sm"
               />
               <button
@@ -1169,9 +1196,28 @@ const AdminProductForm = () => {
           <div className="mt-6 border border-[var(--line)] p-4">
             <p className="text-sm font-medium">Add variants</p>
             <p className="mt-1 text-xs text-[var(--ink-500)]">
-              Fill in a stock number for every color/size combination that
-              exists — leave the rest blank.
+              {matrixNoColor
+                ? "Fill in a stock number for every size that exists — leave the rest blank."
+                : "Fill in a stock number for every color/size combination that exists — leave the rest blank."}
             </p>
+
+            <label className="mt-3 flex items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={matrixNoColor}
+                onChange={(event) => toggleMatrixNoColor(event.target.checked)}
+                className="mt-1 h-4 w-4 accent-(--color-accent-orange)"
+              />
+              <span>
+                <span className="block font-medium">
+                  No colour options — sizes only
+                </span>
+                <span className="mt-1 block text-[var(--ink-500)]">
+                  For a belt or accessory that comes in one colourway.
+                  Customers see only a size picker.
+                </span>
+              </span>
+            </label>
 
             <div className="mt-4">
               <span className="mb-2 block text-xs font-medium uppercase tracking-[0.1em] text-[var(--ink-500)]">
@@ -1286,18 +1332,20 @@ const AdminProductForm = () => {
                   className="border-t border-[var(--line)] pt-4"
                 >
                   <div className="flex flex-wrap items-end gap-3">
-                    <label className="text-sm">
-                      <span className="mb-1.5 block text-xs font-medium">
-                        Color
-                      </span>
-                      <input
-                        value={row.color}
-                        onChange={(event) =>
-                          updateMatrixRowColor(row.key, event.target.value)
-                        }
-                        className="w-40 border border-[var(--line)] px-3 py-2 outline-none focus:border-[var(--ink-900)]"
-                      />
-                    </label>
+                    {!matrixNoColor && (
+                      <label className="text-sm">
+                        <span className="mb-1.5 block text-xs font-medium">
+                          Color
+                        </span>
+                        <input
+                          value={row.color}
+                          onChange={(event) =>
+                            updateMatrixRowColor(row.key, event.target.value)
+                          }
+                          className="w-40 border border-[var(--line)] px-3 py-2 outline-none focus:border-[var(--ink-900)]"
+                        />
+                      </label>
+                    )}
                     <label className="cursor-pointer border border-[var(--line)] px-3 py-2 text-xs hover:border-[var(--ink-900)]">
                       {row.imagePreviewUrl ? "Change photo" : "Add photo"}
                       <input
@@ -1319,7 +1367,7 @@ const AdminProductForm = () => {
                         className="h-12 w-10 object-cover"
                       />
                     )}
-                    {matrixRows.length > 1 && (
+                    {!matrixNoColor && matrixRows.length > 1 && (
                       <button
                         type="button"
                         onClick={() => removeMatrixRow(row.key)}
@@ -1364,13 +1412,15 @@ const AdminProductForm = () => {
             </div>
 
             <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-[var(--line)] pt-4">
-              <button
-                type="button"
-                onClick={addMatrixRow}
-                className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--ink-700)] underline underline-offset-4 hover:text-[var(--ink-900)]"
-              >
-                + Add another color
-              </button>
+              {!matrixNoColor && (
+                <button
+                  type="button"
+                  onClick={addMatrixRow}
+                  className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--ink-700)] underline underline-offset-4 hover:text-[var(--ink-900)]"
+                >
+                  + Add another color
+                </button>
+              )}
               <SubmitButton
                 type="button"
                 onClick={submitMatrixVariants}
@@ -1414,7 +1464,7 @@ const AdminProductForm = () => {
                     </span>
                   </span>
                   <span className="shrink-0 text-[var(--ink-700)]">
-                    {variant.stock} in stock
+                    {variant.stock} available
                   </span>
                 </summary>
                 <div className="grid gap-5 border-t border-[var(--line)] py-5 md:grid-cols-[auto_1fr]">
@@ -1453,7 +1503,8 @@ const AdminProductForm = () => {
                   </div>
                   <div className="flex flex-wrap items-end gap-4">
                     <label className="text-sm">
-                      <span className="mb-2 block font-medium">Stock</span>
+                      <span className="mb-2 block font-medium">Available stock</span>
+                      <span className="mb-2 block text-xs text-gray-500">Enter units available to buy, excluding units already held for pending payments.</span>
                       <input
                         type="number"
                         min="0"

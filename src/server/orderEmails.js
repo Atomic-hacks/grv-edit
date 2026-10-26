@@ -54,7 +54,7 @@ const loadOrderForEmail = async (prisma, orderId) => {
         name: true,
         imageUrl: true,
         brandId: true,
-        brand: { select: { name: true } },
+        brand: { select: { name: true, logo: true } },
       },
     }),
     prisma.variant.findMany({
@@ -75,6 +75,7 @@ const loadOrderForEmail = async (prisma, orderId) => {
         productName: product?.name || "Item",
         brandId: product?.brandId || null,
         brandName: product?.brand?.name || null,
+        brandLogo: product?.brand?.logo || null,
         image: variant?.images?.[0] || product?.imageUrl || null,
         variant: variant || null,
       };
@@ -90,7 +91,7 @@ const buildMessage = async (prisma, order, type, brandId) => {
   if (type === "BRAND_ORDER") {
     const brand = await prisma.brand.findUnique({
       where: { id: brandId },
-      select: { id: true, name: true, contactEmail: true, orderNotificationsEnabled: true },
+      select: { id: true, name: true, logo: true, contactEmail: true, orderNotificationsEnabled: true },
     });
     if (!brand?.orderNotificationsEnabled || !brand.contactEmail) return null;
     const brandOrder = {
@@ -100,7 +101,7 @@ const buildMessage = async (prisma, order, type, brandId) => {
     if (brandOrder.items.length === 0) return null;
     return {
       to: brand.contactEmail,
-      subject: `New GRV order #${order.id} — ${brand.name}`,
+      subject: `New GRVHQ order #${order.id} — ${brand.name}`,
       html: brandOrderEmail({ order: brandOrder, brand }),
     };
   }

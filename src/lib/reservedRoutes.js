@@ -1,0 +1,2 @@
+const reserved = new Set(['api', 'assets', 'img', 'fonts', 'data', 'admin', 'account', 'checkout', 'product', 'sections', 'shop', 'shop-by', 'catalogues', 'departments', 'brands', 'brand', 'archive', 'journal', 'contact', 'about', 'privacy-policy', 'size-guide', 'faq', 'unsubscribe', 'signup', 'login', 'welcome', 'confirm-email', 'email-confirmed', 'forgot-password', 'reset-password']);
+export const isReservedCategorySlug = (slug, parentId) => !parentId && reserved.has(String(slug).toLowerCase());

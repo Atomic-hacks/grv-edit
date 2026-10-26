@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   createContext,
   useContext,
   useEffect,
@@ -36,6 +37,32 @@ const clampQuantity = (product, qty) => {
   const stock = getAvailableStock(product);
   return stock === null ? qty : Math.min(qty, Math.max(stock, 0));
 };
+
+const loadCartItems = async (items) =>
+  (
+    await Promise.all(
+      items.map(async (item) => {
+        const product = await fetchProductById(item.productId);
+        if (!product) return null;
+
+        const images = getProductImages(product, item.variantId);
+        return {
+          id: `${item.productId}:${item.variantId}`,
+          qty: item.quantity,
+          product: {
+            ...product,
+            variantId: item.variantId,
+            price: getDiscountedPrice(
+              product.basePrice,
+              product.discountPercent,
+            ),
+            image: images[0],
+            hoverImage: images[1] || images[0],
+          },
+        };
+      }),
+    )
+  ).filter(Boolean);
 
 const mergeCartItems = (items) => {
   const mergedItems = new Map();
@@ -127,33 +154,7 @@ export const CartProvider = ({ children }) => {
 
   const cartQuery = useQuery({
     queryKey: ["cart", user?.id],
-    queryFn: async () => {
-      const persistedItems = await request("/api/cart");
-      return (
-        await Promise.all(
-          persistedItems.map(async (item) => {
-            const product = await fetchProductById(item.productId);
-            if (!product) return null;
-
-            const images = getProductImages(product, item.variantId);
-            return {
-              id: `${item.productId}:${item.variantId}`,
-              qty: item.quantity,
-              product: {
-                ...product,
-                variantId: item.variantId,
-                price: getDiscountedPrice(
-                  product.basePrice,
-                  product.discountPercent,
-                ),
-                image: images[0],
-                hoverImage: images[1] || images[0],
-              },
-            };
-          }),
-        )
-      ).filter(Boolean);
-    },
+    queryFn: async () => loadCartItems(await request("/api/cart")),
     enabled: Boolean(accessToken && user),
   });
 
@@ -217,7 +218,29 @@ export const CartProvider = ({ children }) => {
   const removeFromCart = (id) => dispatch({ type: "REMOVE", payload: id });
   const updateQty = (id, qty) =>
     dispatch({ type: "UPDATE_QTY", payload: { id, qty } });
-  const clearCart = () => dispatch({ type: "CLEAR" });
+  const clearCart = useCallback(() => dispatch({ type: "CLEAR" }), []);
+  const restoreCart = useCallback(async (items) => {
+    if (!Array.isArray(items) || items.length === 0) return;
+    const restoredItems = await loadCartItems(items);
+    if (restoredItems.length > 0) {
+      dispatch({ type: "HYDRATE", payload: restoredItems });
+    }
+  }, []);
+
+  // The normal sync is deliberately debounced, but an external payment
+  // redirect unloads the page and can cancel that timer. Checkout calls this
+  // first so a failed payment always has a server-side bag to return to.
+  const persistCart = useCallback(async () => {
+    const items = cartItemsRef.current.map((item) => ({
+      productId: item.product.id,
+      variantId: item.product.variantId || item.product.variants?.[0]?.id,
+      quantity: item.qty,
+    }));
+    await request("/api/cart/sync", {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    });
+  }, [request]);
 
   const openCart = () => dispatch({ type: "OPEN" });
   const closeCart = () => dispatch({ type: "CLOSE" });
@@ -244,6 +267,8 @@ export const CartProvider = ({ children }) => {
     removeFromCart,
     updateQty,
     clearCart,
+    restoreCart,
+    persistCart,
     openCart,
     closeCart,
     toggleCart,

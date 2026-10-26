@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import AnimatedPageTitle from "../component/ui/AnimatedPageTitle";
 
 // Measurement tables are intentionally static reference content: they
-// describe how GRV garments are cut, not what is currently in stock.
+// describe how GRVHQ garments are cut, not what is currently in stock.
 const APPAREL_SIZES = [
   { size: "XS", chest: "86 – 91", waist: "71 – 76", hip: "86 – 91" },
   { size: "S", chest: "91 – 97", waist: "76 – 81", hip: "91 – 97" },

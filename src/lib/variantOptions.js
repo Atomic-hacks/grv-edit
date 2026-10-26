@@ -19,3 +19,10 @@ export const variantLabel = (variant) =>
   [isPlaceholderColor(variant?.color) ? "" : variant?.color, variant?.size]
     .filter(Boolean)
     .join(" / ");
+
+// Keep sold-out products actionable so shoppers can request a restock.
+export const getDefaultVariant = (variants = []) =>
+  variants.find((variant) => variant.stock > 0) || variants[0] || null;
+
+export const isRestock = (stockBefore, stockAfter) =>
+  stockBefore <= 0 && stockAfter > 0;
