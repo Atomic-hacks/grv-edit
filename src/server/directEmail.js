@@ -1,4 +1,4 @@
-// Admin-composed email: a message from the info@ or support@ address to one
+// Admin-composed email: a message from a configured GRVHQ sender to one
 // customer, one typed address, or a group of customers.
 //
 // Consent rule. A message to ONE person (a customer picked by name, or a
@@ -10,13 +10,14 @@
 // to be marketed to.
 import { prisma as defaultPrisma } from "./prisma.js";
 import { sendEmail as defaultSendEmail } from "./sendEmail.js";
-import { FROM_INFO, FROM_SUPPORT } from "./emailSenders.js";
+import { FROM_INFO, FROM_SUPPORT, FROM_FEGOROVIE } from "./emailSenders.js";
 import { renderEmail, escapeHtml, siteUrl, MUTED, BORDER } from "./emailTemplates.js";
 import { ensureToken, unsubscribeHeaders } from "./campaigns.js";
 
 export const SENDERS = {
   INFO: { label: "Info", from: FROM_INFO },
   SUPPORT: { label: "Support", from: FROM_SUPPORT },
+  FEGOROVIE: { label: "Fegorovie", from: FROM_FEGOROVIE },
 };
 
 export const AUDIENCES = ["ALL", "ACTIVE", "ORDERED", "ONE", "EMAIL"];

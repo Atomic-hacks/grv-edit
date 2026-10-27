@@ -23,12 +23,12 @@ const useDebounced = (value, delay = 300) => {
   return settled;
 };
 
-// Write an email from info@ or support@ to one customer, one typed address,
+// Write an email from a configured GRVHQ sender to one customer, one typed address,
 // or a group. Shows exactly how many people will get it before anything is
 // sent. Group sends respect marketing consent unless marked as a service
 // message (see server/directEmail.js).
-const ComposeEmail = ({ request, enabled, onClose }) => {
-  const [sender, setSender] = useState("INFO");
+const ComposeEmail = ({ request, enabled, onClose, initialSender = "INFO" }) => {
+  const [sender, setSender] = useState(initialSender);
   const [audience, setAudience] = useState("ONE");
   const [customerSearch, setCustomerSearch] = useState("");
   const [customer, setCustomer] = useState(null);
