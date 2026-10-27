@@ -62,6 +62,23 @@ describe("admin inbox", () => {
     expect((await call(`/${id}/attachments/${requestId}`, null, "SUPPORT")).status).toBe(404);
     expect(mocks.attachment).not.toHaveBeenCalled();
   });
+  it("lists forwarded messages under the original envelope inbox when list metadata omits it", async () => {
+    const forwarded = { ...message, id: "cccccccc-cccc-4ccc-accc-cccccccccccc", to: ["dashboard@inbound.grvhq.com"] };
+    mocks.list.mockResolvedValue({ data: { data: [forwarded], has_more: false } });
+    mocks.get.mockResolvedValue({ data: { ...forwarded, received_for: ["dashboard@inbound.grvhq.com", "support@grvhq.com"] } });
+    const support = await (await call("", null, "SUPPORT")).json();
+    expect(support.messages.map((email) => email.id)).toEqual([forwarded.id]);
+    const other = await (await call("", null, "INFO")).json();
+    expect(other.messages).toEqual([]);
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+  });
+  it("reports forwarded-recipient lookup failures instead of silently hiding messages", async () => {
+    mocks.list.mockResolvedValue({ data: { data: [{ ...message, id: requestId, to: ["dashboard@inbound.grvhq.com"] }], has_more: false } });
+    mocks.get.mockResolvedValue({ error: { message: "Recipient lookup failed" } });
+    const response = await call("", null, "SUPPORT");
+    expect(response.status).toBe(502);
+    expect((await response.json()).error).toBe("Recipient lookup failed");
+  });
   it("returns safe text instead of active incoming HTML", async () => {
     const result = await (await call(`/${id}`)).json();
     expect(result.text).toBe("Hello");

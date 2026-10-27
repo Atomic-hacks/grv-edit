@@ -26,6 +26,22 @@ const unwrap = (result) => {
   return result.data;
 };
 
+// Resend's list response can omit received_for on forwarded messages even
+// though the detail response includes it. Cache only recipient metadata.
+const forwardedRecipients = new Map();
+const resolveRecipients = async (resend, email) => {
+  if (email.received_for?.length || !(email.to || []).some((to) => emailAddress(to) === "dashboard@inbound.grvhq.com")) return email;
+  const cached = forwardedRecipients.get(email.id);
+  if (cached && cached.expires > Date.now()) return { ...email, received_for: cached.recipients };
+  // Stay below Resend's default request rate while hydrating a bounded page.
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  const detail = unwrap(await resend.emails.receiving.get(email.id));
+  const recipients = detail.received_for || [];
+  if (forwardedRecipients.size >= 500) forwardedRecipients.delete(forwardedRecipients.keys().next().value);
+  forwardedRecipients.set(email.id, { recipients, expires: Date.now() + 10 * 60_000 });
+  return { ...email, received_for: recipients };
+};
+
 // Read directly from Resend; incoming HTML is never executed in the admin browser.
 export const handleInboxRequest = async (request, segments, url) => {
   const guard = await requireRole(request, ["ADMIN", "SUPPORT"]);
@@ -45,8 +61,10 @@ export const handleInboxRequest = async (request, segments, url) => {
     if (request.method === "GET" && !id) {
       const after = url.searchParams.get("after");
       if (after && !uuid.test(after)) return json({ error: "Invalid page cursor." }, 400);
-      const page = unwrap(await resend.emails.receiving.list({ limit: 50, ...(after ? { after } : {}) }));
-      const messages = page.data.filter((email) => addressedTo(email, mailbox.address))
+      const page = unwrap(await resend.emails.receiving.list({ limit: 10, ...(after ? { after } : {}) }));
+      const resolved = [];
+      for (const email of page.data) resolved.push(await resolveRecipients(resend, email));
+      const messages = resolved.filter((email) => addressedTo(email, mailbox.address))
         .map(({ id, from, to, subject, created_at }) => ({ id, from, to, subject, created_at }));
       return json({ messages, nextCursor: page.has_more ? page.data.at(-1)?.id : null });
     }
