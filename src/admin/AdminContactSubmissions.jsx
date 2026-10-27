@@ -6,6 +6,7 @@ import AdminPageHeader from "../component/admin/AdminPageHeader";
 import AdminSearch from "../component/admin/AdminSearch";
 import AdminList from "../component/admin/AdminList";
 import ComposeEmail from "./ComposeEmail";
+import AdminInbox from "./AdminInbox";
 import ListToolbar, { ShowMore } from "../component/admin/ListToolbar";
 import { useListControls, byText, byDate } from "../lib/useListControls";
 import InlineNotice from "../component/ui/InlineNotice";
@@ -181,7 +182,7 @@ const MESSAGE_SORTS = [
   { value: "subject", label: "Subject A–Z", compare: byText((m) => m.subject) },
 ];
 
-const AdminContactSubmissions = () => {
+const ContactFormMessages = () => {
   const { session } = useAuth();
   const request = useMemo(() => createAuthenticatedRequest(session), [session]);
   const queryClient = useQueryClient();
@@ -265,7 +266,7 @@ const AdminContactSubmissions = () => {
   return (
     <main className="max-w-7xl py-10 md:py-14">
       <AdminPageHeader
-        title="Messages"
+        title="Contact form messages"
         count={submissionsQuery.isPending ? undefined : `${submissions.length} shown`}
         subtitle={unanswered > 0 ? `${unanswered} awaiting a reply` : "All caught up"}
         actions={
@@ -339,4 +340,12 @@ const AdminContactSubmissions = () => {
   );
 };
 
-export default AdminContactSubmissions;
+export default function AdminContactSubmissions() {
+  const [view, setView] = useState("inbox");
+  return <>
+    <nav aria-label="Message source" className="mt-6 flex gap-3 border-b border-[var(--line)]">
+      {[["inbox", "Email inbox"], ["contact", "Contact form"]].map(([key, label]) => <button key={key} type="button" aria-current={view === key ? "page" : undefined} onClick={() => setView(key)} className={`border-b-2 px-4 py-3 text-sm font-semibold transition-colors focus-visible:outline-2 ${view === key ? "border-[var(--ink-900)] text-[var(--ink-900)]" : "border-transparent text-[var(--ink-500)] hover:text-[var(--ink-900)]"}`}>{label}</button>)}
+    </nav>
+    {view === "inbox" ? <AdminInbox /> : <ContactFormMessages />}
+  </>;
+}

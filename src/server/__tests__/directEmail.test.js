@@ -61,6 +61,22 @@ describe("resolveDirectAudience", () => {
 });
 
 describe("sending", () => {
+  it("sends from Fegorovie when selected", async () => {
+    const sendEmail = vi.fn(async () => ({ sent: true }));
+    const result = await sendDirectEmails(
+      {
+        recipients: [{ email: "a@x.com", name: "Ada", kind: "address" }],
+        sender: "FEGOROVIE",
+        subject: "Hello",
+        body: "A message",
+        withUnsubscribe: false,
+      },
+      { sendEmail },
+    );
+    expect(result.sent).toBe(1);
+    expect(sendEmail.mock.calls[0][0].from).toBe("Fegorovie <fegorovie@grvhq.com>");
+  });
+
   it("personalises with first names and falls back to 'there'", () => {
     expect(personalize("Hi {name},", "Ada Obi")).toBe("Hi Ada,");
     expect(personalize("Hi {name},", null)).toBe("Hi there,");

@@ -37,6 +37,10 @@ export const FROM_NOREPLY =
 export const FROM_SUPPORT =
   process.env.RESEND_FROM_SUPPORT || fallback || "GRVHQ <support@grvhq.com>";
 
+// A named sender must retain its own address even when a generic fallback is set.
+export const FROM_FEGOROVIE =
+  process.env.RESEND_FROM_FEGOROVIE || "Fegorovie <fegorovie@grvhq.com>";
+
 // Must be a mailbox that actually receives mail — being able to send from
 // grvhq.com doesn't mean anything at grvhq.com receives replies.
 export const REPLY_TO_SUPPORT =

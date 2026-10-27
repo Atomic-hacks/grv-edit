@@ -67,6 +67,7 @@ import {
 import { handleAdminFulfillmentRequest } from "./handlers/fulfillment.js";
 import { getAdminAnalytics } from "./handlers/analytics.js";
 import { getMessagingOptions, previewMessageAudience, sendAdminMessage } from "./handlers/messaging.js";
+import { handleInboxRequest } from "./handlers/inbox.js";
 import { getAdminVisitors, getAdminGa4 } from "./handlers/visitors.js";
 import { recordVisit } from "../server/visits.js";
 import { handleAdminExportRequest } from "./handlers/exports.js";
@@ -5486,6 +5487,11 @@ const ROUTES = [
     handler: ({ request }) => sendAdminMessage(request),
     errorLog: "Admin message send failed",
     errorMessage: "The email could not be sent.",
+  },
+  {
+    ...prefix("api", "admin", "inbox"),
+    handler: ({ request, segments, url }) => handleInboxRequest(request, segments, url),
+    errorMessage: "Unable to load email inbox",
   },
   {
     ...prefix("api", "admin", "contact-submissions"),
