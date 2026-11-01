@@ -245,6 +245,53 @@ describe("production checkout routes", () => {
       log.mockRestore();
     }
   });
+  it("finalizes a fee-inclusive payment once across webhook retries", async () => {
+    state.pending.ref.payload.total = 38232;
+    const paid = payment({ amount: 3891574, requested_amount: 3823200, fees: 68374 });
+    expect((await webhook(paid)).status).toBe(200);
+    expect((await webhook(paid)).status).toBe(200);
+    expect(state.orders).toHaveLength(1);
+    expect(state.orders[0].total).toBe(38232);
+    expect(state.stock).toBe(0);
+    expect(state.pending.ref).toBeUndefined();
+  });
+  it("recovers the reserved fee-inclusive checkout through verification without reserving stock again", async () => {
+    state.stock = 0;
+    state.pending.ref.payload = { ...payload(true), total: 38232, paymentStatus: "review_required" };
+    fetch.mockResolvedValue(Response.json({ status: true, data: payment({
+      amount: 3891574, requested_amount: 3823200, fees: 68374,
+    }) }));
+
+    const response = await request("checkout/verify?reference=ref");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ orderId: "o1", status: "PAID" });
+    expect(state.orders[0].total).toBe(38232);
+    expect(state.stock).toBe(0);
+    expect(prisma.variant.updateMany).not.toHaveBeenCalled();
+    expect(state.pending.ref).toBeUndefined();
+
+    expect((await webhook(payment({ amount: 3891574, requested_amount: 3823200, fees: 68374 }))).status).toBe(200);
+    expect(state.orders).toHaveLength(1);
+    expect(state.stock).toBe(0);
+  });
+  it("keeps a fee-inclusive underpayment in review without consuming reserved stock", async () => {
+    state.stock = 0;
+    state.pending.ref.payload = { ...payload(true), total: 38232 };
+    fetch.mockResolvedValue(Response.json({ status: true, data: payment({
+      amount: 3823199, requested_amount: 3823200, fees: 68374,
+    }) }));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await request("checkout/verify?reference=ref");
+      expect(response.status).toBe(409);
+      expect((await response.json()).code).toBe("PAYMENT_REVIEW_REQUIRED");
+      expect(state.orders).toHaveLength(0);
+      expect(state.pending.ref).toBeDefined();
+      expect(state.stock).toBe(0);
+    } finally {
+      log.mockRestore();
+    }
+  });
   it("processes racing webhook deliveries exactly once without overselling", async () => {
     const results = await Promise.all([webhook(payment()), webhook(payment())]);
     expect(results.map((r) => r.status)).toEqual([200, 200]);

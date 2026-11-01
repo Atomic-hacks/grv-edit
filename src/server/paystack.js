@@ -44,12 +44,27 @@ export const claimPendingCheckout = async (transaction, reference) => {
   return claim.count > 0;
 };
 
-export const paymentMatchesCheckout = (payment, reference, payload) =>
-  payment?.status === "success" &&
-  payment.reference === reference &&
-  Number.isSafeInteger(payment.amount) &&
-  payment.amount === Math.round(payload.total * 100) &&
-  payment.currency === "NGN";
+export const paymentMatchesCheckout = (payment, reference, payload) => {
+  const expectedAmount = Math.round(payload?.total * 100);
+  if (
+    payment?.status !== "success" ||
+    payment.reference !== reference ||
+    payment.currency !== "NGN" ||
+    !Number.isSafeInteger(expectedAmount) || expectedAmount <= 0 ||
+    !Number.isSafeInteger(payment.amount)
+  ) return false;
+
+  if (payment.amount === expectedAmount) return true;
+
+  // When Paystack passes processing fees to the customer, amount is the
+  // gross charge. Accept only an exact requested total with the entire
+  // difference accounted for by provider fees; partial payments and
+  // unexplained overpayments must still require review.
+  return Number.isSafeInteger(payment.requested_amount) &&
+    payment.requested_amount === expectedAmount &&
+    Number.isSafeInteger(payment.fees) && payment.fees > 0 &&
+    payment.amount - expectedAmount === payment.fees;
+};
 
 // Initializing Paystack creates a transaction before the customer chooses a
 // channel or attempts to pay. Treating that empty shell as money in flight
