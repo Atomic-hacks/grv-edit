@@ -20,7 +20,7 @@ const jsonResponse = (body, status = 200) =>
     headers: { "Content-Type": "application/json" },
   });
 
-export const CONTENT_PAGES = ["HOME", "SHOP", "DEPARTMENTS", "CATEGORY"];
+export const CONTENT_PAGES = ["HOME", "SHOP", "DEPARTMENTS", "CATEGORY", "CONTACT"];
 export const CONTENT_LAYOUTS = ["HERO", "BANNER", "TILES", "BENTO", "PRODUCTS", "BRANDS"];
 const MEDIA_TYPES = ["IMAGE", "VIDEO"];
 const PRODUCT_SOURCES = ["NEW_ARRIVALS", "FEATURED", "CATEGORY", "BRAND"];
@@ -38,6 +38,7 @@ const CONTENT_ROLES = ["ADMIN"];
 export const isSafeUrl = (value) => {
   if (typeof value !== "string") return false;
   const url = value.trim();
+  if ([...url].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 || char === "\\")) return false;
   if (url.startsWith("/")) return !url.startsWith("//") && !url.startsWith("/\\");
   try {
     const parsed = new URL(url);
@@ -132,6 +133,10 @@ const validateSection = async (section) => {
   if (!CONTENT_PAGES.includes(section.page)) return "Choose which page this appears on";
   if (!CONTENT_LAYOUTS.includes(section.layout)) return "Choose a layout";
   if (!section.title) return "Title is required";
+
+  if (section.page === "CONTACT" && (section.layout !== "BANNER" || section.mediaType !== "IMAGE")) {
+    return "Contact supports an image banner only";
+  }
 
   if (section.page === "CATEGORY") {
     if (!section.categoryId) return "Choose which category page this appears on";

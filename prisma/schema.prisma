@@ -564,6 +564,7 @@ model ProductCategory {
 // pages — one generic model rather than a table per section. `layout`
 // decides how it renders; fields a layout doesn't use are simply ignored.
 enum ContentPage {
+  CONTACT
   HOME
   SHOP
   DEPARTMENTS

@@ -4,9 +4,9 @@
 // the contact page. The support inbox is still a placeholder until inbound mail
 // is set up for it; search this file for "(mock)".
 export const storeInfo = {
-  phone: "09012285529",
+  phone: "07025343929",
   // Dialable form of the number above.
-  phoneHref: "tel:+2349012285529",
+  phoneHref: "tel:+2347025343929",
   addressLines: ["Lagos, Nigeria"],
   // (mock) Placeholder support inbox — see the Cloudflare Email Routing +
   // Resend walkthrough for how to stand this up for real on grvhq.com.

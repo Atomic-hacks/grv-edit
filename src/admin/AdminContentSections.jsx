@@ -16,6 +16,7 @@ const PAGES = [
   { value: "SHOP", label: "Shop", href: "/shop" },
   { value: "DEPARTMENTS", label: "Departments", href: "/catalogues" },
   { value: "CATEGORY", label: "A category page" },
+  { value: "CONTACT", label: "Contact", href: "/contact" },
 ];
 
 const LAYOUTS = [
@@ -352,7 +353,7 @@ const AdminContentSections = () => {
     <main className="max-w-6xl py-10 md:py-14">
       <AdminPageHeader
         title="Page Sections"
-        subtitle="Everything on Home, Shop, Departments and category landing pages — what shows, in what order. Changes go live within about a minute."
+        subtitle="Sections on Home, Shop, Departments, Contact and category landing pages — what shows, in what order. Changes go live within about a minute."
         count={sectionsQuery.isPending ? undefined : `${sections.length} sections`}
       />
 
@@ -458,7 +459,10 @@ const AdminContentSections = () => {
           </div>
 
           <Field label="Appears on">
-            <select value={form.page} onChange={(event) => set("page", event.target.value)} className={`${inputClass} bg-white`}>
+            <select value={form.page} onChange={(event) => {
+              const page = event.target.value;
+              setForm((current) => ({ ...current, page, ...(page === "CONTACT" ? { layout: "BANNER", mediaType: "IMAGE", videoUrl: "", ctaLabel: "", ctaUrl: "" } : {}) }));
+            }} className={`${inputClass} bg-white`}>
               {PAGES.map((page) => <option key={page.value} value={page.value}>{page.label}</option>)}
             </select>
           </Field>
@@ -471,9 +475,9 @@ const AdminContentSections = () => {
             </Field>
           )}
 
-          <Field label="Layout" hint={layoutHelp}>
+          <Field label="Layout" hint={form.page === "CONTACT" ? "Changes the photo beside the contact form. The first visible section is used. Description supplies image alt text." : layoutHelp}>
             <select value={form.layout} onChange={(event) => set("layout", event.target.value)} className={`${inputClass} bg-white`}>
-              {LAYOUTS.map((layout) => <option key={layout.value} value={layout.value}>{layout.label}</option>)}
+              {LAYOUTS.filter((layout) => form.page !== "CONTACT" || layout.value === "BANNER").map((layout) => <option key={layout.value} value={layout.value}>{layout.label}</option>)}
             </select>
           </Field>
 
@@ -490,7 +494,7 @@ const AdminContentSections = () => {
           {usesMedia && (
             <div className="space-y-4 border-t border-[var(--line)] pt-4">
               <div className="flex gap-4 text-sm">
-                {["IMAGE", "VIDEO"].map((type) => (
+                {(form.page === "CONTACT" ? ["IMAGE"] : ["IMAGE", "VIDEO"]).map((type) => (
                   <label key={type} className="flex items-center gap-2">
                     <input type="radio" name="mediaType" checked={form.mediaType === type} onChange={() => set("mediaType", type)} className="accent-(--color-accent-orange)" />
                     {type === "IMAGE" ? "Image" : "Video"}
@@ -584,7 +588,7 @@ const AdminContentSections = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3 border-t border-[var(--line)] pt-4">
+          {form.page !== "CONTACT" && <div className="grid grid-cols-2 gap-3 border-t border-[var(--line)] pt-4">
             <Field label="Button text">
               <input value={form.ctaLabel} onChange={(event) => set("ctaLabel", event.target.value)} placeholder="Shop now" className={inputClass} />
             </Field>
@@ -599,7 +603,7 @@ const AdminContentSections = () => {
                 brands={brands}
               />
             </Field>
-          </div>
+          </div>}
           {form.layout === "PRODUCTS" && (
             <p className="-mt-3 text-xs text-[var(--ink-500)]">Leave both empty to link to the source automatically.</p>
           )}

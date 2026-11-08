@@ -1,3 +1,4 @@
+import { normalizeTagInput } from "../lib/tagInput.js";
 import { isReservedCategorySlug } from "../lib/reservedRoutes.js";
 import { getAdminOperations } from "./handlers/operations.js";
 import { handleAdminWaitlistRequest } from "./handlers/adminWaitlist.js";
@@ -941,7 +942,7 @@ const buildProductsWhere = async (url) => {
   // Style tags share the same shape as every other admin-managed tag —
   // matched by slug, same as `tag` below — kept as its own param because
   // the storefront's filter drawer treats it as its own facet.
-  const styleTags = filterValues(params, "style");
+  const styleTags = filterValues(params, "style").map((value) => normalizeTagInput({ slug: value }).data?.slug || value);
   if (styleTags.length) {
     and.push({
       OR: styleTags.map((value) => ({
@@ -952,7 +953,7 @@ const buildProductsWhere = async (url) => {
     });
   }
 
-  const tags = filterValues(params, "tag");
+  const tags = filterValues(params, "tag").map((value) => normalizeTagInput({ slug: value }).data?.slug || value);
   if (tags.length) {
     and.push({
       OR: tags.map((value) => ({
@@ -967,7 +968,7 @@ const buildProductsWhere = async (url) => {
   // narrows to products carrying both, not either — a separate,
   // AND-across-values param from `tag` above (which OR's), since the two
   // pages want opposite combining behavior for the same underlying facet.
-  const tagsAll = filterValues(params, "tagAll");
+  const tagsAll = filterValues(params, "tagAll").map((value) => normalizeTagInput({ slug: value }).data?.slug || value);
   for (const value of tagsAll) {
     and.push({
       tags: { some: { tag: { slug: { equals: value, mode: "insensitive" } } } },
@@ -1705,6 +1706,8 @@ const createAdminTag = async (request) => {
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
   const body = await request.json();
+  const normalized = normalizeTagInput(body);
+  if (normalized.error) return jsonResponse({ error: normalized.error }, 400);
   if (!body.name || !body.slug || !body.filterTypeId) {
     return jsonResponse(
       { error: "name, slug, and filterTypeId are required" },
@@ -1721,8 +1724,8 @@ const createAdminTag = async (request) => {
 
   const tag = await prisma.tag.create({
     data: {
-      name: body.name,
-      slug: body.slug,
+      name: normalized.data.name,
+      slug: normalized.data.slug,
       filterTypeId: body.filterTypeId,
     },
     select: {
@@ -1741,11 +1744,14 @@ const updateAdminTag = async (request, id) => {
   if (!guard.ok) return jsonResponse(guard.body, guard.status);
 
   const body = await request.json();
+  const normalized = normalizeTagInput(body);
+  if (normalized.error) return jsonResponse({ error: normalized.error }, 400);
   const data = Object.fromEntries(
     ["name", "slug", "filterTypeId"]
       .filter((field) => body[field] !== undefined)
       .map((field) => [field, body[field]]),
   );
+  Object.assign(data, normalized.data);
   if (Object.keys(data).length === 0) {
     return jsonResponse(
       { error: "At least one of name, slug, or filterTypeId is required" },

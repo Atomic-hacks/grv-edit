@@ -4,7 +4,12 @@ import RevealImage from "../component/ui/RevealImage";
 import Spinner from "../component/ui/Spinner";
 import InlineNotice from "../component/ui/InlineNotice";
 
+import { storeInfo } from "../data/storeInfo";
+import { useContentSections } from "../lib/useContentSections";
+
 const Contact = () => {
+  const { data: sections = [] } = useContentSections("CONTACT");
+  const contactImage = sections.find((section) => section.layout === "BANNER" && section.imageUrl);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -151,7 +156,7 @@ const Contact = () => {
               <p className="text-xs font-semibold mb-3 tracking-wide">
                 (PHONE)
               </p>
-              <p className="text-sm font-medium">09012285529</p>
+              <a href={storeInfo.phoneHref} className="text-sm font-medium">{storeInfo.phone}</a>
             </div>
           </div>
         </div>
@@ -161,8 +166,8 @@ const Contact = () => {
 
       {/* Right Side - Image */}
       <RevealImage
-        src="/img/goth-tower2.jpg"
-        alt="Modern minimalist store interior with wooden furniture and shelving"
+        src={contactImage?.imageUrl || "/img/goth-tower2.jpg"}
+        alt={contactImage?.description || "GRVHQ contact"}
         className="h-[320px] sm:h-[420px] md:h-auto w-full md:w-[50%]"
       />
     </section>

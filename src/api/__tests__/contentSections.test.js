@@ -15,6 +15,9 @@ describe("isSafeUrl", () => {
       "data:text/html,<script>alert(1)</script>",
       "//evil.com/x",
       "/\\evil.com",
+      "/\t/evil.com",
+      "/\n/evil.com",
+      "/path\\evil",
       "vbscript:x",
       "file:///etc/passwd",
       "ftp://x.com",
@@ -89,6 +92,12 @@ describe("normalizeForLayout", () => {
 
 describe("validateSection", () => {
   const base = { page: "SHOP", layout: "BANNER", title: "T", mediaType: "IMAGE", imageUrl: "/a.jpg" };
+
+  it("allows only image banners for the contact photo", async () => {
+    expect(await validateSection({ ...base, page: "CONTACT" })).toBeNull();
+    expect(await validateSection({ ...base, page: "CONTACT", layout: "PRODUCTS" })).toMatch(/image banner/i);
+    expect(await validateSection({ ...base, page: "CONTACT", mediaType: "VIDEO" })).toMatch(/image banner/i);
+  });
 
   it("requires a title and a valid page and layout", async () => {
     expect(await validateSection({ ...base, title: "" })).toMatch(/title/i);

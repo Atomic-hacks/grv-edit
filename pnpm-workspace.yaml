@@ -4,3 +4,9 @@ allowBuilds:
   '@sentry/cli': true
   esbuild: false
   prisma: true
+
+# Patched transitive tooling dependencies; covered by test/build verification.
+overrides:
+  deepmerge-ts: ^8.0.0
+  glob: ^14.0.2
+  minimatch: ^11.0.1
