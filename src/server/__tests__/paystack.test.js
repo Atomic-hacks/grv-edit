@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createHmac } from "node:crypto";
-import { verifyPaystackSignature, claimPendingCheckout } from "../paystack.js";
+import { verifyPaystackSignature, claimPendingCheckout, paymentMatchesCheckout } from "../paystack.js";
 
 const SECRET = "sk_test_secret_key";
 const sign = (body, secret = SECRET) =>
@@ -145,5 +145,31 @@ describe("stock is only decremented behind a successful claim", () => {
 
     expect(result.created).toBe(false);
     expect(store.state.stock).toBe(10);
+  });
+});
+
+describe("paymentMatchesCheckout", () => {
+  const payload = { total: 38232 };
+  const payment = {
+    status: "success", reference: "ref", currency: "NGN",
+    amount: 3891574, requested_amount: 3823200, fees: 68374,
+  };
+
+  it("accepts the reported payment with customer-paid processing fees", () => {
+    expect(paymentMatchesCheckout(payment, "ref", payload)).toBe(true);
+  });
+
+  it("continues accepting an exact charge without fee metadata", () => {
+    expect(paymentMatchesCheckout({ status: "success", reference: "ref", currency: "NGN", amount: 3823200 }, "ref", payload)).toBe(true);
+  });
+
+  it.each([
+    { requested_amount: 3823100 }, { requested_amount: undefined },
+    { requested_amount: "3823200" }, { amount: 3823199 },
+    { amount: 3891575 }, { fees: undefined }, { fees: "68374" },
+    { fees: -68374 }, { currency: "USD" }, { reference: "other" },
+    { status: "failed" }, { amount: "3891574" },
+  ])("rejects mismatched or unaccounted payments: %j", (override) => {
+    expect(paymentMatchesCheckout({ ...payment, ...override }, "ref", payload)).toBe(false);
   });
 });

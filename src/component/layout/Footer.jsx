@@ -132,7 +132,7 @@ const Footer = () => {
             </span>
           ))}
           <a
-            href={storeInfo.phoneHref}
+            href={storeInfo.phoneHref} aria-label={`Call GRVHQ at ${storeInfo.phone}`}
             className="mt-2 inline-block text-neutral-300 underline underline-offset-4 transition-colors hover:text-white"
           >
             {storeInfo.phone}
